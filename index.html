@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestão e Controle Metrológico — Voith Turbo V3</title>
+    <title>VOITH TURBO — Gestão e Controle Metrológico</title>
     <!-- Pré-conexão e pré-carregamento paralelo do Google Sheets para máxima velocidade -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
     <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
@@ -26,18 +26,24 @@
             }
         })();
     </script>
-    <!-- Tailwind CSS (com darkMode nativo por classe) -->
+    <!-- Tailwind CSS (darkMode nativo + paleta corporativa Voith.com) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+                        display: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif']
+                    },
                     colors: {
                         voith: {
-                            navy: '#0F2C59',
-                            deep: '#081B38',
-                            accent: '#0EA5E9'
+                            navy: '#004C97',
+                            dark: '#002855',
+                            deep: '#001B3A',
+                            cyan: '#009FE3',
+                            ice: '#F4F6F9'
                         }
                     }
                 }
@@ -50,65 +56,149 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Google Fonts: Plus Jakarta Sans & Inter (tipografia geométrica estilo Voith) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --app-bg: #F1F5F9;
+            --voith-blue: #004C97;
+            --voith-blue-hover: #003A75;
+            --voith-deep: #001B3A;
+            --voith-cyan: #009FE3;
+            --app-bg: #F4F6F9;
             --surface-card: #FFFFFF;
-            --surface-subtle: #F8FAFC;
-            --surface-muted: #F1F5F9;
-            --surface-hover: #F1F5F9;
-            --border-subtle: #E2E8F0;
-            --border-strong: #CBD5E1;
-            --text-primary: #0F172A;
-            --text-secondary: #475569;
-            --text-muted: #64748B;
-            --brand-text: #0F2C59;
-            --sticky-th-bg: #F1F5F9;
-            --sticky-th-border: #CBD5E1;
-            --row-vencida-bg: rgba(244, 63, 94, 0.05);
-            --row-proxima-bg: rgba(245, 158, 11, 0.06);
-            --row-selected-bg: rgba(59, 130, 246, 0.09);
+            --surface-subtle: #F4F6F9;
+            --surface-muted: #E9EEF4;
+            --surface-hover: #F0F5FA;
+            --border-subtle: #DDE3EB;
+            --border-strong: #C5D0DE;
+            --text-primary: #0F1C2E;
+            --text-secondary: #3B4B5E;
+            --text-muted: #5C6F84;
+            --brand-text: #004C97;
+            --sticky-th-bg: #F4F6F9;
+            --sticky-th-border: #C5D0DE;
+            --row-vencida-bg: rgba(225, 29, 72, 0.045);
+            --row-proxima-bg: rgba(217, 119, 6, 0.055);
+            --row-selected-bg: rgba(0, 76, 151, 0.08);
         }
 
         html.dark {
             color-scheme: dark;
-            --app-bg: #070D19;
-            --surface-card: #0F172A;
-            --surface-subtle: #131E33;
-            --surface-muted: #1E293B;
-            --surface-hover: #1E293B;
-            --border-subtle: #1E293B;
-            --border-strong: #334155;
+            --app-bg: #06101F;
+            --surface-card: #0C1A2E;
+            --surface-subtle: #10223B;
+            --surface-muted: #162B4A;
+            --surface-hover: #173054;
+            --border-subtle: #1B3354;
+            --border-strong: #2A4770;
             --text-primary: #F1F5F9;
             --text-secondary: #CBD5E1;
             --text-muted: #94A3B8;
-            --brand-text: #60A5FA;
-            --sticky-th-bg: #1E293B;
-            --sticky-th-border: #334155;
+            --brand-text: #38BDF8;
+            --sticky-th-bg: #10223B;
+            --sticky-th-border: #2A4770;
             --row-vencida-bg: rgba(244, 63, 94, 0.13);
             --row-proxima-bg: rgba(245, 158, 11, 0.13);
-            --row-selected-bg: rgba(59, 130, 246, 0.22);
+            --row-selected-bg: rgba(0, 159, 227, 0.22);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
             background-color: var(--app-bg);
             color: var(--text-primary);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
 
-        .bg-voith-navy { background-color: #0F2C59; }
+        /* Marca Voith Oficial */
+        .bg-voith-navy { background-color: var(--voith-blue); }
         .text-voith-navy { color: var(--brand-text); }
-        .border-voith-navy { border-color: #0F2C59; }
-        html.dark .border-voith-navy { border-color: #60A5FA; }
+        .border-voith-navy { border-color: var(--voith-blue); }
+        html.dark .border-voith-navy { border-color: #38BDF8; }
+
+        /* Hero Corporativo estilo Voith.com (linhas diagonais sutis + gradiente azul engenharia) */
+        .voith-hero-bg {
+            background:
+                radial-gradient(circle at 88% 18%, rgba(0, 159, 227, 0.26) 0%, rgba(0, 159, 227, 0) 44%),
+                linear-gradient(118deg, #001833 0%, #002C5F 48%, #004C97 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .voith-hero-bg::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(125deg, transparent 48%, rgba(255,255,255,0.035) 48%, rgba(255,255,255,0.035) 49%, transparent 49%),
+                              linear-gradient(125deg, transparent 64%, rgba(0,159,227,0.08) 64%, rgba(0,159,227,0.08) 65.5%, transparent 65.5%);
+            pointer-events: none;
+        }
+
+        /* Chevron característico Voith (>) nos títulos */
+        .voith-chevron {
+            color: #009FE3;
+            font-weight: 800;
+            display: inline-block;
+            margin: 0 0.14em;
+            line-height: 1;
+        }
+
+        /* Links de Navegação Corporativa (barra branca Voith.com) */
+        .voith-nav-link {
+            position: relative;
+            color: #1E293B;
+            transition: color 0.15s ease;
+        }
+        html.dark .voith-nav-link { color: #CBD5E1; }
+        .voith-nav-link:hover { color: #004C97; }
+        html.dark .voith-nav-link:hover { color: #38BDF8; }
+        .voith-nav-link::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -1px;
+            height: 3px;
+            background-color: #004C97;
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.2s ease;
+        }
+        html.dark .voith-nav-link::after { background-color: #009FE3; }
+        .voith-nav-link.is-active {
+            color: #004C97;
+            font-weight: 700;
+        }
+        html.dark .voith-nav-link.is-active { color: #FFFFFF; }
+        .voith-nav-link.is-active::after { transform: scaleX(1); }
+
+        /* Item ativo no menu mobile */
+        .mobile-nav-btn.is-active {
+            background-color: rgba(0, 159, 227, 0.18);
+            color: #FFFFFF;
+            box-shadow: inset 3px 0 0 #009FE3;
+        }
+
+        /* Card corporativo preciso (estilo Voith.com) */
+        .voith-card {
+            background-color: var(--surface-card);
+            border: 1px solid var(--border-subtle);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        }
+        .voith-card-interactive:hover {
+            border-color: #004C97;
+            box-shadow: 0 10px 26px -12px rgba(0, 44, 95, 0.22);
+        }
+        html.dark .voith-card-interactive:hover {
+            border-color: #009FE3;
+            box-shadow: 0 10px 26px -12px rgba(0, 159, 227, 0.25);
+        }
 
         /* Compatibilidade limpa com modais e badges dinâmicos no tema escuro */
         html.dark .bg-white { background-color: var(--surface-card); }
         html.dark .bg-slate-50 { background-color: var(--surface-subtle); }
         html.dark .bg-slate-100 { background-color: var(--surface-muted); color: var(--text-secondary); }
-        html.dark .bg-slate-200 { background-color: #334155; color: #F8FAFC; }
+        html.dark .bg-slate-200 { background-color: #213A5E; color: #F8FAFC; }
         html.dark .text-slate-900, html.dark .text-slate-800, html.dark .text-slate-700 { color: var(--text-primary); }
         html.dark .text-slate-600, html.dark .text-slate-500, html.dark .text-slate-400 { color: var(--text-muted); }
         html.dark .border-slate-100, html.dark .border-slate-200,
@@ -117,7 +207,7 @@
         html.dark tbody tr:hover,
         html.dark .hover\:bg-slate-50:hover { background-color: var(--surface-hover); }
         html.dark .hover\:bg-slate-100:hover,
-        html.dark .hover\:bg-slate-200:hover { background-color: #334155; color: #F8FAFC; }
+        html.dark .hover\:bg-slate-200:hover { background-color: #213A5E; color: #F8FAFC; }
 
         .row-vencida { background-color: var(--row-vencida-bg); }
         .row-proxima { background-color: var(--row-proxima-bg); }
@@ -125,25 +215,25 @@
         html.dark .row-vencida:hover { background-color: rgba(244, 63, 94, 0.22); }
         html.dark .row-proxima:hover { background-color: rgba(245, 158, 11, 0.22); }
 
-        html.dark input:not([type="checkbox"]):not([type="radio"]):not(#refDateInput),
+        html.dark input:not([type="checkbox"]):not([type="radio"]):not(#refDateInput):not(#quickCodeSearch),
         html.dark select,
         html.dark textarea {
-            background-color: #0B1324;
+            background-color: #071324;
             color: #F1F5F9;
-            border-color: #334155;
+            border-color: #2A4770;
         }
         html.dark input::placeholder, html.dark textarea::placeholder { color: #64748B; }
 
         /* Badges e superfícies suaves no Modo Escuro */
-        html.dark .bg-blue-50, html.dark .bg-blue-50\/70 { background-color: rgba(59, 130, 246, 0.16); border-color: rgba(59, 130, 246, 0.35); color: #93C5FD; }
-        html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.16); border-color: rgba(16, 185, 129, 0.35); color: #6EE7B7; }
-        html.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.16); border-color: rgba(244, 63, 94, 0.35); color: #FDA4AF; }
-        html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.35); color: #FCD34D; }
-        html.dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.16); border-color: rgba(168, 85, 247, 0.35); color: #D8B4FE; }
-        html.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.16); border-color: rgba(99, 102, 241, 0.35); color: #A5B4FC; }
-        html.dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.16); border-color: rgba(14, 165, 233, 0.35); color: #7DD3FC; }
-        html.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.16); border-color: rgba(249, 115, 22, 0.35); color: #FDBA74; }
-        html.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.16); border-color: rgba(234, 179, 8, 0.35); color: #FDE047; }
+        html.dark .bg-blue-50, html.dark .bg-blue-50\/70 { background-color: rgba(0, 159, 227, 0.14); border-color: rgba(0, 159, 227, 0.35); color: #7DD3FC; }
+        html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #6EE7B7; }
+        html.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); color: #FDA4AF; }
+        html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); color: #FCD34D; }
+        html.dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.35); color: #D8B4FE; }
+        html.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.35); color: #A5B4FC; }
+        html.dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.35); color: #7DD3FC; }
+        html.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.35); color: #FDBA74; }
+        html.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.35); color: #FDE047; }
 
         html.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.22); color: #6EE7B7; border-color: rgba(16, 185, 129, 0.4); }
         html.dark .bg-rose-100 { background-color: rgba(244, 63, 94, 0.22); color: #FDA4AF; border-color: rgba(244, 63, 94, 0.4); }
@@ -151,35 +241,16 @@
         html.dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.22); color: #D8B4FE; border-color: rgba(168, 85, 247, 0.4); }
         html.dark .bg-indigo-100 { background-color: rgba(99, 102, 241, 0.22); color: #A5B4FC; border-color: rgba(99, 102, 241, 0.4); }
         html.dark .bg-sky-100 { background-color: rgba(14, 165, 233, 0.22); color: #7DD3FC; border-color: rgba(14, 165, 233, 0.4); }
-        html.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.22); color: #93C5FD; border-color: rgba(59, 130, 246, 0.4); }
+        html.dark .bg-blue-100 { background-color: rgba(0, 159, 227, 0.22); color: #7DD3FC; border-color: rgba(0, 159, 227, 0.4); }
         html.dark .bg-yellow-100 { background-color: rgba(234, 179, 8, 0.22); color: #FDE047; border-color: rgba(234, 179, 8, 0.4); }
 
-        html.dark .text-blue-800, html.dark .text-blue-700 { color: #93C5FD; }
+        html.dark .text-blue-800, html.dark .text-blue-700 { color: #7DD3FC; }
         html.dark .text-emerald-800, html.dark .text-emerald-700 { color: #6EE7B7; }
         html.dark .text-rose-800, html.dark .text-rose-700, html.dark .text-rose-900 { color: #FDA4AF; }
         html.dark .text-amber-800, html.dark .text-amber-700, html.dark .text-amber-900 { color: #FCD34D; }
         html.dark .text-purple-800 { color: #D8B4FE; }
         html.dark .text-indigo-800 { color: #A5B4FC; }
         html.dark .text-sky-800, html.dark .text-sky-900 { color: #7DD3FC; }
-
-        /* Sidebar Recolhível no Desktop */
-        @media (min-width: 1024px) {
-            body.sidebar-collapsed #appSidebar { width: 4.75rem; }
-            body.sidebar-collapsed .sidebar-text,
-            body.sidebar-collapsed .sidebar-section-label,
-            body.sidebar-collapsed .sidebar-badge { display: none !important; }
-            body.sidebar-collapsed .sidebar-nav-btn { justify-content: center; padding-left: 0; padding-right: 0; }
-            body.sidebar-collapsed .sidebar-brand-wrap { justify-content: center; padding-left: 0; padding-right: 0; }
-        }
-
-        /* Item ativo da Sidebar */
-        .sidebar-nav-btn { transition: background-color 0.15s ease, color 0.15s ease; }
-        .sidebar-nav-btn.is-active {
-            background-color: rgba(14, 165, 233, 0.18);
-            color: #FFFFFF;
-            box-shadow: inset 3px 0 0 #38BDF8;
-        }
-        .sidebar-nav-btn.is-active i { color: #38BDF8; }
 
         /* Cartões Mobile para Conferência em Bancada */
         .voith-card-item { transition: transform 0.12s ease, box-shadow 0.12s ease; }
@@ -216,581 +287,678 @@
         body:not(.voith-admin) .admin-only { display: none !important; }
     </style>
 </head>
-<body class="min-h-screen flex voith-readonly antialiased">
+<body class="min-h-screen flex flex-col voith-readonly antialiased selection:bg-[#004C97] selection:text-white">
 
-    <!-- Input oculto global de importação .XLS / .XLSX (acessível pela Sidebar e pelo Cadastro) -->
+    <!-- Input oculto global de importação .XLS / .XLSX -->
     <input type="file" id="xlsFileInput" accept=".xls,.xlsx,.csv" onchange="handleXlsFileUpload(event)" class="hidden">
 
-    <!-- Backdrop Mobile da Sidebar -->
-    <div id="mobileSidebarBackdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-950/60 backdrop-blur-[2px] z-40 hidden lg:hidden"></div>
+    <!-- Backdrop do Menu Mobile -->
+    <div id="mobileSidebarBackdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-[#001833]/65 backdrop-blur-[2px] z-50 hidden lg:hidden"></div>
 
-    <!-- ==================== SIDEBAR CORPORATIVA (APP SHELL) ==================== -->
-    <aside id="appSidebar" class="fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-[#0B1F40] text-slate-300 border-r border-slate-800/80 flex flex-col justify-between transition-all duration-200 -translate-x-full lg:translate-x-0 shrink-0 select-none">
-        <!-- Topo da Sidebar: Marca Voith -->
+    <!-- ==================== MENU LATERAL MOBILE (VOITH.COM DRAWER) ==================== -->
+    <aside id="appSidebar" class="fixed top-0 left-0 z-[60] h-screen w-72 bg-[#001B3A] text-slate-200 border-r border-white/10 flex flex-col justify-between transition-transform duration-200 -translate-x-full lg:hidden select-none shadow-2xl">
         <div class="flex flex-col min-h-0 flex-1">
-            <div class="sidebar-brand-wrap h-16 px-4 border-b border-white/10 flex items-center justify-between gap-2.5 shrink-0">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="w-9 h-9 rounded-xl bg-white text-[#0F2C59] flex items-center justify-center text-lg font-extrabold shadow shrink-0">
-                        <i class="fa-solid fa-gauge-high"></i>
-                    </div>
-                    <div class="sidebar-text min-w-0">
-                        <div class="text-sm font-extrabold text-white tracking-tight truncate leading-tight">VOITH TURBO</div>
-                        <div class="text-[10px] font-semibold text-sky-300/90 uppercase tracking-wider truncate">Metrologia</div>
-                    </div>
+            <div class="h-16 px-5 border-b border-white/10 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-xl font-extrabold tracking-[0.14em] text-white">VOITH</span>
+                    <span class="h-4 w-px bg-white/25"></span>
+                    <span class="text-[10px] font-bold tracking-[0.16em] uppercase text-[#009FE3]">Turbo</span>
                 </div>
-                <button type="button" onclick="closeMobileSidebar()" class="lg:hidden text-slate-400 hover:text-white p-1.5 rounded-lg cursor-pointer" title="Fechar menu">
+                <button type="button" onclick="closeMobileSidebar()" class="text-slate-300 hover:text-white p-1.5 cursor-pointer" title="Fechar menu">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
 
-            <!-- Navegação Principal -->
-            <div class="p-3 space-y-5 overflow-y-auto flex-1">
+            <div class="p-4 space-y-5 overflow-y-auto flex-1">
                 <div class="space-y-1">
-                    <div class="sidebar-section-label px-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400/80">Navegação</div>
-
-                    <button type="button" onclick="switchTab('dashboard'); closeMobileSidebar();" id="tab-dashboard" title="Dashboard Executivo"
-                        class="sidebar-nav-btn is-active w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 text-xs font-semibold hover:bg-white/10 hover:text-white cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <i class="fa-solid fa-chart-pie w-4 text-center text-sm shrink-0"></i>
-                            <span class="sidebar-text truncate">Dashboard Executivo</span>
-                        </span>
+                    <div class="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Navegação</div>
+                    <button type="button" onclick="switchTab('dashboard'); closeMobileSidebar();" data-mobile-tab="dashboard"
+                        class="mobile-nav-btn is-active w-full px-3 py-2.5 rounded flex items-center justify-between text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-chart-pie w-4 text-center text-[#009FE3]"></i> Visão Geral</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] opacity-60"></i>
                     </button>
-
-                    <button type="button" onclick="switchTab('cadastro'); closeMobileSidebar();" id="tab-cadastro" title="Cadastro Mestre & Ações"
-                        class="sidebar-nav-btn w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <i class="fa-solid fa-table-list w-4 text-center text-sm shrink-0"></i>
-                            <span class="sidebar-text truncate">Cadastro Mestre</span>
-                        </span>
-                        <span id="total-count" class="sidebar-badge px-2 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-bold">0</span>
+                    <button type="button" onclick="switchTab('cadastro'); closeMobileSidebar();" data-mobile-tab="cadastro"
+                        class="mobile-nav-btn w-full px-3 py-2.5 rounded flex items-center justify-between text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-table-list w-4 text-center text-[#009FE3]"></i> Cadastro Mestre</span>
+                        <span id="mobileTotalCount" class="px-2 py-0.5 bg-white/10 text-[10px] font-bold rounded">0</span>
                     </button>
-
-                    <button type="button" onclick="filterByInCustody(); closeMobileSidebar();" id="tab-cautela" title="Instrumentos em Posse (Cautela)"
-                        class="sidebar-nav-btn w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <i class="fa-solid fa-handshake w-4 text-center text-sm shrink-0 text-amber-300"></i>
-                            <span class="sidebar-text truncate">Em Posse / Cautela</span>
-                        </span>
-                        <span id="sidebarCustodyCount" class="sidebar-badge px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-extrabold">0</span>
+                    <button type="button" onclick="filterByInCustody(); closeMobileSidebar();" data-mobile-tab="cautela"
+                        class="mobile-nav-btn w-full px-3 py-2.5 rounded flex items-center justify-between text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-handshake w-4 text-center text-amber-300"></i> Em Posse / Cautela</span>
+                        <span id="sidebarCustodyCount" class="px-2 py-0.5 bg-amber-400/20 text-amber-300 text-[10px] font-extrabold rounded">0</span>
                     </button>
-
-                    <button type="button" onclick="switchTab('historico'); closeMobileSidebar();" id="tab-historico" title="Histórico de Calibração Externa"
-                        class="sidebar-nav-btn w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <i class="fa-solid fa-clock-rotate-left w-4 text-center text-sm shrink-0"></i>
-                            <span class="sidebar-text truncate">Calibração Externa</span>
-                        </span>
-                        <span id="hist-count" class="sidebar-badge px-2 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-bold">0</span>
+                    <button type="button" onclick="switchTab('historico'); closeMobileSidebar();" data-mobile-tab="historico"
+                        class="mobile-nav-btn w-full px-3 py-2.5 rounded flex items-center justify-between text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-clock-rotate-left w-4 text-center text-[#009FE3]"></i> Calibração Externa</span>
+                        <span id="mobileHistCount" class="px-2 py-0.5 bg-white/10 text-[10px] font-bold rounded">0</span>
                     </button>
-
-                    <button type="button" onclick="switchTab('perdidos'); closeMobileSidebar();" id="tab-perdidos" title="Instrumentos Desativados / Perdidos"
-                        class="sidebar-nav-btn w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <i class="fa-solid fa-triangle-exclamation w-4 text-center text-sm shrink-0"></i>
-                            <span class="sidebar-text truncate">Perdidos / Desativados</span>
-                        </span>
-                        <span id="lost-count" class="sidebar-badge px-2 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-bold">0</span>
+                    <button type="button" onclick="switchTab('perdidos'); closeMobileSidebar();" data-mobile-tab="perdidos"
+                        class="mobile-nav-btn w-full px-3 py-2.5 rounded flex items-center justify-between text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <span class="flex items-center gap-2.5"><i class="fa-solid fa-triangle-exclamation w-4 text-center text-rose-400"></i> Desativados / Perdidos</span>
+                        <span id="mobileLostCount" class="px-2 py-0.5 bg-white/10 text-[10px] font-bold rounded">0</span>
                     </button>
                 </div>
 
-                <!-- Ações Rápidas -->
-                <div class="space-y-1 pt-3 border-t border-white/10">
-                    <div class="sidebar-section-label px-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400/80">Ações Rápidas</div>
-
-                    <button type="button" onclick="openCabinetPdfModal(); closeMobileSidebar();" title="Folha Porta de Armário"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-semibold text-sky-300 hover:bg-sky-500/15 hover:text-sky-200 cursor-pointer">
-                        <i class="fa-solid fa-print w-4 text-center text-sm shrink-0"></i>
-                        <span class="sidebar-text truncate">Folha Porta de Armário</span>
+                <div class="space-y-1 pt-4 border-t border-white/10">
+                    <div class="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Ações & Relatórios</div>
+                    <button type="button" onclick="openCabinetPdfModal(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs font-semibold text-sky-300 hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-print w-4 text-center"></i> Folha Porta de Armário
                     </button>
-
-                    <button type="button" onclick="openNewInstrumentSlide(); closeMobileSidebar();" title="Novo Instrumento"
-                        class="editor-only sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-plus-circle w-4 text-center text-sm shrink-0 text-emerald-400"></i>
-                        <span class="sidebar-text truncate">Novo Instrumento</span>
+                    <button type="button" onclick="openNewInstrumentSlide(); closeMobileSidebar();" class="editor-only w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-plus w-4 text-center text-emerald-400"></i> Novo Instrumento
                     </button>
-
-                    <button type="button" onclick="openExternalModal(); closeMobileSidebar();" title="Registrar Envio Externo"
-                        class="editor-only sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-truck-ramp-box w-4 text-center text-sm shrink-0 text-amber-400"></i>
-                        <span class="sidebar-text truncate">Envio Externo</span>
+                    <button type="button" onclick="openExternalModal(); closeMobileSidebar();" class="editor-only w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-truck-ramp-box w-4 text-center text-amber-400"></i> Registrar Envio Externo
                     </button>
-
-                    <button type="button" onclick="openPdfModal(); closeMobileSidebar();" title="Relatório PDF ISO"
-                        class="editor-only sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-file-pdf w-4 text-center text-sm shrink-0 text-rose-400"></i>
-                        <span class="sidebar-text truncate">Relatório PDF ISO</span>
+                    <button type="button" onclick="openPdfModal(); closeMobileSidebar();" class="editor-only w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs font-semibold hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-file-pdf w-4 text-center text-rose-400"></i> Relatório PDF ISO
                     </button>
                 </div>
 
-                <!-- Dados & Sistema (Editor Only) -->
-                <div class="editor-only space-y-1 pt-3 border-t border-white/10">
-                    <div class="sidebar-section-label px-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400/80">Dados & Sistema</div>
-
-                    <button type="button" onclick="closeMobileSidebar(); document.getElementById('xlsFileInput').click();" title="Importar Planilha .XLS / .XLSX"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-file-arrow-up w-4 text-center text-sm shrink-0 text-emerald-400"></i>
-                        <span class="sidebar-text truncate">Importar .XLS / .XLSX</span>
+                <div class="editor-only space-y-1 pt-4 border-t border-white/10">
+                    <div class="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Sistema & Dados</div>
+                    <button type="button" onclick="closeMobileSidebar(); document.getElementById('xlsFileInput').click();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-file-arrow-up w-4 text-center text-emerald-400"></i> Importar .XLS / .XLSX
                     </button>
-
-                    <button type="button" onclick="openBulkPasteModal(); closeMobileSidebar();" title="Colar Linhas do Excel"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-file-excel w-4 text-center text-sm shrink-0 text-teal-400"></i>
-                        <span class="sidebar-text truncate">Colar do Excel</span>
+                    <button type="button" onclick="openBulkPasteModal(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-file-excel w-4 text-center text-teal-400"></i> Colar do Excel
                     </button>
-
-                    <button type="button" onclick="downloadHtmlWithEmbeddedData(); closeMobileSidebar();" title="Salvar HTML com Lista Embutida"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-code w-4 text-center text-sm shrink-0 text-indigo-400"></i>
-                        <span class="sidebar-text truncate">Salvar HTML Offline</span>
+                    <button type="button" onclick="downloadHtmlWithEmbeddedData(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-code w-4 text-center text-indigo-400"></i> Salvar HTML Offline
                     </button>
-
-                    <button type="button" onclick="openBackupModal(); closeMobileSidebar();" title="Backup & Restauração JSON"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-shield-halved w-4 text-center text-sm shrink-0 text-sky-400"></i>
-                        <span class="sidebar-text truncate">Backup / Restaurar</span>
+                    <button type="button" onclick="openBackupModal(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-shield-halved w-4 text-center text-sky-400"></i> Backup / Restaurar JSON
                     </button>
-
-                    <button type="button" onclick="openSheetsModal(); closeMobileSidebar();" title="Banco de Dados Google Sheets"
-                        class="sidebar-nav-btn w-full px-3 py-2 rounded-xl flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
-                        <i class="fa-solid fa-cloud-arrow-up w-4 text-center text-sm shrink-0 text-emerald-400"></i>
-                        <span class="sidebar-text truncate">Nuvem Google Sheets</span>
+                    <button type="button" onclick="openSheetsModal(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-cloud-arrow-up w-4 text-center text-emerald-400"></i> Nuvem Google Sheets
+                    </button>
+                    <button type="button" onclick="openUsersAdminModal(); closeMobileSidebar();" class="admin-only w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs text-amber-300 hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-users-gear w-4 text-center"></i> Gerenciar Usuários
+                    </button>
+                    <button type="button" onclick="openChangePasswordModal(); closeMobileSidebar();" class="w-full px-3 py-2 rounded flex items-center gap-2.5 text-xs hover:bg-white/10 cursor-pointer">
+                        <i class="fa-solid fa-key w-4 text-center text-slate-300"></i> Alterar Minha Senha
                     </button>
                 </div>
             </div>
         </div>
-
-        <!-- Rodapé da Sidebar: Recolher no Desktop -->
-        <div class="p-3 border-t border-white/10 hidden lg:flex items-center justify-between gap-2 shrink-0">
-            <button id="sidebarCollapseBtn" type="button" onclick="toggleDesktopSidebar()" title="Recolher ou expandir barra lateral"
-                class="sidebar-nav-btn w-full px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-2.5 text-xs font-semibold cursor-pointer">
-                <i id="sidebarCollapseIcon" class="fa-solid fa-angles-left w-4 text-center shrink-0"></i>
-                <span class="sidebar-text truncate">Recolher Menu</span>
-            </button>
+        <div class="p-4 border-t border-white/10 text-[11px] text-slate-400">
+            Voith Turbo • Metrologia Industrial
         </div>
     </aside>
 
-    <!-- ==================== COLUNA PRINCIPAL (TOPBAR + CONTEÚDO + FOOTER) ==================== -->
-    <div class="flex-1 flex flex-col min-w-0 min-h-screen">
+    <!-- ==================== HEADER CORPORATIVO VOITH.COM (2 CAMADAS) ==================== -->
+    <header class="sticky top-0 z-40 shadow-sm">
 
-        <!-- TOPBAR CORPORATIVA ENXUTA -->
-        <header class="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
-            <div class="max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-2.5 flex flex-wrap items-center justify-between lg:justify-start gap-2.5">
-                <!-- Esquerda: Botão Menu Mobile + Título Dinâmico da Página -->
-                <div class="flex items-center gap-2.5 min-w-0 lg:order-1">
-                    <button type="button" onclick="openMobileSidebar()" class="lg:hidden w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition shrink-0" title="Abrir menu">
-                        <i class="fa-solid fa-bars text-base"></i>
-                    </button>
-                    <div class="min-w-0">
-                        <h1 id="topbarPageTitle" class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight truncate">Dashboard Executivo</h1>
-                        <p id="topbarPageSub" class="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">Voith Turbo • Controle Metrológico & Rastreabilidade</p>
-                    </div>
+        <!-- CAMADA 1: UTILITY BAR (Estilo Global Website | Login | Ref | Cloud da Voith.com) -->
+        <div class="bg-[#F4F6F9] dark:bg-[#050E1C] border-b border-[#DDE3EB] dark:border-[#1B3354] text-[11px] text-slate-600 dark:text-slate-300">
+            <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 h-10 flex items-center justify-between gap-3">
+                <!-- Esquerda: Contexto Corporativo -->
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="inline-flex items-center gap-1.5 font-bold text-[#004C97] dark:text-[#38BDF8] truncate">
+                        <i class="fa-solid fa-globe text-[10px]"></i>
+                        <span>Voith Turbo Brasil</span>
+                    </span>
+                    <span class="hidden md:inline text-slate-300 dark:text-slate-600">|</span>
+                    <span id="topbarPageSub" class="hidden md:inline text-slate-500 dark:text-slate-400 truncate">Gestão e Controle Metrológico • Base Oficial</span>
                 </div>
 
-                <!-- Direita (sempre visível): Nuvem + Conta + Botão Opções Mobile -->
-                <div class="flex items-center gap-1.5 sm:gap-2 text-xs shrink-0 lg:order-3">
-                    <!-- Ícone Nuvem Google Sheets -->
-                    <button id="cloudStatusBtn" type="button" onclick="openSheetsModal()" class="relative bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30 w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition" title="Google Sheets: Conectando..." aria-label="Banco de Dados Google Sheets">
-                        <i id="cloudStatusIcon" class="fa-solid fa-cloud text-base"></i>
-                        <span id="cloudStatusDot" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+                <!-- Direita: Data Ref + Undo + Dark Mode + Nuvem + Login -->
+                <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <!-- Data de Referência -->
+                    <div class="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-white dark:bg-[#0C1A2E] border border-[#DDE3EB] dark:border-[#243E63] rounded">
+                        <i class="fa-regular fa-calendar text-[#004C97] dark:text-[#38BDF8] text-[10px]"></i>
+                        <span class="text-slate-500 dark:text-slate-400 font-semibold">Ref:</span>
+                        <input type="text" id="refDateInput" oninput="maskBrazilianDateInput(this)" onchange="updateSimulationDate(this.value)" onkeydown="if(event.key==='Enter') updateSimulationDate(this.value)" maxlength="10" placeholder="DD/MM/AAAA"
+                            class="bg-transparent text-slate-900 dark:text-white font-bold text-[11px] w-[70px] focus:outline-none border-0">
+                        <input type="date" id="refDatePickerHelper" onchange="if(this.value) updateSimulationDate(this.value)" class="sr-only" tabindex="-1">
+                        <button type="button" onclick="openNativeDatePicker('refDatePickerHelper')" class="text-slate-400 hover:text-[#004C97] dark:hover:text-[#38BDF8] cursor-pointer" title="Abrir calendário">
+                            <i class="fa-solid fa-calendar-days text-[10px]"></i>
+                        </button>
+                        <span id="autoTodayBadge" onclick="resetSimulationDate()" class="px-1.5 py-0.2 bg-[#004C97]/10 dark:bg-[#009FE3]/20 text-[#004C97] dark:text-[#38BDF8] rounded text-[9px] font-extrabold uppercase cursor-pointer" title="Data sincronizada com hoje">Hoje</span>
+                        <button id="resetSimBtn" type="button" onclick="resetSimulationDate()" class="hidden px-1.5 py-0.2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded font-extrabold text-[9px] cursor-pointer">Hoje</button>
+                    </div>
+
+                    <!-- Botão Desfazer Rápido (Ctrl+Z) -->
+                    <button id="headerUndoBtn" type="button" onclick="undoLastAction()" class="editor-only hidden px-2 py-0.5 bg-amber-100 dark:bg-amber-400/20 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-400/40 rounded font-bold cursor-pointer transition flex items-center gap-1" title="Desfazer última alteração (Ctrl+Z)">
+                        <i class="fa-solid fa-rotate-left text-[10px]"></i> <span>Desfazer (<span id="headerUndoCount">0</span>)</span>
                     </button>
 
-                    <!-- Botão Login (Modo Consulta) -->
-                    <button id="loginHeaderBtn" type="button" onclick="openLoginModal()" class="readonly-only bg-voith-navy hover:bg-blue-900 dark:bg-amber-400 dark:hover:bg-amber-300 text-white dark:text-slate-950 px-3.5 py-2 rounded-xl flex items-center gap-1.5 font-bold cursor-pointer transition shadow-sm" title="Fazer login para liberar alterações">
-                        <i class="fa-solid fa-lock"></i> <span>Entrar</span>
+                    <!-- Alternar Tema -->
+                    <button id="darkModeBtn" type="button" onclick="toggleDarkMode()" class="hover:text-[#004C97] dark:hover:text-[#38BDF8] font-semibold flex items-center gap-1 cursor-pointer transition" title="Alternar Modo Escuro / Claro">
+                        <i class="fa-solid fa-moon text-[#004C97] dark:text-amber-300"></i> <span class="hidden md:inline">Escuro</span>
+                    </button>
+
+                    <span class="text-slate-300 dark:text-slate-700">|</span>
+
+                    <!-- Status Nuvem Google Sheets -->
+                    <button id="cloudStatusBtn" type="button" onclick="openSheetsModal()" class="relative flex items-center gap-1.5 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold cursor-pointer transition" title="Google Sheets: Conectando..." aria-label="Banco de Dados Google Sheets">
+                        <i id="cloudStatusIcon" class="fa-solid fa-cloud text-xs"></i>
+                        <span id="cloudStatusLabel" class="hidden lg:inline text-[10px]">Sheets</span>
+                        <span id="cloudStatusDot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    </button>
+
+                    <!-- Login (Modo Consulta) -->
+                    <button id="loginHeaderBtn" type="button" onclick="openLoginModal()" class="readonly-only inline-flex items-center gap-1.5 font-extrabold text-[#004C97] dark:text-amber-300 hover:underline cursor-pointer" title="Fazer login para liberar alterações">
+                        <i class="fa-solid fa-user-lock text-[11px]"></i> <span>Login</span>
                     </button>
 
                     <!-- Usuário Logado (Modo Editor / Admin) -->
-                    <div id="loggedUserBadge" class="editor-only bg-emerald-50 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-400/30 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-semibold">
-                        <span class="flex items-center gap-1.5 pr-0.5"><i class="fa-solid fa-user-shield text-emerald-600 dark:text-emerald-300"></i> <span id="loggedUserNameDisplay" class="max-w-[74px] sm:max-w-none truncate font-bold">Editor</span></span>
-                        <button type="button" onclick="openUsersAdminModal()" class="admin-only hidden sm:flex px-2 py-0.5 bg-amber-100 dark:bg-amber-400/25 hover:bg-amber-200 dark:hover:bg-amber-400/40 text-amber-900 dark:text-amber-200 border border-amber-300/60 dark:border-amber-300/30 rounded-lg text-[10px] font-bold cursor-pointer transition items-center gap-1" title="Criar ou remover logins (Somente Pablo)">
+                    <div id="loggedUserBadge" class="editor-only flex items-center gap-1.5">
+                        <span class="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-white">
+                            <i class="fa-solid fa-user-shield text-[#004C97] dark:text-[#38BDF8]"></i>
+                            <span id="loggedUserNameDisplay" class="max-w-[85px] sm:max-w-none truncate">Editor</span>
+                        </span>
+                        <button type="button" onclick="openUsersAdminModal()" class="admin-only hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-400/20 text-amber-900 dark:text-amber-200 rounded text-[10px] font-bold hover:bg-amber-200 cursor-pointer" title="Gerenciar logins (Admin)">
                             <i class="fa-solid fa-users-gear"></i> <span>Usuários</span>
                         </button>
-                        <button type="button" onclick="openChangePasswordModal()" class="hidden sm:flex px-2 py-0.5 bg-slate-200/80 dark:bg-white/15 hover:bg-voith-navy hover:text-white dark:hover:bg-sky-500/60 text-slate-700 dark:text-white rounded-lg text-[10px] font-bold cursor-pointer transition items-center gap-1" title="Alterar minha senha">
+                        <button type="button" onclick="openChangePasswordModal()" class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-200/80 dark:bg-white/10 text-slate-700 dark:text-slate-200 rounded text-[10px] font-bold hover:bg-[#004C97] hover:text-white cursor-pointer" title="Alterar minha senha">
                             <i class="fa-solid fa-key"></i> <span>Senha</span>
                         </button>
-                        <button type="button" onclick="logoutEditor()" class="px-2 py-0.5 bg-rose-100 dark:bg-white/15 hover:bg-rose-600 text-rose-700 hover:text-white dark:text-white rounded-lg text-[10px] font-bold cursor-pointer transition" title="Sair e voltar para o Modo Consulta">Sair</button>
+                        <button type="button" onclick="logoutEditor()" class="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 hover:bg-rose-600 hover:text-white rounded text-[10px] font-bold cursor-pointer transition" title="Sair do Modo Editor">Sair</button>
                     </div>
+                </div>
+            </div>
+        </div>
 
-                    <!-- Botão Recolher/Expandir Controles Secundários no Mobile -->
-                    <button id="mobileHeaderToggleBtn" type="button" onclick="toggleMobileHeaderControls()" class="lg:hidden bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition" title="Abrir busca rápida e data de referência" aria-expanded="false">
-                        <i id="mobileHeaderToggleIcon" class="fa-solid fa-sliders text-sm"></i>
+        <!-- CAMADA 2: BARRA PRINCIPAL BRANCA VOITH.COM -->
+        <div class="bg-white/95 dark:bg-[#0A192F]/95 backdrop-blur-md border-b border-[#DDE3EB] dark:border-[#1B3354]">
+            <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+                <!-- Esquerda: Menu Mobile + Wordmark Oficial VOITH -->
+                <div class="flex items-center gap-3 shrink-0">
+                    <button type="button" onclick="openMobileSidebar()" class="lg:hidden w-9 h-9 rounded border border-[#DDE3EB] dark:border-[#243E63] bg-slate-50 dark:bg-[#0C1A2E] text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer" title="Abrir menu">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+
+                    <button type="button" onclick="switchTab('dashboard')" class="flex items-center gap-2.5 text-left cursor-pointer group" title="Ir para Visão Geral">
+                        <span class="text-2xl font-extrabold tracking-[0.12em] text-[#004C97] dark:text-white leading-none">VOITH</span>
+                        <span class="h-5 w-px bg-[#C5D0DE] dark:bg-slate-600"></span>
+                        <span class="flex flex-col leading-tight">
+                            <span class="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-800 dark:text-[#38BDF8]">Turbo</span>
+                            <span id="topbarPageTitle" class="text-[10px] font-medium text-slate-500 dark:text-slate-400">Visão Geral</span>
+                        </span>
                     </button>
                 </div>
 
-                <!-- Controles Secundários (Agrupados à direita no Desktop; recolhíveis no Mobile) -->
-                <div id="headerCollapsibleControls" class="hidden lg:flex w-full lg:w-auto flex-wrap items-center justify-between lg:justify-end gap-2 pt-2.5 lg:pt-0 mt-1 lg:mt-0 border-t border-slate-200 dark:border-slate-800 lg:border-0 text-xs lg:order-2 lg:ml-auto">
-                    <!-- Busca Rápida por Código (disponível em qualquer tela!) -->
-                    <div class="flex items-center bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1 gap-1.5 flex-1 sm:flex-initial">
+                <!-- Centro: Navegação Principal Estilo Voith.com (Desktop) -->
+                <nav class="hidden lg:flex items-center h-full gap-6 text-[13px] font-semibold">
+                    <button type="button" onclick="switchTab('dashboard')" id="tab-dashboard" class="voith-nav-link is-active h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                        <span>Visão Geral</span>
+                    </button>
+                    <button type="button" onclick="switchTab('cadastro')" id="tab-cadastro" class="voith-nav-link h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                        <span>Cadastro Mestre</span>
+                        <span id="total-count" class="px-1.5 py-0.5 text-[10px] font-bold bg-[#F4F6F9] dark:bg-[#162B4A] text-slate-600 dark:text-slate-300 border border-[#DDE3EB] dark:border-[#2A4770] rounded">0</span>
+                    </button>
+                    <button type="button" onclick="filterByInCustody()" id="tab-cautela" class="voith-nav-link h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                        <span>Em Posse</span>
+                        <span id="navCustodyCount" class="px-1.5 py-0.5 text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 rounded">0</span>
+                    </button>
+                    <button type="button" onclick="switchTab('historico')" id="tab-historico" class="voith-nav-link h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                        <span>Calibração Externa</span>
+                        <span id="hist-count" class="px-1.5 py-0.5 text-[10px] font-bold bg-[#F4F6F9] dark:bg-[#162B4A] text-slate-600 dark:text-slate-300 border border-[#DDE3EB] dark:border-[#2A4770] rounded">0</span>
+                    </button>
+                    <button type="button" onclick="switchTab('perdidos')" id="tab-perdidos" class="voith-nav-link h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                        <span>Perdidos</span>
+                        <span id="lost-count" class="px-1.5 py-0.5 text-[10px] font-bold bg-[#F4F6F9] dark:bg-[#162B4A] text-slate-600 dark:text-slate-300 border border-[#DDE3EB] dark:border-[#2A4770] rounded">0</span>
+                    </button>
+
+                    <!-- Menu Dropdown Corporativo: Ferramentas & Dados (Editor) -->
+                    <div id="toolsDropdownWrap" class="editor-only relative h-full flex items-center">
+                        <button id="toolsDropdownBtn" type="button" onclick="toggleToolsDropdown(event)" class="voith-nav-link h-full inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap" aria-expanded="false">
+                            <span>Mais opções</span>
+                            <i id="toolsDropdownChevron" class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
+                        </button>
+                        <div id="toolsDropdownMenu" class="hidden absolute right-0 top-[62px] w-64 bg-white dark:bg-[#0C1A2E] text-slate-800 dark:text-slate-100 rounded-md shadow-2xl border border-[#DDE3EB] dark:border-[#243E63] py-2 z-50">
+                            <div class="px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Operações</div>
+                            <button type="button" onclick="closeToolsDropdown(); openNewInstrumentSlide();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-plus text-[#004C97] dark:text-[#38BDF8] w-4 text-center"></i> Novo Instrumento
+                            </button>
+                            <button type="button" onclick="closeToolsDropdown(); openExternalModal();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-truck-ramp-box text-amber-600 w-4 text-center"></i> Registrar Envio Externo
+                            </button>
+                            <button type="button" onclick="closeToolsDropdown(); openPdfModal();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-file-pdf text-rose-600 w-4 text-center"></i> Relatório PDF ISO
+                            </button>
+                            <div class="border-t border-[#DDE3EB] dark:border-[#1B3354] my-1.5"></div>
+                            <div class="px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Importação & Backup</div>
+                            <button type="button" onclick="closeToolsDropdown(); document.getElementById('xlsFileInput').click();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-file-arrow-up text-emerald-600 w-4 text-center"></i> Importar .XLS / .XLSX
+                            </button>
+                            <button type="button" onclick="closeToolsDropdown(); openBulkPasteModal();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-file-excel text-teal-600 w-4 text-center"></i> Colar Linhas do Excel
+                            </button>
+                            <button type="button" onclick="closeToolsDropdown(); openBackupModal();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-shield-halved text-sky-600 w-4 text-center"></i> Backup / Restaurar JSON
+                            </button>
+                            <button type="button" onclick="closeToolsDropdown(); downloadHtmlWithEmbeddedData();" class="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-code text-indigo-600 w-4 text-center"></i> Salvar HTML Offline
+                            </button>
+                            <div class="border-t border-[#DDE3EB] dark:border-[#1B3354] my-1.5"></div>
+                            <button type="button" onclick="closeToolsDropdown(); openSheetsModal();" class="w-full px-4 py-2 text-left text-xs font-bold text-[#004C97] dark:text-[#38BDF8] hover:bg-[#F4F6F9] dark:hover:bg-[#162B4A] flex items-center gap-2.5 cursor-pointer">
+                                <i class="fa-solid fa-cloud-arrow-up w-4 text-center"></i> Nuvem Google Sheets
+                            </button>
+                        </div>
+                    </div>
+                </nav>
+
+                <!-- Direita: Busca Rápida por Código + CTA -->
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="hidden sm:flex items-center bg-[#F4F6F9] dark:bg-[#071324] border border-[#DDE3EB] dark:border-[#243E63] rounded px-2.5 py-1.5 gap-2 focus-within:border-[#004C97] dark:focus-within:border-[#009FE3] transition">
                         <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
-                        <input type="text" id="quickCodeSearch" onkeydown="if(event.key==='Enter') quickOpenByCode()" placeholder="Abrir código (ex: AC401573)..."
-                            class="bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 font-bold uppercase text-xs w-full sm:w-40 focus:outline-none border-0">
-                        <button type="button" onclick="quickOpenByCode()" class="px-2 py-0.5 bg-voith-navy hover:bg-blue-900 dark:bg-sky-500 dark:hover:bg-sky-400 text-white dark:text-slate-950 font-bold rounded-lg text-[11px] cursor-pointer transition shrink-0">
-                            Ir
+                        <input type="text" id="quickCodeSearch" onkeydown="if(event.key==='Enter') quickOpenByCode()" placeholder="Código (ex: AC401573)"
+                            class="bg-transparent text-slate-900 dark:text-white placeholder-slate-400 font-bold uppercase text-xs w-36 xl:w-44 focus:outline-none border-0">
+                        <button type="button" onclick="quickOpenByCode()" class="text-[#004C97] dark:text-[#38BDF8] hover:text-[#009FE3] font-extrabold text-xs cursor-pointer" title="Abrir instrumento">
+                            <i class="fa-solid fa-chevron-right"></i>
                         </button>
                     </div>
 
-                    <!-- Data de Referência Compacta -->
-                    <div class="bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-                        <i class="fa-regular fa-calendar text-voith-navy dark:text-sky-400"></i>
-                        <span class="text-slate-500 dark:text-slate-400 font-semibold">Ref:</span>
-                        <input type="text" id="refDateInput" oninput="maskBrazilianDateInput(this)" onchange="updateSimulationDate(this.value)" onkeydown="if(event.key==='Enter') updateSimulationDate(this.value)" maxlength="10" placeholder="DD/MM/AAAA"
-                            class="bg-transparent text-slate-900 dark:text-white font-bold text-xs w-[76px] focus:outline-none border-0">
-                        <input type="date" id="refDatePickerHelper" onchange="if(this.value) updateSimulationDate(this.value)" class="sr-only" tabindex="-1">
-                        <button type="button" onclick="openNativeDatePicker('refDatePickerHelper')" class="text-slate-500 dark:text-sky-300 hover:text-voith-navy dark:hover:text-white cursor-pointer" title="Abrir calendário opcional">
-                            <i class="fa-solid fa-calendar-days text-xs"></i>
+                    <button type="button" onclick="openCabinetPdfModal()" class="hidden xl:inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#004C97] hover:bg-[#003A75] text-white text-xs font-bold rounded transition cursor-pointer shadow-sm">
+                        <i class="fa-solid fa-print text-[11px]"></i> <span>Folha Armário</span>
+                    </button>
+
+                    <!-- Botão expansível de busca/ref no Mobile -->
+                    <button id="mobileHeaderToggleBtn" type="button" onclick="toggleMobileHeaderControls()" class="sm:hidden w-9 h-9 rounded border border-[#DDE3EB] dark:border-[#243E63] bg-slate-50 dark:bg-[#0C1A2E] text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer" title="Buscar código" aria-expanded="false">
+                        <i id="mobileHeaderToggleIcon" class="fa-solid fa-magnifying-glass text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Barra Mobile Recolhível (Busca rápida no celular) -->
+            <div id="headerCollapsibleControls" class="hidden sm:hidden px-4 pb-3 pt-1 border-t border-[#DDE3EB] dark:border-[#1B3354] flex-col gap-2">
+                <div class="flex items-center bg-[#F4F6F9] dark:bg-[#071324] border border-[#DDE3EB] dark:border-[#243E63] rounded px-3 py-2 gap-2">
+                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                    <input type="text" id="mobileQuickCodeSearch" onkeydown="if(event.key==='Enter'){document.getElementById('quickCodeSearch').value=this.value; quickOpenByCode();}" placeholder="Abrir código (ex: AC401573)..."
+                        class="bg-transparent text-slate-900 dark:text-white placeholder-slate-400 font-bold uppercase text-xs flex-1 focus:outline-none border-0">
+                    <button type="button" onclick="document.getElementById('quickCodeSearch').value=document.getElementById('mobileQuickCodeSearch').value; quickOpenByCode();" class="px-2.5 py-1 bg-[#004C97] text-white rounded text-xs font-bold cursor-pointer">Abrir</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== CONTEÚDO PRINCIPAL ==================== -->
+    <main class="flex-grow w-full">
+
+        <!-- ==================== TAB 1: DASHBOARD EXECUTIVO (ESTILO EDITORIAL VOITH.COM) ==================== -->
+        <div id="content-dashboard">
+
+            <!-- HERO SECTION FULL-BLEED VOITH.COM -->
+            <section class="voith-hero-bg text-white pb-20 pt-10 sm:pt-12">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+                        <div class="max-w-2xl space-y-3">
+                            <div class="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#009FE3]">
+                                <span class="w-6 h-[2px] bg-[#009FE3]"></span>
+                                <span>Voith Turbo • Metrologia & Qualidade</span>
+                            </div>
+                            <h1 class="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight leading-[1.12] text-white">
+                                Precisão que move<span class="voith-chevron">&gt;</span>a indústria.
+                            </h1>
+                            <p class="text-sm sm:text-base text-slate-200/90 leading-relaxed max-w-xl">
+                                Controle centralizado de instrumentos, validades de calibração, envios a laboratórios externos e rastreabilidade pública de cautelas em tempo real.
+                            </p>
+                        </div>
+
+                        <!-- Ações Hero estilo Voith.com -->
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <button type="button" onclick="switchTab('cadastro')" class="px-5 py-2.5 bg-[#009FE3] hover:bg-[#008AC7] text-[#001833] font-extrabold text-xs uppercase tracking-wider rounded transition cursor-pointer inline-flex items-center gap-2 shadow">
+                                <span>Explorar Cadastro</span>
+                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                            </button>
+                            <button type="button" onclick="openCabinetPdfModal()" class="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 font-bold text-xs uppercase tracking-wider rounded transition cursor-pointer inline-flex items-center gap-2">
+                                <i class="fa-solid fa-print text-[#009FE3]"></i>
+                                <span>Folha Armário</span>
+                            </button>
+                            <button type="button" onclick="openNewInstrumentSlide()" class="editor-only px-4 py-2.5 bg-white hover:bg-slate-100 text-[#004C97] font-extrabold text-xs uppercase tracking-wider rounded transition cursor-pointer inline-flex items-center gap-1.5 shadow">
+                                <i class="fa-solid fa-plus"></i>
+                                <span>Novo Item</span>
+                            </button>
+                            <button type="button" onclick="openExternalModal()" class="editor-only px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs uppercase tracking-wider rounded transition cursor-pointer inline-flex items-center gap-1.5 shadow">
+                                <i class="fa-solid fa-truck-ramp-box"></i>
+                                <span>Envio Externo</span>
+                            </button>
+                            <button type="button" onclick="openLoginModal()" class="readonly-only px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs uppercase tracking-wider rounded transition cursor-pointer inline-flex items-center gap-1.5 shadow">
+                                <i class="fa-solid fa-lock"></i>
+                                <span>Modo Editor</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- OVERLAPPING ARCHITECTURAL KPI CARDS (4 MÉTRICAS PRINCIPAIS) -->
+            <section class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 -mt-12 relative z-20">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- KPI 1: Conformidade Geral -->
+                    <div onclick="filterByStatusCard('EM DIA')" class="voith-card voith-card-interactive rounded-md p-5 border-t-[3px] border-t-[#004C97] dark:border-t-[#009FE3] shadow-md cursor-pointer flex flex-col justify-between gap-3 group">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <div class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Conformidade Geral</div>
+                                <div id="dash-compliance-percent" class="text-3xl sm:text-4xl font-extrabold text-[#004C97] dark:text-[#38BDF8] mt-1 tabular-nums leading-none">0.0%</div>
+                            </div>
+                            <span class="w-9 h-9 rounded bg-[#004C97]/10 dark:bg-[#009FE3]/15 text-[#004C97] dark:text-[#38BDF8] flex items-center justify-center">
+                                <i class="fa-solid fa-award"></i>
+                            </span>
+                        </div>
+                        <div class="space-y-1.5 pt-2 border-t border-[#DDE3EB] dark:border-[#1B3354]">
+                            <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                <span>Mapeados fisicamente</span>
+                                <strong id="mappedCountText" class="tabular-nums">0 / 0</strong>
+                            </div>
+                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                <div id="mappedProgressBar" class="h-full bg-[#009FE3] transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- KPI 2: Vencidos -->
+                    <div onclick="filterByStatusCard('VENCIDA')" class="voith-card voith-card-interactive rounded-md p-5 border-t-[3px] border-t-rose-600 shadow-md cursor-pointer flex flex-col justify-between gap-3 group">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <div class="text-[11px] font-bold uppercase tracking-[0.12em] text-rose-600 dark:text-rose-400">Ação Urgente • Vencidos</div>
+                                <h3 id="kpi-vencida" class="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums leading-none">0</h3>
+                            </div>
+                            <span class="w-9 h-9 rounded bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </span>
+                        </div>
+                        <div class="pt-2 border-t border-[#DDE3EB] dark:border-[#1B3354] flex items-center justify-between text-xs font-bold text-rose-600 dark:text-rose-400">
+                            <span>Ver instrumentos vencidos</span>
+                            <i class="fa-solid fa-chevron-right text-[10px] group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+
+                    <!-- KPI 3: Próx. 30 Dias -->
+                    <div onclick="filterByStatusCard('PRÓXIMA DO VENCIMENTO')" class="voith-card voith-card-interactive rounded-md p-5 border-t-[3px] border-t-amber-500 shadow-md cursor-pointer flex flex-col justify-between gap-3 group">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <div class="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-600 dark:text-amber-400">Próximos 30 Dias</div>
+                                <h3 id="kpi-proxima" class="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums leading-none">0</h3>
+                            </div>
+                            <span class="w-9 h-9 rounded bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                                <i class="fa-solid fa-clock"></i>
+                            </span>
+                        </div>
+                        <div class="pt-2 border-t border-[#DDE3EB] dark:border-[#1B3354] flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
+                            <span>Programar recolhimento</span>
+                            <i class="fa-solid fa-chevron-right text-[10px] group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+
+                    <!-- KPI 4: Em Posse / Cautela -->
+                    <div onclick="filterByInCustody()" class="voith-card voith-card-interactive rounded-md p-5 border-t-[3px] border-t-[#009FE3] shadow-md cursor-pointer flex flex-col justify-between gap-3 group">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <div class="text-[11px] font-bold uppercase tracking-[0.12em] text-[#004C97] dark:text-[#38BDF8]">Em Posse (Cautela)</div>
+                                <h3 id="kpi-custody-hero" class="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums leading-none">0</h3>
+                            </div>
+                            <span class="w-9 h-9 rounded bg-sky-50 dark:bg-sky-500/15 text-[#004C97] dark:text-[#38BDF8] flex items-center justify-center">
+                                <i class="fa-solid fa-handshake"></i>
+                            </span>
+                        </div>
+                        <div class="pt-2 border-t border-[#DDE3EB] dark:border-[#1B3354] flex items-center justify-between text-xs font-bold text-[#004C97] dark:text-[#38BDF8]">
+                            <span>Acompanhar devoluções</span>
+                            <i class="fa-solid fa-chevron-right text-[10px] group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BAND 1 (WHITE): INDICADORES SECUNDÁRIOS EM BARRA ARQUITETÔNICA -->
+            <section class="bg-white dark:bg-[#0A172A] border-b border-[#DDE3EB] dark:border-[#1B3354] mt-6 py-7">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                        <div>
+                            <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#004C97] dark:text-[#009FE3]">Panorama da Base</div>
+                            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Status Operacional<span class="voith-chevron">&gt;</span>em Tempo Real</h2>
+                        </div>
+                        <span class="text-xs text-slate-500 dark:text-slate-400">Clique em qualquer indicador para filtrar o Cadastro Mestre</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <button type="button" onclick="filterByTotalCard()" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">Total Ativos</span>
+                                <span id="kpi-total" class="text-2xl font-extrabold text-slate-900 dark:text-white tabular-nums">0</span>
+                            </div>
+                            <i class="fa-solid fa-toolbox text-[#004C97] dark:text-[#38BDF8] text-base"></i>
                         </button>
-                        <span id="autoTodayBadge" onclick="resetSimulationDate()" class="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/25 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-400/40 rounded text-[10px] font-extrabold uppercase cursor-pointer" title="Data sincronizada automaticamente com o dia atual">Hoje</span>
-                        <button id="resetSimBtn" type="button" onclick="resetSimulationDate()" class="hidden px-2 py-0.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded font-extrabold text-[10px] cursor-pointer transition">Hoje</button>
-                    </div>
-
-                    <!-- Botão Desfazer Rápido (Ctrl+Z) - Apenas Editor -->
-                    <button id="headerUndoBtn" type="button" onclick="undoLastAction()" class="editor-only hidden bg-amber-100 dark:bg-amber-400/20 hover:bg-amber-200 dark:hover:bg-amber-400/30 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-400/40 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold cursor-pointer transition" title="Desfazer última alteração (Ctrl+Z)">
-                        <i class="fa-solid fa-rotate-left"></i> <span>Desfazer (<span id="headerUndoCount">0</span>)</span>
-                    </button>
-
-                    <!-- Botão Modo Escuro / Claro -->
-                    <button id="darkModeBtn" type="button" onclick="toggleDarkMode()" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 font-semibold cursor-pointer transition" title="Alternar Modo Escuro / Claro">
-                        <i class="fa-solid fa-moon text-voith-navy dark:text-amber-300"></i> <span class="xl:inline hidden">Escuro</span>
-                    </button>
-
-                    <!-- Atalhos de Conta no Mobile (< sm) -->
-                    <button type="button" onclick="openUsersAdminModal()" class="admin-only sm:hidden bg-amber-100 dark:bg-amber-400/20 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-300/30 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold cursor-pointer transition">
-                        <i class="fa-solid fa-users-gear"></i> <span>Usuários</span>
-                    </button>
-                    <button type="button" onclick="openChangePasswordModal()" class="editor-only sm:hidden bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold cursor-pointer transition">
-                        <i class="fa-solid fa-key"></i> <span>Senha</span>
-                    </button>
-                </div>
-            </div>
-        </header>
-
-        <!-- MAIN CONTAINER -->
-        <main class="max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-5 flex-grow space-y-5 w-full">
-
-            <!-- Faixa discreta de Modo Consulta (somente sem login) -->
-            <div class="readonly-only bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-400/30 rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-200">
-                <div class="flex items-center gap-2 font-medium">
-                    <i class="fa-solid fa-eye text-amber-600 dark:text-amber-300"></i>
-                    <span><strong>Modo Consulta ativo:</strong> visualize instrumentos, acompanhe itens em posse e imprima folhas de armário.</span>
-                </div>
-                <button type="button" onclick="openLoginModal()" class="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-lg text-[11px] cursor-pointer transition">
-                    Entrar para Editar
-                </button>
-            </div>
-
-            <!-- ==================== TAB 1: DASHBOARD EXECUTIVO (BENTO GRID) ==================== -->
-            <div id="content-dashboard" class="space-y-4">
-
-                <!-- BENTO ROW 1: 3 MÉTRICAS HERO EM DESTAQUE -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <!-- Hero 1: Conformidade Geral + Mapeamento Físico -->
-                    <div class="bg-gradient-to-br from-[#0A2247] via-[#0F2C59] to-[#163D7A] rounded-2xl p-5 text-white shadow-md border border-blue-900/60 flex flex-col justify-between gap-4">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <span class="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
-                                    <i class="fa-solid fa-award"></i> Conformidade Geral
-                                </span>
-                                <div id="dash-compliance-percent" class="text-4xl font-extrabold text-emerald-400 tracking-tight mt-1 leading-none">0.0%</div>
-                                <p class="text-xs text-slate-300 mt-1.5">Instrumentos classificados dentro da validade</p>
+                        <button type="button" onclick="filterByStatusCard('EM DIA')" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 truncate">Em Dia</span>
+                                <span id="kpi-emdias" class="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">0</span>
                             </div>
-                            <button type="button" onclick="filterByStatusCard('EM DIA')" class="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold cursor-pointer transition shrink-0">
-                                Em Dia →
+                            <i class="fa-solid fa-circle-check text-emerald-600 text-base"></i>
+                        </button>
+                        <button type="button" onclick="filterByStatusCard('AGUARDANDO CALIBRAÇÃO')" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-400 truncate">Aguardando</span>
+                                <span id="kpi-aguardando" class="text-2xl font-extrabold text-sky-600 dark:text-sky-400 tabular-nums">0</span>
+                            </div>
+                            <i class="fa-solid fa-hourglass-half text-sky-600 text-base"></i>
+                        </button>
+                        <button type="button" onclick="filterByStatusCard('EM REPARO')" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 truncate">Em Reparo</span>
+                                <span id="kpi-reparo" class="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">0</span>
+                            </div>
+                            <i class="fa-solid fa-screwdriver-wrench text-indigo-600 text-base"></i>
+                        </button>
+                        <button type="button" onclick="filterByStatusCard('PENDÊNCIA DE DATA')" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400 truncate">Pendências</span>
+                                <span id="kpi-pendencia" class="text-2xl font-extrabold text-purple-600 dark:text-purple-400 tabular-nums">0</span>
+                            </div>
+                            <i class="fa-solid fa-file-circle-question text-purple-600 text-base"></i>
+                        </button>
+                        <button type="button" onclick="filterByNoLocation()" class="voith-card voith-card-interactive rounded p-3.5 text-left cursor-pointer flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="block text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400 truncate">Sem Local</span>
+                                <span id="kpi-sem-local" class="text-2xl font-extrabold text-orange-600 dark:text-orange-400 tabular-nums">0</span>
+                            </div>
+                            <i class="fa-solid fa-location-crosshairs text-orange-600 text-base"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BAND 2 (COOL GRAY): CAUTELA RÁPIDA PÚBLICA + SIMULADOR SAP -->
+            <section class="py-8">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 xl:grid-cols-12 gap-6">
+                    <!-- Painel Público de Cautela Rápida (7/12) -->
+                    <div id="dashboardCustodyPanel" class="xl:col-span-7 voith-card rounded-md p-6 border-l-[4px] border-l-amber-500 flex flex-col justify-between gap-4">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-400">Rastreabilidade Pública</span>
+                                    <span id="dashCustodyBadge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200">0 itens</span>
+                                </div>
+                                <h3 class="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">Cautela Rápida<span class="voith-chevron">&gt;</span>Em Posse</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Veja com quem está cada equipamento retirado e para qual pessoa, bancada ou armário deve retornar.</p>
+                            </div>
+                            <button type="button" onclick="filterByInCustody()" class="px-3.5 py-2 bg-[#004C97] hover:bg-[#003A75] text-white rounded text-xs font-bold cursor-pointer transition inline-flex items-center gap-1.5 shrink-0">
+                                <span>Ver todos</span>
+                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
                             </button>
                         </div>
-                        <div class="pt-3 border-t border-white/15 space-y-1.5">
-                            <div class="flex items-center justify-between text-[11px] text-slate-200 font-semibold">
-                                <span class="flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-emerald-400"></i> Mapeamento Físico</span>
-                                <strong id="mappedCountText" class="text-white">0 / 0</strong>
-                            </div>
-                            <div class="w-full h-1.5 bg-white/15 rounded-full overflow-hidden">
-                                <div id="mappedProgressBar" class="h-full bg-emerald-400 rounded-full transition-all duration-300" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Hero 2: Vencidas (Ação Urgente) -->
-                    <div onclick="filterByStatusCard('VENCIDA')" class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-rose-200 dark:border-rose-500/30 hover:border-rose-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-4 group">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                                    <i class="fa-solid fa-triangle-exclamation"></i> Ação Urgente • Vencidos
-                                </span>
-                                <h3 id="kpi-vencida" class="text-4xl font-extrabold text-rose-600 dark:text-rose-400 tracking-tight mt-1 leading-none">0</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Equipamentos fora da validade metrológica</p>
-                            </div>
-                            <div class="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center text-xl shrink-0">
-                                <i class="fa-solid fa-circle-exclamation"></i>
-                            </div>
-                        </div>
-                        <div class="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-rose-600 dark:text-rose-400">
-                            <span>Filtrar instrumentos vencidos</span>
-                            <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
-                        </div>
-                    </div>
-
-                    <!-- Hero 3: Próximos 30 Dias (Atenção) -->
-                    <div onclick="filterByStatusCard('PRÓXIMA DO VENCIMENTO')" class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-amber-200 dark:border-amber-500/30 hover:border-amber-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-4 group">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                                    <i class="fa-solid fa-clock"></i> Atenção • Próx. 30 Dias
-                                </span>
-                                <h3 id="kpi-proxima" class="text-4xl font-extrabold text-amber-600 dark:text-amber-400 tracking-tight mt-1 leading-none">0</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Programar recolhimento para calibração</p>
-                            </div>
-                            <div class="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0">
-                                <i class="fa-solid fa-bell"></i>
-                            </div>
-                        </div>
-                        <div class="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-amber-600 dark:text-amber-400">
-                            <span>Antecipar calibrações</span>
-                            <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- BENTO ROW 2: PÍLULAS COMPACTAS DOS INDICADORES SECUNDÁRIOS -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                    <button type="button" onclick="filterByTotalCard()" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-voith-navy dark:hover:border-sky-400 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-slate-400 uppercase truncate">Total Ativos</span>
-                            <span id="kpi-total" class="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-toolbox text-voith-navy dark:text-sky-400 text-sm shrink-0"></i>
-                    </button>
-
-                    <button type="button" onclick="filterByStatusCard('EM DIA')" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-emerald-500 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase truncate">Em Dia</span>
-                            <span id="kpi-emdias" class="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-circle-check text-emerald-500 text-sm shrink-0"></i>
-                    </button>
-
-                    <button type="button" onclick="filterByStatusCard('AGUARDANDO CALIBRAÇÃO')" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-sky-500 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase truncate">Aguardando</span>
-                            <span id="kpi-aguardando" class="text-lg font-extrabold text-sky-600 dark:text-sky-400 leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-hourglass-half text-sky-500 text-sm shrink-0"></i>
-                    </button>
-
-                    <button type="button" onclick="filterByStatusCard('EM REPARO')" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase truncate">Em Reparo</span>
-                            <span id="kpi-reparo" class="text-lg font-extrabold text-indigo-600 dark:text-indigo-400 leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-screwdriver-wrench text-indigo-500 text-sm shrink-0"></i>
-                    </button>
-
-                    <button type="button" onclick="filterByStatusCard('PENDÊNCIA DE DATA')" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase truncate">Pendências</span>
-                            <span id="kpi-pendencia" class="text-lg font-extrabold text-purple-600 dark:text-purple-400 leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-file-circle-question text-purple-500 text-sm shrink-0"></i>
-                    </button>
-
-                    <button type="button" onclick="filterByNoLocation()" class="bg-white dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-orange-500 transition flex items-center justify-between gap-2 text-left cursor-pointer shadow-sm">
-                        <div class="min-w-0">
-                            <span class="block text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase truncate">Sem Local</span>
-                            <span id="kpi-sem-local" class="text-lg font-extrabold text-orange-600 dark:text-orange-400 leading-tight">0</span>
-                        </div>
-                        <i class="fa-solid fa-location-crosshairs text-orange-500 text-sm shrink-0"></i>
-                    </button>
-                </div>
-
-                <!-- BENTO ROW 3: CAUTELA RÁPIDA PÚBLICA + SIMULADOR & AÇÕES -->
-                <div class="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                    <!-- Painel Público: Cautela Rápida (7/12) -->
-                    <div id="dashboardCustodyPanel" class="xl:col-span-7 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-amber-200 dark:border-amber-500/30 space-y-3.5 flex flex-col justify-between">
-                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 flex items-center justify-center text-base shrink-0">
-                                    <i class="fa-solid fa-handshake"></i>
-                                </div>
-                                <div>
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Cautela Rápida — Em Posse</h3>
-                                        <span id="dashCustodyBadge" class="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30">0 itens</span>
-                                    </div>
-                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Consulta pública de quem está com cada item e para onde deve retornar.</p>
-                                </div>
-                            </div>
-                            <button type="button" onclick="filterByInCustody()" class="px-3 py-1.5 bg-amber-100 dark:bg-amber-500/20 hover:bg-amber-200 dark:hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1.5 shrink-0">
-                                <i class="fa-solid fa-filter"></i> Ver lista
-                            </button>
-                        </div>
-                        <div id="dashboardCustodyGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[260px] overflow-y-auto pr-0.5">
+                        <div id="dashboardCustodyGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[280px] overflow-y-auto pr-0.5">
                             <!-- Preenchido via JS -->
                         </div>
                     </div>
 
-                    <!-- Simulador de Vencimentos + Ações Rápidas (5/12) -->
-                    <div class="xl:col-span-5 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-500/15 text-voith-navy dark:text-sky-400 flex items-center justify-center text-base shrink-0">
-                                    <i class="fa-solid fa-calendar-check"></i>
-                                </div>
-                                <div>
-                                    <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Simulador de Vencimentos (SAP)</h3>
-                                    <p id="simSummaryText" class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">Selecione uma data futura para simular vencimentos.</p>
-                                </div>
+                    <!-- Simulador de Vencimentos SAP (5/12) -->
+                    <div class="xl:col-span-5 voith-card rounded-md p-6 border-l-[4px] border-l-[#004C97] dark:border-l-[#009FE3] flex flex-col justify-between gap-4">
+                        <div class="space-y-3">
+                            <div>
+                                <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-[#004C97] dark:text-[#009FE3]">Planejamento de Orçamento</span>
+                                <h3 class="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">Simulador<span class="voith-chevron">&gt;</span>Vencimentos SAP</h3>
+                                <p id="simSummaryText" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-1.5">Selecione uma data futura para simular vencimentos.</p>
                             </div>
+
                             <div class="flex flex-wrap items-center gap-1.5 pt-1">
-                                <button type="button" onclick="updateSimulationDate('2026-12-05')" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-voith-navy hover:text-white rounded-lg text-[11px] font-semibold cursor-pointer transition">Dez/2026</button>
-                                <button type="button" onclick="updateSimulationDate('2027-01-05')" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-voith-navy hover:text-white rounded-lg text-[11px] font-semibold cursor-pointer transition">Jan/2027</button>
-                                <button type="button" onclick="updateSimulationDate('2027-02-05')" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-voith-navy hover:text-white rounded-lg text-[11px] font-semibold cursor-pointer transition">Fev/2027</button>
-                                <button type="button" onclick="updateSimulationDate('2027-03-05')" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-voith-navy hover:text-white rounded-lg text-[11px] font-semibold cursor-pointer transition">Mar/2027</button>
-                                <button type="button" onclick="updateSimulationDate('2027-06-05')" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-voith-navy hover:text-white rounded-lg text-[11px] font-semibold cursor-pointer transition">Jun/2027</button>
-                                <button type="button" onclick="resetSimulationDate()" class="px-2.5 py-1.5 bg-emerald-100 dark:bg-emerald-500/20 hover:bg-emerald-200 text-emerald-800 dark:text-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer transition">Hoje</button>
+                                <button type="button" onclick="updateSimulationDate('2026-12-05')" class="px-3 py-1.5 bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-[#004C97] hover:text-white border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-bold cursor-pointer transition">Dez/2026</button>
+                                <button type="button" onclick="updateSimulationDate('2027-01-05')" class="px-3 py-1.5 bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-[#004C97] hover:text-white border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-bold cursor-pointer transition">Jan/2027</button>
+                                <button type="button" onclick="updateSimulationDate('2027-02-05')" class="px-3 py-1.5 bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-[#004C97] hover:text-white border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-bold cursor-pointer transition">Fev/2027</button>
+                                <button type="button" onclick="updateSimulationDate('2027-03-05')" class="px-3 py-1.5 bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-[#004C97] hover:text-white border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-bold cursor-pointer transition">Mar/2027</button>
+                                <button type="button" onclick="updateSimulationDate('2027-06-05')" class="px-3 py-1.5 bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-[#004C97] hover:text-white border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-bold cursor-pointer transition">Jun/2027</button>
+                                <button type="button" onclick="resetSimulationDate()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold cursor-pointer transition">Voltar p/ Hoje</button>
                             </div>
                         </div>
 
-                        <!-- Ações Diárias + Dropdown Ferramentas -->
-                        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="openNewInstrumentSlide()" class="editor-only px-3 py-2 bg-voith-navy hover:bg-blue-900 text-white font-bold rounded-xl text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer">
-                                <i class="fa-solid fa-plus"></i> Novo Item
-                            </button>
-                            <button type="button" onclick="openExternalModal()" class="editor-only px-3 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer">
-                                <i class="fa-solid fa-truck-ramp-box"></i> Envio Externo
-                            </button>
-                            <button type="button" onclick="openCabinetPdfModal()" class="px-3 py-2 bg-sky-100 dark:bg-sky-500/20 hover:bg-sky-200 text-sky-900 dark:text-sky-200 font-bold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer border border-sky-200 dark:border-sky-500/30">
-                                <i class="fa-solid fa-print"></i> Folha Armário
-                            </button>
-                            <button type="button" onclick="openPdfModal()" class="editor-only px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer border border-slate-200 dark:border-slate-700">
-                                <i class="fa-solid fa-file-pdf text-rose-600"></i> PDF ISO
-                            </button>
-
-                            <!-- Menu Dropdown Agrupado: Dados / Ferramentas -->
-                            <div id="toolsDropdownWrap" class="editor-only relative">
-                                <button id="toolsDropdownBtn" type="button" onclick="toggleToolsDropdown(event)" class="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 cursor-pointer" aria-expanded="false">
-                                    <i class="fa-solid fa-toolbox text-voith-navy dark:text-sky-400"></i>
-                                    <span>Dados</span>
-                                    <i id="toolsDropdownChevron" class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
+                        <div class="pt-4 border-t border-[#DDE3EB] dark:border-[#1B3354] flex flex-wrap items-center justify-between gap-2">
+                            <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Relatórios rápidos:</span>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="openPdfModal()" class="editor-only px-3 py-1.5 bg-slate-100 dark:bg-[#162B4A] hover:bg-[#004C97] hover:text-white rounded text-xs font-bold cursor-pointer transition inline-flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-pdf text-rose-600"></i> PDF ISO
                                 </button>
-                                <div id="toolsDropdownMenu" class="hidden absolute left-0 sm:left-auto sm:right-0 mt-2 w-60 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-1.5 z-50 overflow-hidden">
-                                    <button type="button" onclick="closeToolsDropdown(); document.getElementById('xlsFileInput').click();" class="w-full px-4 py-2.5 text-left text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition">
-                                        <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-file-arrow-up"></i></span>
-                                        <span>Importar .XLS / .XLSX</span>
-                                    </button>
-                                    <button type="button" onclick="closeToolsDropdown(); openBulkPasteModal();" class="w-full px-4 py-2.5 text-left text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition">
-                                        <span class="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-file-excel"></i></span>
-                                        <span>Colar do Excel</span>
-                                    </button>
-                                    <button type="button" onclick="closeToolsDropdown(); downloadHtmlWithEmbeddedData();" class="w-full px-4 py-2.5 text-left text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition">
-                                        <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-code"></i></span>
-                                        <span>Salvar HTML Offline</span>
-                                    </button>
-                                    <div class="border-t border-slate-100 dark:border-slate-800 my-1"></div>
-                                    <button type="button" onclick="closeToolsDropdown(); openSheetsModal();" class="w-full px-4 py-2.5 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition">
-                                        <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-cloud-arrow-up"></i></span>
-                                        <span>Nuvem Google Sheets</span>
-                                    </button>
+                                <button type="button" onclick="openCabinetPdfModal()" class="px-3 py-1.5 bg-slate-100 dark:bg-[#162B4A] hover:bg-[#004C97] hover:text-white rounded text-xs font-bold cursor-pointer transition inline-flex items-center gap-1.5">
+                                    <i class="fa-solid fa-print text-[#004C97] dark:text-[#38BDF8]"></i> Porta Armário
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BAND 3 (WHITE): GRÁFICOS EXECUTIVOS -->
+            <section class="bg-white dark:bg-[#0A172A] border-y border-[#DDE3EB] dark:border-[#1B3354] py-8">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#004C97] dark:text-[#009FE3]">Análise Executiva</div>
+                        <h2 class="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Desempenho<span class="voith-chevron">&gt;</span>Conformidade & Setores</h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div class="lg:col-span-4 voith-card rounded-md p-5 flex flex-col items-center justify-between">
+                            <h3 class="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider mb-2 w-full text-left">Índice de Conformidade</h3>
+                            <div class="w-full max-w-[240px] h-[190px] relative flex items-center justify-center">
+                                <canvas id="statusChart"></canvas>
+                                <div class="absolute bottom-4 text-center pointer-events-none">
+                                    <span id="gaugeCenterText" class="text-3xl font-extrabold text-[#004C97] dark:text-[#38BDF8] tabular-nums">0%</span>
+                                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Em Dia</p>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- BENTO ROW 4: GRÁFICOS EXECUTIVOS (4/12 + 8/12) -->
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    <div class="lg:col-span-4 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-between">
-                        <h3 class="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider mb-2 w-full text-left">Velocímetro de Conformidade</h3>
-                        <div class="w-full max-w-[240px] h-[185px] relative flex items-center justify-center">
-                            <canvas id="statusChart"></canvas>
-                            <div class="absolute bottom-4 text-center pointer-events-none">
-                                <span id="gaugeCenterText" class="text-3xl font-extrabold text-voith-navy">0%</span>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase">Em Dia</p>
+                            <div class="grid grid-cols-3 gap-2 w-full pt-3 border-t border-[#DDE3EB] dark:border-[#1B3354] text-center text-xs">
+                                <button type="button" onclick="filterByStatusCard('EM DIA')" class="p-1.5 rounded bg-emerald-50 text-emerald-700 font-bold cursor-pointer hover:bg-emerald-100">Em Dia</button>
+                                <button type="button" onclick="filterByStatusCard('PRÓXIMA DO VENCIMENTO')" class="p-1.5 rounded bg-amber-50 text-amber-700 font-bold cursor-pointer hover:bg-amber-100">Próx. 30d</button>
+                                <button type="button" onclick="filterByStatusCard('VENCIDA')" class="p-1.5 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer hover:bg-rose-100">Vencidos</button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-3 gap-2 w-full pt-3 border-t border-slate-100 dark:border-slate-800 text-center text-xs">
-                            <button type="button" onclick="filterByStatusCard('EM DIA')" class="p-1.5 rounded-xl bg-emerald-50 text-emerald-700 font-bold cursor-pointer hover:bg-emerald-100">Em Dia</button>
-                            <button type="button" onclick="filterByStatusCard('PRÓXIMA DO VENCIMENTO')" class="p-1.5 rounded-xl bg-amber-50 text-amber-700 font-bold cursor-pointer hover:bg-amber-100">Próx. 30d</button>
-                            <button type="button" onclick="filterByStatusCard('VENCIDA')" class="p-1.5 rounded-xl bg-rose-50 text-rose-700 font-bold cursor-pointer hover:bg-rose-100">Vencidos</button>
-                        </div>
-                    </div>
 
-                    <div class="lg:col-span-8 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 class="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Status Empilhado por Setor Oficial</h3>
-                            <span class="text-[11px] text-slate-400">Clique na barra para filtrar</span>
-                        </div>
-                        <div class="w-full h-[240px] relative">
-                            <canvas id="setorChart"></canvas>
+                        <div class="lg:col-span-8 voith-card rounded-md p-5 flex flex-col justify-between">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Distribuição por Setor Oficial</h3>
+                                <span class="text-[11px] text-slate-400">Clique na barra para filtrar o setor</span>
+                            </div>
+                            <div class="w-full h-[250px] relative">
+                                <canvas id="setorChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </section>
 
-                <!-- BENTO ROW 5: LINHA DO TEMPO (12 MESES) -->
-                <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <!-- BAND 4 (COOL GRAY): LINHA DO TEMPO 12 MESES -->
+            <section class="py-8">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
                         <div>
-                            <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Linha do Tempo de Vencimentos (Próximos 12 Meses)</h3>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em qualquer mês para filtrar os instrumentos programados para vencer naquele período.</p>
+                            <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#004C97] dark:text-[#009FE3]">Calendário de Vencimentos</div>
+                            <h2 class="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Horizonte<span class="voith-chevron">&gt;</span>Próximos 12 Meses</h2>
                         </div>
-                        <span class="text-[11px] font-bold text-voith-navy bg-blue-50 px-2.5 py-1 rounded-full">Filtro Rápido Mensal</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400">Clique em um mês para listar todos os vencimentos daquele período</span>
                     </div>
-                    <div id="timelineHeatmap" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2">
+                    <div id="timelineHeatmap" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2.5">
                         <!-- Preenchido via JS -->
                     </div>
                 </div>
+            </section>
 
-                <!-- BENTO ROW 6: RESPONSÁVEIS TÉCNICOS & ARMÁRIOS -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
-                        <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Responsáveis Técnicos <span class="editor-only-inline font-semibold text-slate-400">(Filtro & PDF)</span><span class="readonly-only font-semibold text-slate-400">(Clique para Filtrar)</span></h3>
+            <!-- BAND 5 (WHITE): RESPONSÁVEIS TÉCNICOS & ARMÁRIOS -->
+            <section class="bg-white dark:bg-[#0A172A] border-t border-[#DDE3EB] dark:border-[#1B3354] py-8">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="voith-card rounded-md p-6 space-y-4">
+                        <div>
+                            <div class="text-[11px] font-bold uppercase tracking-[0.14em] text-[#004C97] dark:text-[#009FE3]">Equipe</div>
+                            <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Responsáveis Técnicos <span class="editor-only-inline text-xs font-medium text-slate-400">(Filtro & PDF)</span></h3>
+                        </div>
                         <div id="responsiblesGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <!-- Preenchido via JS -->
                         </div>
                     </div>
-                    <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Inventário por Armário / Bancada</h3>
-                            <button type="button" onclick="openCabinetPdfModal()" class="text-xs font-bold text-voith-navy hover:underline cursor-pointer">🚪 Folha Porta de Armário</button>
+
+                    <div class="voith-card rounded-md p-6 space-y-4">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] font-bold uppercase tracking-[0.14em] text-[#004C97] dark:text-[#009FE3]">Mapeamento de Fábrica</div>
+                                <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Inventário por Armário / Bancada</h3>
+                            </div>
+                            <button type="button" onclick="openCabinetPdfModal()" class="text-xs font-bold text-[#004C97] dark:text-[#38BDF8] hover:underline cursor-pointer shrink-0">Folha Armário &gt;</button>
                         </div>
                         <div id="cabinetsGrid" class="flex flex-wrap gap-2">
                             <!-- Preenchido via JS -->
                         </div>
                     </div>
                 </div>
+            </section>
+        </div>
+
+        <!-- ==================== TAB 2: CADASTRO MESTRE & AÇÕES ==================== -->
+        <div id="content-cadastro" class="hidden">
+            <!-- Sub-Header Corporativo Voith -->
+            <div class="bg-[#002855] text-white border-b border-blue-900/60">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#009FE3]">Voith Turbo • Base Oficial</div>
+                        <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight">Cadastro Mestre<span class="voith-chevron">&gt;</span>Instrumentos & Ações</h2>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <button type="button" onclick="openNewInstrumentSlide()" class="editor-only px-3.5 py-2 bg-[#009FE3] hover:bg-[#008AC7] text-[#001833] font-extrabold rounded transition inline-flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-plus"></i> Novo Item
+                        </button>
+                        <button type="button" onclick="exportCSV()" class="editor-only px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold rounded transition inline-flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-file-csv text-emerald-300"></i> CSV
+                        </button>
+                        <button type="button" onclick="openPdfModal()" class="editor-only px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold rounded transition inline-flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-file-pdf text-rose-300"></i> PDF ISO
+                        </button>
+                        <button type="button" onclick="openCabinetPdfModal()" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold rounded transition inline-flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-print text-[#009FE3]"></i> Folha Armário
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            <!-- ==================== TAB 2: CADASTRO MESTRE & AÇÕES ==================== -->
-            <div id="content-cadastro" class="space-y-4 hidden">
-
+            <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
                 <!-- Barra de Ações em Massa -->
-                <div id="bulkActionBar" class="editor-only hidden bg-blue-950 text-white p-4 rounded-2xl shadow-lg border border-blue-800 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+                <div id="bulkActionBar" class="editor-only hidden bg-[#001B3A] text-white p-4 rounded-md shadow-lg border border-[#004C97] flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-2">
-                        <span class="bg-sky-400 text-slate-950 font-extrabold text-xs px-2.5 py-1 rounded-lg"><span id="selectedCountBadge">0</span> selecionados</span>
+                        <span class="bg-[#009FE3] text-[#001833] font-extrabold text-xs px-2.5 py-1 rounded"><span id="selectedCountBadge">0</span> selecionados</span>
                         <span id="selectedCodesPreview" class="text-xs text-sky-200 font-mono truncate max-w-md"></span>
                         <button type="button" onclick="clearSelection()" class="text-xs text-rose-300 hover:text-rose-200 underline ml-2 cursor-pointer">Limpar seleção</button>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                        <button type="button" onclick="openBatchCustodyModal()" class="px-3.5 py-1.5 bg-indigo-400 hover:bg-indigo-300 text-slate-950 font-extrabold rounded-xl text-xs cursor-pointer transition flex items-center gap-1.5 shadow">
-                            <i class="fa-solid fa-handshake"></i> Registrar Cautela (Em Posse)
+                        <button type="button" onclick="openBatchCustodyModal()" class="px-3 py-1.5 bg-indigo-400 hover:bg-indigo-300 text-slate-950 font-extrabold rounded text-xs cursor-pointer transition inline-flex items-center gap-1.5">
+                            <i class="fa-solid fa-handshake"></i> Registrar Cautela
                         </button>
-                        <button type="button" onclick="openBatchExternalModal()" class="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-xl text-xs cursor-pointer transition flex items-center gap-1.5 shadow">
-                            <i class="fa-solid fa-truck-ramp-box"></i> Enviar Selecionados p/ Lab. Externo
+                        <button type="button" onclick="openBatchExternalModal()" class="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded text-xs cursor-pointer transition inline-flex items-center gap-1.5">
+                            <i class="fa-solid fa-truck-ramp-box"></i> Enviar p/ Lab. Externo
                         </button>
-                        <input type="text" id="bulkLocationInput" onkeydown="if(event.key==='Enter') applyBulkLocation()" placeholder="Ex: Armario T1" class="px-3 py-1.5 rounded-xl text-xs bg-white text-slate-900 font-semibold w-36 focus:outline-none">
-                        <button type="button" onclick="applyBulkLocation()" class="px-3.5 py-1.5 bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold rounded-xl text-xs cursor-pointer transition">Definir Local</button>
+                        <input type="text" id="bulkLocationInput" onkeydown="if(event.key==='Enter') applyBulkLocation()" placeholder="Ex: Armario T1" class="px-3 py-1.5 rounded text-xs bg-white text-slate-900 font-semibold w-36 focus:outline-none">
+                        <button type="button" onclick="applyBulkLocation()" class="px-3 py-1.5 bg-[#009FE3] hover:bg-[#008AC7] text-[#001833] font-extrabold rounded text-xs cursor-pointer transition">Definir Local</button>
                         <div class="flex items-center gap-1">
-                            <button type="button" onclick="applyBulkLocation('Armario T1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-semibold cursor-pointer">T1</button>
-                            <button type="button" onclick="applyBulkLocation('Armario FR1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-semibold cursor-pointer">FR1</button>
-                            <button type="button" onclick="applyBulkLocation('Armario V4')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-semibold cursor-pointer">V4</button>
-                            <button type="button" onclick="applyBulkLocation('Armario E1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-semibold cursor-pointer">E1</button>
-                            <button type="button" onclick="applyBulkLocation('Bancada P1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-semibold cursor-pointer">P1</button>
+                            <button type="button" onclick="applyBulkLocation('Armario T1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded text-[11px] font-semibold cursor-pointer">T1</button>
+                            <button type="button" onclick="applyBulkLocation('Armario FR1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded text-[11px] font-semibold cursor-pointer">FR1</button>
+                            <button type="button" onclick="applyBulkLocation('Armario V4')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded text-[11px] font-semibold cursor-pointer">V4</button>
+                            <button type="button" onclick="applyBulkLocation('Armario E1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded text-[11px] font-semibold cursor-pointer">E1</button>
+                            <button type="button" onclick="applyBulkLocation('Bancada P1')" class="px-2 py-1 bg-white/15 hover:bg-white/25 rounded text-[11px] font-semibold cursor-pointer">P1</button>
                         </div>
-                        <button type="button" onclick="openBulkDeleteModal()" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer transition flex items-center gap-1.5 shadow">
-                            <i class="fa-solid fa-trash-can"></i> Excluir Selecionados
+                        <button type="button" onclick="openBulkDeleteModal()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded text-xs cursor-pointer transition inline-flex items-center gap-1.5">
+                            <i class="fa-solid fa-trash-can"></i> Excluir
                         </button>
                     </div>
                 </div>
 
-                <!-- Card Principal do Cadastro Mestre (Toolbar Limpa + Chips Ativos + Filtros Retráteis) -->
-                <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3.5">
+                <!-- Card Principal do Cadastro Mestre -->
+                <div class="voith-card rounded-md p-4 sm:p-5 space-y-3.5 shadow-sm">
 
                     <!-- Toolbar Primária Enxuta (1 linha limpa) -->
                     <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
@@ -798,82 +966,69 @@
                             <div class="relative flex-1 min-w-[200px]">
                                 <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
                                 <input type="text" id="searchInput" oninput="filterTable()" placeholder="Buscar código, descrição, local, posse, resp..."
-                                    class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                    class="w-full pl-9 pr-3 py-2 bg-[#F4F6F9] dark:bg-[#071324] border border-[#DDE3EB] dark:border-[#243E63] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                             </div>
 
                             <!-- Botão Painel Retrátil de Filtros -->
                             <button type="button" id="btnToggleFiltersPanel" onclick="toggleCadastroFiltersPanel()" aria-expanded="false"
-                                class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer transition flex items-center gap-1.5 shrink-0">
+                                class="px-3.5 py-2 rounded text-xs font-bold bg-[#F4F6F9] dark:bg-[#10223B] hover:bg-slate-200 dark:hover:bg-[#162B4A] text-slate-700 dark:text-slate-200 border border-[#DDE3EB] dark:border-[#243E63] cursor-pointer transition flex items-center gap-1.5 shrink-0">
                                 <i class="fa-solid fa-sliders"></i>
                                 <span>Filtros</span>
-                                <span id="activeFiltersBadge" class="hidden px-1.5 py-0.5 rounded-full bg-voith-navy text-white text-[10px] font-extrabold leading-none">0</span>
+                                <span id="activeFiltersBadge" class="hidden px-1.5 py-0.5 rounded bg-[#004C97] text-white text-[10px] font-extrabold leading-none">0</span>
                                 <i id="filtersPanelChevron" class="fa-solid fa-chevron-down text-[10px] opacity-70 transition-transform"></i>
                             </button>
 
                             <!-- Pílula Pública: Em Posse -->
-                            <button type="button" id="btnFilterInCustody" onclick="toggleCustodyOnlyFilter()" class="px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 cursor-pointer transition flex items-center gap-1.5 shrink-0" title="Mostrar apenas instrumentos atualmente em posse / cautela">
+                            <button type="button" id="btnFilterInCustody" onclick="toggleCustodyOnlyFilter()" class="px-3 py-2 rounded text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 cursor-pointer transition flex items-center gap-1.5 shrink-0" title="Mostrar apenas instrumentos atualmente em posse / cautela">
                                 <i class="fa-solid fa-handshake"></i> <span>Em Posse (<span id="custodyFilterCount">0</span>)</span>
                             </button>
                         </div>
 
-                        <!-- Ações Principais à Direita -->
-                        <div class="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 text-xs">
-                            <button type="button" onclick="openNewInstrumentSlide()" class="editor-only bg-voith-navy hover:bg-blue-900 text-white font-bold px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer">
-                                <i class="fa-solid fa-plus"></i> <span>Novo</span>
-                            </button>
-                            <button type="button" onclick="exportCSV()" class="editor-only bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer" title="Exportar CSV">
-                                <i class="fa-solid fa-file-csv"></i> <span class="hidden sm:inline">CSV</span>
-                            </button>
-                            <button type="button" onclick="openPdfModal()" class="editor-only bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer" title="Gerar PDF ISO">
-                                <i class="fa-solid fa-file-pdf"></i> <span class="hidden sm:inline">PDF</span>
-                            </button>
-                            <button type="button" onclick="openCabinetPdfModal()" class="px-2.5 py-2 rounded-xl font-semibold bg-blue-50 hover:bg-blue-100 text-voith-navy border border-blue-200 cursor-pointer flex items-center gap-1" title="Folha Porta de Armário">
-                                <i class="fa-solid fa-print"></i> <span class="hidden xl:inline">Armário</span>
-                            </button>
-                            <div class="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block"></div>
-                            <button type="button" id="btnViewModeToggle" onclick="toggleTableCardViewMode()" class="px-2.5 py-2 rounded-xl font-bold bg-sky-50 text-sky-800 border border-sky-200 cursor-pointer transition flex items-center gap-1" title="Alternar entre Tabela e Cartões">
+                        <!-- Controles de Visualização -->
+                        <div class="flex flex-wrap items-center justify-between sm:justify-end gap-2 text-xs">
+                            <button type="button" id="btnViewModeToggle" onclick="toggleTableCardViewMode()" class="px-3 py-2 rounded font-bold bg-sky-50 text-[#004C97] border border-sky-200 cursor-pointer transition flex items-center gap-1.5" title="Alternar entre Tabela e Cartões">
                                 <i id="btnViewModeIcon" class="fa-solid fa-grip"></i> <span id="btnViewModeLabel">Cartões</span>
                             </button>
-                            <div class="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                                <button type="button" id="btnDensityComfort" onclick="setCompactMode(false)" class="px-2.5 py-1 rounded-lg font-bold bg-voith-navy text-white cursor-pointer text-[11px]">Confortável</button>
-                                <button type="button" id="btnDensityCompact" onclick="setCompactMode(true)" class="px-2.5 py-1 rounded-lg font-bold text-slate-600 dark:text-slate-300 cursor-pointer text-[11px]">Compacto</button>
+                            <div class="hidden sm:flex items-center bg-[#F4F6F9] dark:bg-[#10223B] p-0.5 rounded border border-[#DDE3EB] dark:border-[#243E63]">
+                                <button type="button" id="btnDensityComfort" onclick="setCompactMode(false)" class="px-2.5 py-1.5 rounded font-bold bg-[#004C97] text-white cursor-pointer text-[11px]">Confortável</button>
+                                <button type="button" id="btnDensityCompact" onclick="setCompactMode(true)" class="px-2.5 py-1.5 rounded font-bold text-slate-600 dark:text-slate-300 cursor-pointer text-[11px]">Compacto</button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Barra Dinâmica de Chips de Filtros Ativos (removíveis individualmente com ×) -->
-                    <div id="activeFiltersBar" class="hidden flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+                    <!-- Barra Dinâmica de Chips de Filtros Ativos -->
+                    <div id="activeFiltersBar" class="hidden flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-[#DDE3EB] dark:border-[#1B3354] text-xs">
                         <span class="text-[11px] font-bold text-slate-400 uppercase mr-1">Filtros ativos:</span>
                         <div id="activeFiltersChips" class="flex flex-wrap items-center gap-1.5"></div>
-                        <button type="button" onclick="resetAllFilters(true)" class="ml-auto px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 cursor-pointer transition flex items-center gap-1">
+                        <button type="button" onclick="resetAllFilters(true)" class="ml-auto px-2.5 py-1 rounded text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 cursor-pointer transition flex items-center gap-1">
                             <i class="fa-solid fa-filter-circle-xmark"></i> Limpar tudo
                         </button>
                     </div>
 
                     <!-- Painel Retrátil de Filtros Avançados -->
-                    <div id="cadastroFiltersPanel" class="hidden bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3.5">
+                    <div id="cadastroFiltersPanel" class="hidden bg-[#F4F6F9] dark:bg-[#071324] border border-[#DDE3EB] dark:border-[#1B3354] rounded p-4 space-y-3.5">
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Setor</label>
-                                <select id="filterSetor" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Setor</label>
+                                <select id="filterSetor" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-[#0C1A2E] border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                                     <option value="">Todos os Setores</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Localização</label>
-                                <select id="filterLocal" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Localização</label>
+                                <select id="filterLocal" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-[#0C1A2E] border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                                     <option value="">Todas as Localizações</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Responsável</label>
-                                <select id="filterResp" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Responsável</label>
+                                <select id="filterResp" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-[#0C1A2E] border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                                     <option value="">Todos os Responsáveis</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status</label>
-                                <select id="filterStatus" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+                                <select id="filterStatus" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-[#0C1A2E] border border-[#DDE3EB] dark:border-[#243E63] rounded text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                                     <option value="">Todos os Status</option>
                                     <option value="EM DIA">Em Dia</option>
                                     <option value="VENCIDA">Vencida</option>
@@ -884,53 +1039,53 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mês de Vencimento</label>
-                                <select id="filterMonth" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-slate-900 border border-blue-200 dark:border-slate-700 rounded-xl text-xs font-bold text-voith-navy focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Mês de Vencimento</label>
+                                <select id="filterMonth" onchange="filterTable()" class="w-full py-2 px-3 bg-white dark:bg-[#0C1A2E] border border-[#004C97]/30 dark:border-[#243E63] rounded text-xs font-bold text-[#004C97] dark:text-[#38BDF8] focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                                     <option value="">Todos os Meses</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-200/70 dark:border-slate-800">
+                        <div class="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-[#DDE3EB] dark:border-[#1B3354]">
                             <!-- Filtro por Família -->
                             <div class="flex flex-wrap items-center gap-1.5 text-xs">
                                 <span class="font-bold text-slate-400 uppercase text-[10px] mr-1">Família:</span>
-                                <button type="button" onclick="setFamilyFilter('')" data-fam="" class="fam-btn px-3 py-1 rounded-full font-bold bg-voith-navy text-white border border-voith-navy cursor-pointer transition">Todos</button>
-                                <button type="button" onclick="setFamilyFilter('DIMENSIONAL')" data-fam="DIMENSIONAL" class="fam-btn px-3 py-1 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-200 cursor-pointer transition">📏 Dimensional</button>
-                                <button type="button" onclick="setFamilyFilter('TORQUE')" data-fam="TORQUE" class="fam-btn px-3 py-1 rounded-full font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-pointer transition">🔧 Torque / Força</button>
-                                <button type="button" onclick="setFamilyFilter('ELETRICA')" data-fam="ELETRICA" class="fam-btn px-3 py-1 rounded-full font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200 cursor-pointer transition">⚡ Elétrica</button>
-                                <button type="button" onclick="setFamilyFilter('TEMP_PRESSAO')" data-fam="TEMP_PRESSAO" class="fam-btn px-3 py-1 rounded-full font-semibold bg-rose-50 text-rose-700 border border-rose-200 cursor-pointer transition">🌡️ Temp. / Pressão</button>
+                                <button type="button" onclick="setFamilyFilter('')" data-fam="" class="fam-btn px-3 py-1 rounded font-bold bg-[#004C97] text-white border border-[#004C97] cursor-pointer transition">Todos</button>
+                                <button type="button" onclick="setFamilyFilter('DIMENSIONAL')" data-fam="DIMENSIONAL" class="fam-btn px-3 py-1 rounded font-semibold bg-blue-50 text-blue-700 border border-blue-200 cursor-pointer transition">📏 Dimensional</button>
+                                <button type="button" onclick="setFamilyFilter('TORQUE')" data-fam="TORQUE" class="fam-btn px-3 py-1 rounded font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-pointer transition">🔧 Torque / Força</button>
+                                <button type="button" onclick="setFamilyFilter('ELETRICA')" data-fam="ELETRICA" class="fam-btn px-3 py-1 rounded font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200 cursor-pointer transition">⚡ Elétrica</button>
+                                <button type="button" onclick="setFamilyFilter('TEMP_PRESSAO')" data-fam="TEMP_PRESSAO" class="fam-btn px-3 py-1 rounded font-semibold bg-rose-50 text-rose-700 border border-rose-200 cursor-pointer transition">🌡️ Temp. / Pressão</button>
                             </div>
 
-                            <!-- Itens por Página + Importação Rápida -->
+                            <!-- Itens por Página + Importação -->
                             <div class="flex flex-wrap items-center gap-2 text-xs">
                                 <div class="flex items-center gap-1">
                                     <span class="text-slate-500 font-semibold text-[11px]">Exibir:</span>
-                                    <button type="button" onclick="setRowsPerPage(15)" data-rpp="15" class="rpp-btn px-2 py-1 rounded-lg font-bold bg-voith-navy text-white cursor-pointer">15</button>
-                                    <button type="button" onclick="setRowsPerPage(30)" data-rpp="30" class="rpp-btn px-2 py-1 rounded-lg font-bold bg-slate-100 text-slate-700 cursor-pointer">30</button>
-                                    <button type="button" onclick="setRowsPerPage(50)" data-rpp="50" class="rpp-btn px-2 py-1 rounded-lg font-bold bg-slate-100 text-slate-700 cursor-pointer">50</button>
-                                    <button type="button" onclick="setRowsPerPage(100)" data-rpp="100" class="rpp-btn px-2 py-1 rounded-lg font-bold bg-slate-100 text-slate-700 cursor-pointer">100</button>
-                                    <button type="button" onclick="setRowsPerPage(9999)" data-rpp="9999" class="rpp-btn px-2 py-1 rounded-lg font-bold bg-slate-100 text-slate-700 cursor-pointer">Todos</button>
+                                    <button type="button" onclick="setRowsPerPage(15)" data-rpp="15" class="rpp-btn px-2 py-1 rounded font-bold bg-[#004C97] text-white cursor-pointer">15</button>
+                                    <button type="button" onclick="setRowsPerPage(30)" data-rpp="30" class="rpp-btn px-2 py-1 rounded font-bold bg-slate-100 text-slate-700 cursor-pointer">30</button>
+                                    <button type="button" onclick="setRowsPerPage(50)" data-rpp="50" class="rpp-btn px-2 py-1 rounded font-bold bg-slate-100 text-slate-700 cursor-pointer">50</button>
+                                    <button type="button" onclick="setRowsPerPage(100)" data-rpp="100" class="rpp-btn px-2 py-1 rounded font-bold bg-slate-100 text-slate-700 cursor-pointer">100</button>
+                                    <button type="button" onclick="setRowsPerPage(9999)" data-rpp="9999" class="rpp-btn px-2 py-1 rounded font-bold bg-slate-100 text-slate-700 cursor-pointer">Todos</button>
                                 </div>
-                                <button type="button" onclick="document.getElementById('xlsFileInput').click()" class="editor-only px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold cursor-pointer flex items-center gap-1">
+                                <button type="button" onclick="document.getElementById('xlsFileInput').click()" class="editor-only px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1">
                                     <i class="fa-solid fa-file-arrow-up"></i> .XLS
                                 </button>
-                                <button type="button" onclick="openBulkPasteModal()" class="editor-only px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[11px] font-bold cursor-pointer flex items-center gap-1">
+                                <button type="button" onclick="openBulkPasteModal()" class="editor-only px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1">
                                     <i class="fa-solid fa-paste"></i> Excel
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Visualização em Cartões (Ideal para Celular / Conferência em Bancada) -->
+                    <!-- Visualização em Cartões (Celular / Conferência em Bancada) -->
                     <div id="mobileCardsContainer" class="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <!-- Preenchido via JS -->
                     </div>
 
-                    <!-- Tabela Principal com Cabeçalho Fixo e Ordenação Clicável -->
-                    <div id="desktopTableWrap" class="hidden md:block sticky-table-wrap rounded-xl border border-slate-200 dark:border-slate-800">
+                    <!-- Tabela Principal -->
+                    <div id="desktopTableWrap" class="hidden md:block sticky-table-wrap rounded border border-[#DDE3EB] dark:border-[#1B3354]">
                         <table class="w-full text-left border-collapse text-sm">
-                            <thead class="bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider shadow-sm select-none">
+                            <thead class="text-slate-700 font-bold text-[11px] uppercase tracking-wider select-none">
                                 <tr>
                                     <th class="editor-only p-3 w-10 text-center">
                                         <input type="checkbox" id="selectAllPageCheckbox" onchange="toggleSelectAllOnPage(this.checked)" class="rounded cursor-pointer">
@@ -967,54 +1122,59 @@
                     <div class="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-600 dark:text-slate-400 gap-2 pt-1">
                         <span id="paginationInfo">Mostrando 0 instrumentos</span>
                         <div class="flex items-center gap-2">
-                            <button type="button" onclick="changePage(-1)" id="prevBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-semibold text-slate-700 disabled:opacity-50 cursor-pointer">Anterior</button>
-                            <span id="pageIndicator" class="px-3 py-1.5 bg-voith-navy text-white rounded-lg font-bold">1 / 1</span>
-                            <button type="button" onclick="changePage(1)" id="nextBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-semibold text-slate-700 disabled:opacity-50 cursor-pointer">Próxima</button>
+                            <button type="button" onclick="changePage(-1)" id="prevBtn" class="px-3 py-1.5 bg-[#F4F6F9] hover:bg-slate-200 border border-[#DDE3EB] dark:border-[#243E63] rounded font-semibold text-slate-700 disabled:opacity-50 cursor-pointer">Anterior</button>
+                            <span id="pageIndicator" class="px-3 py-1.5 bg-[#004C97] text-white rounded font-bold tabular-nums">1 / 1</span>
+                            <button type="button" onclick="changePage(1)" id="nextBtn" class="px-3 py-1.5 bg-[#F4F6F9] hover:bg-slate-200 border border-[#DDE3EB] dark:border-[#243E63] rounded font-semibold text-slate-700 disabled:opacity-50 cursor-pointer">Próxima</button>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- ==================== TAB 3: HISTÓRICO DE CALIBRAÇÃO EXTERNA ==================== -->
-            <div id="content-historico" class="space-y-5 hidden">
-                <div class="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div>
-                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white">Histórico de Calibração Externa (<span id="hist-count-inner">0</span>)</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Ao enviar um instrumento, o status muda para <strong>AGUARDANDO CALIBRAÇÃO</strong>. Ao clicar em <strong>Confirmar Retorno</strong>, a validade volta para <strong>EM DIA</strong>.</p>
-                        </div>
-                        <button type="button" onclick="openExternalModal()" class="editor-only bg-voith-navy hover:bg-blue-900 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition flex items-center gap-2 cursor-pointer">
-                            <i class="fa-solid fa-truck-ramp-box"></i> Registrar Envio Externo
-                        </button>
+        <!-- ==================== TAB 3: HISTÓRICO DE CALIBRAÇÃO EXTERNA ==================== -->
+        <div id="content-historico" class="hidden">
+            <div class="bg-[#002855] text-white border-b border-blue-900/60">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#009FE3]">Laboratórios & Fornecedores</div>
+                        <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight">Calibração Externa<span class="voith-chevron">&gt;</span>Histórico (<span id="hist-count-inner">0</span>)</h2>
                     </div>
+                    <button type="button" onclick="openExternalModal()" class="editor-only px-4 py-2 bg-[#009FE3] hover:bg-[#008AC7] text-[#001833] font-extrabold rounded text-xs transition inline-flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-truck-ramp-box"></i> Registrar Envio Externo
+                    </button>
+                </div>
+            </div>
 
-                    <!-- Busca e Filtros Rápidos do Histórico Externo -->
+            <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                <div class="voith-card rounded-md p-5 sm:p-6 space-y-4 shadow-sm">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Ao enviar um instrumento, o status no Cadastro Mestre muda para <strong>AGUARDANDO CALIBRAÇÃO</strong>. Ao clicar em <strong>Confirmar Retorno</strong>, a validade volta para <strong>EM DIA</strong>.</p>
+
                     <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                         <div class="relative flex-grow max-w-xl">
                             <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
                             <input type="text" id="historySearchInput" oninput="renderHistoryTable()" placeholder="Buscar código, descrição, nº RPS/NF, laboratório ou setor..."
-                                class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-voith-navy">
+                                class="w-full pl-9 pr-3 py-2 bg-[#F4F6F9] dark:bg-[#071324] border border-[#DDE3EB] dark:border-[#243E63] rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#004C97]">
                         </div>
                         <div class="flex flex-wrap items-center gap-2 text-xs">
-                            <button type="button" onclick="setHistoryStatusFilter('')" data-hstatus="" class="hist-status-btn px-3 py-1.5 rounded-xl font-bold bg-voith-navy text-white border border-voith-navy cursor-pointer transition">
+                            <button type="button" onclick="setHistoryStatusFilter('')" data-hstatus="" class="hist-status-btn px-3 py-1.5 rounded font-bold bg-voith-navy text-white border border-voith-navy cursor-pointer transition">
                                 Todos (<span id="hist-badge-all">0</span>)
                             </button>
-                            <button type="button" onclick="setHistoryStatusFilter('EM TRÂNSITO')" data-hstatus="EM TRÂNSITO" class="hist-status-btn px-3 py-1.5 rounded-xl font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 cursor-pointer transition">
+                            <button type="button" onclick="setHistoryStatusFilter('EM TRÂNSITO')" data-hstatus="EM TRÂNSITO" class="hist-status-btn px-3 py-1.5 rounded font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 cursor-pointer transition">
                                 <i class="fa-solid fa-truck-fast mr-1"></i> Em Trânsito (<span id="hist-badge-transit">0</span>)
                             </button>
-                            <button type="button" onclick="setHistoryStatusFilter('CONCLUÍDO')" data-hstatus="CONCLUÍDO" class="hist-status-btn px-3 py-1.5 rounded-xl font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer transition">
+                            <button type="button" onclick="setHistoryStatusFilter('CONCLUÍDO')" data-hstatus="CONCLUÍDO" class="hist-status-btn px-3 py-1.5 rounded font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer transition">
                                 <i class="fa-solid fa-circle-check mr-1"></i> Concluído (<span id="hist-badge-done">0</span>)
                             </button>
-                            <button type="button" id="histResetFilterBtn" onclick="resetHistoryFilters()" class="hidden px-3 py-1.5 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition">
+                            <button type="button" id="histResetFilterBtn" onclick="resetHistoryFilters()" class="hidden px-3 py-1.5 rounded font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition">
                                 <i class="fa-solid fa-filter-circle-xmark mr-1"></i> Limpar
                             </button>
                         </div>
                     </div>
                     <div id="histFilterInfo" class="text-xs text-slate-500 font-medium hidden"></div>
 
-                    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="overflow-x-auto rounded border border-[#DDE3EB] dark:border-[#1B3354]">
                         <table class="w-full text-left border-collapse text-sm">
-                            <thead class="bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider">
+                            <thead class="bg-[#F4F6F9] dark:bg-[#10223B] text-slate-700 font-bold text-[11px] uppercase tracking-wider">
                                 <tr>
                                     <th class="p-3.5">Data Envio</th>
                                     <th class="p-3.5">Retorno / Nova Validade</th>
@@ -1034,23 +1194,28 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- ==================== TAB 4: INSTRUMENTOS DESATIVADOS / PERDIDOS ==================== -->
-            <div id="content-perdidos" class="space-y-5 hidden">
-                <div class="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div>
-                            <h2 class="text-base font-extrabold text-rose-700 dark:text-rose-400">Instrumentos Desativados / Perdidos (<span id="lost-count-header">0</span>)</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Cadastre diretamente equipamentos perdidos ou desativados sem precisar passar pelo Cadastro Mestre.</p>
-                        </div>
-                        <button type="button" onclick="openLostModal(-1)" class="editor-only bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition flex items-center gap-2 cursor-pointer">
-                            <i class="fa-solid fa-plus"></i> Cadastrar Perdido / Desativado
-                        </button>
+        <!-- ==================== TAB 4: INSTRUMENTOS DESATIVADOS / PERDIDOS ==================== -->
+        <div id="content-perdidos" class="hidden">
+            <div class="bg-[#002855] text-white border-b border-blue-900/60">
+                <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-300">Controle de Baixas</div>
+                        <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight">Desativados<span class="voith-chevron">&gt;</span>Perdidos (<span id="lost-count-header">0</span>)</h2>
                     </div>
+                    <button type="button" onclick="openLostModal(-1)" class="editor-only px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded text-xs transition inline-flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-plus"></i> Cadastrar Perdido / Desativado
+                    </button>
+                </div>
+            </div>
 
-                    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                <div class="voith-card rounded-md p-5 sm:p-6 space-y-4 shadow-sm">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Cadastre diretamente equipamentos perdidos ou desativados ou restaure itens localizados de volta para o Cadastro Mestre.</p>
+                    <div class="overflow-x-auto rounded border border-[#DDE3EB] dark:border-[#1B3354]">
                         <table class="w-full text-left border-collapse text-sm">
-                            <thead class="bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider">
+                            <thead class="bg-[#F4F6F9] dark:bg-[#10223B] text-slate-700 font-bold text-[11px] uppercase tracking-wider">
                                 <tr>
                                     <th class="p-3.5">Código</th>
                                     <th class="p-3.5">Descrição</th>
@@ -1068,14 +1233,63 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-        </main>
+    </main>
 
-        <!-- FOOTER INTEGRADO AO APP SHELL -->
-        <footer class="border-t border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 text-slate-500 dark:text-slate-400 py-4 px-6 text-center text-xs mt-8">
-            <p>Voith Turbo v4.0 (Layout App Corporativo • Bento Dashboard, Filtros com Chips & Nuvem Google Sheets)</p>
-        </footer>
-    </div>
+    <!-- ==================== FOOTER CORPORATIVO MULTI-COLUNA (ESTILO VOITH.COM) ==================== -->
+    <footer class="bg-[#001B3A] text-slate-300 border-t border-white/10 mt-auto">
+        <div class="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 pb-8 border-b border-white/10">
+                <div class="space-y-2.5">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-2xl font-extrabold tracking-[0.14em] text-white">VOITH</span>
+                        <span class="h-4 w-px bg-white/25"></span>
+                        <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#009FE3]">Turbo</span>
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Sistema de Gestão e Controle Metrológico sincronizado em nuvem para rastreabilidade de instrumentos, calibrações externas e cautela rápida.
+                    </p>
+                </div>
+
+                <div class="space-y-2">
+                    <h4 class="text-xs font-extrabold uppercase tracking-[0.14em] text-white">Navegação</h4>
+                    <ul class="space-y-1.5 text-xs">
+                        <li><button type="button" onclick="switchTab('dashboard')" class="hover:text-[#009FE3] transition cursor-pointer">Visão Geral</button></li>
+                        <li><button type="button" onclick="switchTab('cadastro')" class="hover:text-[#009FE3] transition cursor-pointer">Cadastro Mestre</button></li>
+                        <li><button type="button" onclick="filterByInCustody()" class="hover:text-[#009FE3] transition cursor-pointer">Em Posse / Cautela</button></li>
+                        <li><button type="button" onclick="switchTab('historico')" class="hover:text-[#009FE3] transition cursor-pointer">Calibração Externa</button></li>
+                        <li><button type="button" onclick="switchTab('perdidos')" class="hover:text-[#009FE3] transition cursor-pointer">Desativados / Perdidos</button></li>
+                    </ul>
+                </div>
+
+                <div class="space-y-2">
+                    <h4 class="text-xs font-extrabold uppercase tracking-[0.14em] text-white">Ações & Relatórios</h4>
+                    <ul class="space-y-1.5 text-xs">
+                        <li><button type="button" onclick="openCabinetPdfModal()" class="hover:text-[#009FE3] transition cursor-pointer">Folha Porta de Armário</button></li>
+                        <li class="editor-only"><button type="button" onclick="openPdfModal()" class="hover:text-[#009FE3] transition cursor-pointer">Relatório PDF ISO</button></li>
+                        <li class="editor-only"><button type="button" onclick="exportCSV()" class="hover:text-[#009FE3] transition cursor-pointer">Exportar Planilha CSV</button></li>
+                        <li class="editor-only"><button type="button" onclick="openBackupModal()" class="hover:text-[#009FE3] transition cursor-pointer">Backup / Restauração</button></li>
+                    </ul>
+                </div>
+
+                <div class="space-y-2">
+                    <h4 class="text-xs font-extrabold uppercase tracking-[0.14em] text-white">Sistema & Nuvem</h4>
+                    <ul class="space-y-1.5 text-xs">
+                        <li><button type="button" onclick="openSheetsModal()" class="hover:text-[#009FE3] transition cursor-pointer">Status Google Sheets</button></li>
+                        <li class="readonly-only"><button type="button" onclick="openLoginModal()" class="text-amber-300 hover:underline font-bold cursor-pointer">Entrar no Modo Editor</button></li>
+                        <li class="editor-only"><button type="button" onclick="openChangePasswordModal()" class="hover:text-[#009FE3] transition cursor-pointer">Alterar Minha Senha</button></li>
+                        <li class="admin-only"><button type="button" onclick="openUsersAdminModal()" class="text-amber-300 hover:underline font-bold cursor-pointer">Gerenciar Usuários</button></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="pt-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-400">
+                <span>© 2026 Voith Turbo • Controle Metrológico v5.0 (Voith Corporate Edition)</span>
+                <span>Google Sheets Cloud Sync • Rastreabilidade & Cautela Pública</span>
+            </div>
+        </div>
+    </footer>
 
     <!-- PAINEL LATERAL DESLIZANTE (SLIDE-OVER) PARA EDIÇÃO / CRIAÇÃO -->
     <div id="slideOverOverlay" class="fixed inset-0 bg-slate-900/40 z-50 hidden flex justify-end">
@@ -3214,7 +3428,11 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             panel.classList.toggle('hidden', !isOpening);
             panel.classList.toggle('flex', isOpening);
             if (btn) btn.setAttribute('aria-expanded', isOpening ? 'true' : 'false');
-            if (icon) icon.className = isOpening ? 'fa-solid fa-xmark text-base' : 'fa-solid fa-sliders text-sm';
+            if (icon) icon.className = isOpening ? 'fa-solid fa-xmark text-base' : 'fa-solid fa-magnifying-glass text-sm';
+            if (isOpening) {
+                const inp = document.getElementById('mobileQuickCodeSearch');
+                if (inp) setTimeout(() => inp.focus(), 50);
+            }
         }
 
         function toggleToolsDropdown(event) {
@@ -3408,34 +3626,36 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const btn = document.getElementById('cloudStatusBtn');
             const icon = document.getElementById('cloudStatusIcon');
             const dot = document.getElementById('cloudStatusDot');
+            const lbl = document.getElementById('cloudStatusLabel');
             const modalSt = document.getElementById('sheetsModalStatus');
 
             if (modalSt) modalSt.innerText = label;
+            if (lbl) lbl.innerText = label;
             if (!btn || !icon) return;
 
             btn.title = `Google Sheets: ${label} (clique para abrir)`;
-            btn.className = "relative w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition border ";
+            btn.className = "relative flex items-center gap-1.5 px-2 py-0.5 rounded border font-bold cursor-pointer transition ";
 
             if (state === 'online') {
-                btn.className += "bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30";
-                icon.className = "fa-solid fa-cloud text-base text-emerald-600 dark:text-emerald-300";
-                if (dot) dot.className = "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900";
+                btn.className += "bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30";
+                icon.className = "fa-solid fa-cloud text-xs text-emerald-600 dark:text-emerald-300";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-500";
             } else if (state === 'syncing') {
-                btn.className += "bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-100 dark:hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-400/30";
-                icon.className = "fa-solid fa-cloud text-base text-sky-600 dark:text-sky-300 animate-pulse";
-                if (dot) dot.className = "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-sky-500 animate-ping border-2 border-white dark:border-slate-900";
+                btn.className += "bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-100 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-400/30";
+                icon.className = "fa-solid fa-cloud text-xs text-sky-600 dark:text-sky-300 animate-pulse";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-sky-500 animate-ping";
             } else if (state === 'warning') {
-                btn.className += "bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-400/30";
-                icon.className = "fa-solid fa-cloud text-base text-amber-600 dark:text-amber-300";
-                if (dot) dot.className = "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white dark:border-slate-900";
+                btn.className += "bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-400/30";
+                icon.className = "fa-solid fa-cloud text-xs text-amber-600 dark:text-amber-300";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-500";
             } else if (state === 'error') {
-                btn.className += "bg-rose-50 dark:bg-rose-500/15 hover:bg-rose-100 dark:hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-400/30";
-                icon.className = "fa-solid fa-cloud text-base text-rose-600 dark:text-rose-300";
-                if (dot) dot.className = "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-white dark:border-slate-900";
+                btn.className += "bg-rose-50 dark:bg-rose-500/15 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-400/30";
+                icon.className = "fa-solid fa-cloud text-xs text-rose-600 dark:text-rose-300";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-rose-500";
             } else {
-                btn.className += "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700";
-                icon.className = "fa-solid fa-cloud text-base text-slate-500 dark:text-slate-300";
-                if (dot) dot.className = "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-slate-400 border-2 border-white dark:border-slate-900";
+                btn.className += "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700";
+                icon.className = "fa-solid fa-cloud text-xs text-slate-500 dark:text-slate-300";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-slate-400";
             }
         }
 
@@ -4050,6 +4270,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const mapped = total - semLocalCount;
 
             document.getElementById('total-count').innerText = total;
+            const mobTotal = document.getElementById('mobileTotalCount');
+            if (mobTotal) mobTotal.innerText = total;
             document.getElementById('kpi-total').innerText = total;
             document.getElementById('kpi-vencida').innerText = counts["VENCIDA"];
             document.getElementById('kpi-proxima').innerText = counts["PRÓXIMA DO VENCIMENTO"];
@@ -4093,6 +4315,10 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             if (filterCount) filterCount.innerText = inCustody.length;
             const sidebarCust = document.getElementById('sidebarCustodyCount');
             if (sidebarCust) sidebarCust.innerText = inCustody.length;
+            const navCust = document.getElementById('navCustodyCount');
+            if (navCust) navCust.innerText = inCustody.length;
+            const heroCust = document.getElementById('kpi-custody-hero');
+            if (heroCust) heroCust.innerText = inCustody.length;
             if (!grid) return;
 
             if (panel) {
@@ -4373,9 +4599,9 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const btn = document.getElementById('btnFilterInCustody');
             if (!btn) return;
             if (onlyInCustodyFilter) {
-                btn.className = "px-3 py-2 rounded-xl text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-slate-950 border border-amber-500 cursor-pointer transition flex items-center gap-1.5 shadow-sm";
+                btn.className = "px-3 py-2 rounded text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-slate-950 border border-amber-500 cursor-pointer transition flex items-center gap-1.5 shadow-sm shrink-0";
             } else {
-                btn.className = "px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 cursor-pointer transition flex items-center gap-1.5";
+                btn.className = "px-3 py-2 rounded text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 cursor-pointer transition flex items-center gap-1.5 shrink-0";
             }
         }
 
@@ -5185,8 +5411,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const comfort = document.getElementById('btnDensityComfort');
             const compact = document.getElementById('btnDensityCompact');
             if (!comfort || !compact) return;
-            comfort.className = `px-2.5 py-1 rounded-lg font-bold cursor-pointer text-[11px] transition ${!isCompactMode ? 'bg-voith-navy text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`;
-            compact.className = `px-2.5 py-1 rounded-lg font-bold cursor-pointer text-[11px] transition ${isCompactMode ? 'bg-voith-navy text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`;
+            comfort.className = `px-2.5 py-1.5 rounded font-bold cursor-pointer text-[11px] transition ${!isCompactMode ? 'bg-[#004C97] text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`;
+            compact.className = `px-2.5 py-1.5 rounded font-bold cursor-pointer text-[11px] transition ${isCompactMode ? 'bg-[#004C97] text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`;
         }
 
         // Modo Escuro Nativo (Tailwind darkMode: 'class' + variáveis CSS)
@@ -5208,8 +5434,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             if (!btn) return;
             const isDark = document.documentElement.classList.contains('dark');
             btn.innerHTML = isDark
-                ? `<i class="fa-solid fa-sun text-amber-300"></i> <span class="xl:inline hidden">Claro</span>`
-                : `<i class="fa-solid fa-moon text-voith-navy"></i> <span class="xl:inline hidden">Escuro</span>`;
+                ? `<i class="fa-solid fa-sun text-amber-300"></i> <span class="hidden md:inline">Claro</span>`
+                : `<i class="fa-solid fa-moon text-[#004C97]"></i> <span class="hidden md:inline">Escuro</span>`;
         }
 
         // ---- Sidebar Mobile & Recolhimento Desktop ----
@@ -6115,6 +6341,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const totalDone = calibrationHistory.filter(h => h.status === "CONCLUÍDO").length;
 
             document.getElementById('hist-count').innerText = totalAll;
+            const mobHist = document.getElementById('mobileHistCount');
+            if (mobHist) mobHist.innerText = totalAll;
             document.getElementById('hist-count-inner').innerText = totalAll;
             const bAll = document.getElementById('hist-badge-all');
             const bTr = document.getElementById('hist-badge-transit');
@@ -6315,6 +6543,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const tbody = document.getElementById('lostTableBody');
             if (!tbody) return;
             document.getElementById('lost-count').innerText = lostInstrumentsData.length;
+            const mobLost = document.getElementById('mobileLostCount');
+            if (mobLost) mobLost.innerText = lostInstrumentsData.length;
             document.getElementById('lost-count-header').innerText = lostInstrumentsData.length;
 
             if (lostInstrumentsData.length === 0) {
@@ -6513,8 +6743,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             return {
                 textColor: isDark ? '#CBD5E1' : '#334155',
                 gridColor: isDark ? 'rgba(148, 163, 184, 0.20)' : 'rgba(148, 163, 184, 0.18)',
-                tooltipBg: isDark ? '#0F172A' : '#0F2C59',
-                tooltipBorder: isDark ? '#334155' : '#0F2C59',
+                tooltipBg: isDark ? '#0C1A2E' : '#002855',
+                tooltipBorder: isDark ? '#2A4770' : '#004C97',
                 tooltipText: '#F8FAFC'
             };
         }
@@ -6667,11 +6897,16 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 tabCautela.classList.add('is-active');
             }
 
+            const activeMobKey = (tabName === 'cadastro' && onlyInCustodyFilter) ? 'cautela' : tabName;
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+                btn.classList.toggle('is-active', btn.getAttribute('data-mobile-tab') === activeMobKey);
+            });
+
             const meta = {
-                dashboard: { title: 'Dashboard Executivo', sub: 'Voith Turbo • Visão Geral de Conformidade & Vencimentos' },
-                cadastro: { title: 'Cadastro Mestre & Ações', sub: 'Base oficial de instrumentos, cautela pública e edição rápida' },
-                historico: { title: 'Histórico de Calibração Externa', sub: 'Controle de envios a laboratórios, retornos e novas validades' },
-                perdidos: { title: 'Instrumentos Desativados / Perdidos', sub: 'Registro de extravios, sucateamentos e restauração para base ativa' }
+                dashboard: { title: 'Visão Geral', sub: 'Gestão e Controle Metrológico • Base Oficial' },
+                cadastro: { title: 'Cadastro Mestre', sub: 'Base oficial de instrumentos, cautela pública e edição rápida' },
+                historico: { title: 'Calibração Externa', sub: 'Controle de envios a laboratórios, retornos e novas validades' },
+                perdidos: { title: 'Perdidos / Desativados', sub: 'Registro de extravios, sucateamentos e restauração' }
             };
             const info = meta[tabName] || meta.dashboard;
             const tEl = document.getElementById('topbarPageTitle');
