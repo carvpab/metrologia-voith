@@ -16,10 +16,7 @@
     <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
     <script>
         (function() {
-            var defaultUrl = "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec";
-            var savedUrl = "";
-            try { savedUrl = localStorage.getItem("voith_sheets_api_url_v314") || ""; } catch (e) {}
-            var url = (savedUrl && savedUrl.trim()) ? savedUrl.trim() : defaultUrl;
+            var url = "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec";
             if (url) {
                 var sep = url.indexOf("?") >= 0 ? "&" : "?";
                 window.__VOITH_CLOUD_PREFETCH__ = {
@@ -1831,20 +1828,15 @@
                 <button type="button" onclick="closeCloudModal()" class="text-white/75 hover:text-white text-lg font-bold cursor-pointer">&times;</button>
             </div>
             <div class="p-6 space-y-4">
-                <div class="editor-only">
-                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">URL do Google Apps Script (/exec)</label>
-                    <input type="url" id="cloudUrlInp" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-xs">
-                </div>
                 <div class="bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E] rounded-xl p-3.5 text-xs space-y-1.5">
                     <div class="flex justify-between"><span class="text-slate-500">Status:</span><strong id="cloudModalStatus">-</strong></div>
                     <div class="flex justify-between"><span class="text-slate-500">Última Sincronização:</span><span id="cloudLastSync" class="font-mono">-</span></div>
                     <div id="cloudModalErr" class="hidden mt-2 p-2.5 rounded bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 text-[11px] break-words"></div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button type="button" onclick="saveCloudUrl()" class="editor-only py-2.5 rounded-lg bg-[#004C97] hover:bg-[#003A75] text-white font-bold text-xs cursor-pointer">Salvar URL & Conectar</button>
-                    <button type="button" onclick="loadFromCloud(true, false, false)" class="py-2.5 rounded-lg bg-[#00A8E8] hover:bg-[#0094CC] text-[#001429] font-extrabold text-xs cursor-pointer">Baixar da Nuvem</button>
+                <div class="space-y-2.5">
+                    <button type="button" onclick="loadFromCloud(true, false, false)" class="w-full py-2.5 rounded-lg bg-[#00A8E8] hover:bg-[#0094CC] text-[#001429] font-extrabold text-xs cursor-pointer">Baixar da Nuvem</button>
+                    <button type="button" onclick="forcePushCloud()" class="editor-only w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">Enviar Base Atual para o Sheets Agora</button>
                 </div>
-                <button type="button" onclick="forcePushCloud()" class="editor-only w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">Enviar Base Atual para o Sheets Agora</button>
             </div>
         </div>
     </div>
@@ -2414,7 +2406,6 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             inst: 'voith_instruments_official_v313',
             hist: 'voith_history_official_v313',
             lost: 'voith_lost_official_v313',
-            url: 'voith_sheets_api_url_v314',
             auth: 'voith_editor_auth_v316',
             dark: 'voith_dark_mode_v312',
             compact: 'voith_compact_v313',
@@ -2444,7 +2435,6 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         // Auth & Cloud State
         let currentAuth = null;
-        let activeUrl = '';
         let isCloudReady = false;
         let isApplyingCloud = false;
         let isSyncing = false;
@@ -3206,10 +3196,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         // ---- Motor Cloud Sync (Google Sheets + Fila Offline) ----
         function getCloudUrl() {
-            if (activeUrl) return activeUrl.trim();
-            const saved = safeGet(KEYS.url);
-            activeUrl = (saved && saved.trim()) ? saved.trim() : DEFAULT_SHEETS_API_URL;
-            return activeUrl;
+            return DEFAULT_SHEETS_API_URL.trim();
         }
         function setCloudUI(state, text) {
             const pill = document.getElementById('cloudPillBtn');
@@ -3411,17 +3398,9 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             else pushCloud(true, true);
         }
         function openCloudModal() {
-            document.getElementById('cloudUrlInp').value = getCloudUrl();
             document.getElementById('cloudModal').classList.remove('hidden');
         }
         function closeCloudModal() { document.getElementById('cloudModal').classList.add('hidden'); }
-        function saveCloudUrl() {
-            if (!requireEditor()) return;
-            const u = document.getElementById('cloudUrlInp').value.trim();
-            if (u && !u.startsWith('https://script.google.com/')) { showToast('URL inválida.', 'error'); return; }
-            activeUrl = u; safeSet(KEYS.url, u); hasConflict = false;
-            loadFromCloud(true, false, false);
-        }
         function forcePushCloud() {
             if (!requireEditor()) return;
             clearTimeout(syncTimer); syncTimer = null; hasConflict = false;

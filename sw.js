@@ -1,6 +1,6 @@
-// VOITH TURBO — Precision Metrology OS • Service Worker v8 (Background Cache & Offline Engine)
-const CACHE_APP = 'voith-metrologia-app-v8';
-const CACHE_CDN = 'voith-metrologia-cdn-v8';
+// VOITH TURBO — Precision Metrology OS • Service Worker v9 (Background Cache & Offline Engine)
+const CACHE_APP = 'voith-metrologia-app-v9';
+const CACHE_CDN = 'voith-metrologia-cdn-v9';
 const APP_SHELL = ['./', './index.html', './manifest.json'];
 
 // Nunca interceptar o Google Apps Script (Cloud Sync e Login precisam ser sempre ao vivo!)
