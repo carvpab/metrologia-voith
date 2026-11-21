@@ -2533,22 +2533,42 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         function getInstMeta(it) {
             const ref = currentRefISO || metaCacheTodayISO || getTodayISO();
             let m = instMetaCache.get(it);
-            if (m && m.ref === ref && m.proxCal === it.proxCal && m.rawStatus === it.status && m.desc === it.desc && m.local === it.local && m.holder === it.custodyHolder && m.resp === it.resp && m.obs === it.obs) {
+            if (
+                m &&
+                m.ref === ref &&
+                m.code === it.code &&
+                m.proxCal === it.proxCal &&
+                m.rawStatus === it.status &&
+                m.desc === it.desc &&
+                m.setor === it.setor &&
+                m.local === it.local &&
+                m.holder === it.custodyHolder &&
+                m.ret === it.custodyReturnTo &&
+                m.resp === it.resp &&
+                m.min === it.min &&
+                m.max === it.max &&
+                m.obs === it.obs
+            ) {
                 return m;
             }
-            const st = getInstMeta(it).st;
+            const st = calcStatus(it.proxCal, it.status);
             const fam = getFamily(it.desc);
             const cd = getCountdownMeta(it.proxCal, st);
             const hay = `${it.code} ${it.desc} ${it.local||''} ${it.resp||''} ${it.setor||''} ${it.min||''} ${it.max||''} ${it.custodyHolder||''} ${it.custodyReturnTo||''} ${it.obs||''}`.toLowerCase();
             m = {
                 ref, st, fam, cd, hay,
                 ss: getStatusStyle(st),
+                code: it.code,
                 proxCal: it.proxCal,
                 rawStatus: it.status,
                 desc: it.desc,
+                setor: it.setor,
                 local: it.local,
                 holder: it.custodyHolder,
+                ret: it.custodyReturnTo,
                 resp: it.resp,
+                min: it.min,
+                max: it.max,
                 obs: it.obs
             };
             instMetaCache.set(it, m);
