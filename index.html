@@ -280,6 +280,130 @@
             transition: stroke-dashoffset 0.42s var(--ease-spring), stroke 0.2s ease;
         }
 
+        
+        /* ===== ULTRA-FAST NATIVE INVENTORY TABLE & CARD STYLES (ZERO TAILWIND JIT OVERHEAD) ===== */
+        .vr {
+            border-left: 4px solid transparent;
+            content-visibility: auto;
+            contain-intrinsic-size: auto 56px;
+        }
+        .vr:hover { background-color: #F7F9FC; }
+        html.dark .vr:hover { background-color: #0D1D34; }
+        .vr.vr-sel { background-color: rgba(0, 76, 151, 0.10); }
+        html.dark .vr.vr-sel { background-color: rgba(0, 168, 232, 0.16); }
+        .vr-s-ok { border-left-color: #10B981; }
+        .vr-s-over { border-left-color: #E11D48; }
+        .vr-s-soon { border-left-color: #F59E0B; }
+        .vr-s-wait { border-left-color: #0EA5E9; }
+        .vr-s-rep { border-left-color: #6366F1; }
+        .vr-s-pend { border-left-color: #A855F7; }
+
+        .vr-td { padding: 0.72rem 0.75rem; vertical-align: middle; }
+        .vr-td-c { padding: 0.72rem 0.75rem; text-align: center; vertical-align: middle; }
+        .vr-ptr { cursor: pointer; }
+        body.vp-compact .vr { contain-intrinsic-size: auto 40px; }
+        body.vp-compact .vr-td, body.vp-compact .vr-td-c { padding-top: 0.42rem; padding-bottom: 0.42rem; font-size: 0.77rem; }
+
+        .vr-chk { border-radius: 0.25rem; cursor: pointer; }
+        .vr-code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; font-size: 0.75rem; color: #004C97; }
+        html.dark .vr-code { color: #00A8E8; }
+        .vr-resp { font-size: 11px; color: #64748B; margin-top: 2px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        html.dark .vr-resp { color: #94A3B8; }
+
+        .vr-flex { display: flex; align-items: flex-start; gap: 0.5rem; }
+        .vr-fam { width: 1.5rem; height: 1.5rem; border-radius: 0.375rem; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; margin-top: 2px; }
+        .vr-f-dim { background: #E0F2FE; color: #004C97; }
+        html.dark .vr-f-dim { background: rgba(14,165,233,0.2); color: #00A8E8; }
+        .vr-f-tor { background: #FEF3C7; color: #B45309; }
+        html.dark .vr-f-tor { background: rgba(245,158,11,0.2); color: #FCD34D; }
+        .vr-f-ele { background: #FEF9C3; color: #A16207; }
+        html.dark .vr-f-ele { background: rgba(234,179,8,0.2); color: #FDE047; }
+        .vr-f-tmp { background: #FFE4E6; color: #BE123C; }
+        html.dark .vr-f-tmp { background: rgba(244,63,94,0.2); color: #FDA4AF; }
+
+        .vr-desc { font-weight: 600; line-height: 1.35; }
+        .vr-rng { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; color: #64748B; margin-top: 2px; }
+        html.dark .vr-rng { color: #94A3B8; }
+
+        .vr-sec { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #F3F6FA; color: #334155; display: inline-block; }
+        html.dark .vr-sec { background: #132846; color: #CBD5E1; }
+
+        .vr-loc { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: #EAF0F6; font-size: 0.75rem; font-weight: 600; }
+        .vr-loc i { font-size: 10px; color: #004C97; }
+        html.dark .vr-loc { background: #132846; color: #E2E8F0; }
+        html.dark .vr-loc i { color: #00A8E8; }
+        .vr-noloc { font-size: 11px; color: #EA580C; font-weight: 600; }
+        html.dark .vr-noloc { color: #FB923C; }
+
+        .vr-cust { margin-top: 6px; padding: 4px 8px; border-radius: 6px; background: #FFFBEB; border: 1px solid #FDE68A; font-size: 10px; line-height: 1.25; max-width: 205px; }
+        html.dark .vr-cust { background: rgba(245,158,11,0.14); border-color: rgba(251,191,36,0.3); }
+        .vr-cust-h { font-weight: 800; color: #92400E; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        html.dark .vr-cust-h { color: #FCD34D; }
+        .vr-cust-r { color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        html.dark .vr-cust-r { color: #CBD5E1; }
+        .vr-late { color: #E11D48; }
+
+        .vr-dt { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; font-size: 0.75rem; }
+        .vr-cd { font-size: 10px; }
+        .vr-cd-over { color: #E11D48; font-weight: 700; }
+        html.dark .vr-cd-over { color: #FB7185; }
+        .vr-cd-soon { color: #D97706; font-weight: 700; }
+        html.dark .vr-cd-soon { color: #FBBF24; }
+        .vr-cd-ok { color: #059669; font-weight: 600; }
+        html.dark .vr-cd-ok { color: #34D399; }
+
+        .vr-pill { display: inline-block; padding: 2px 8px; border-radius: 9999px; border: 1px solid transparent; font-size: 10px; font-weight: 800; white-space: nowrap; }
+        .vr-p-ok { background: #D1FAE5; color: #065F46; border-color: #A7F3D0; }
+        html.dark .vr-p-ok { background: rgba(16,185,129,0.2); color: #6EE7B7; border-color: rgba(16,185,129,0.3); }
+        .vr-p-over { background: #FFE4E6; color: #9F1239; border-color: #FECDD3; }
+        html.dark .vr-p-over { background: rgba(244,63,94,0.2); color: #FDA4AF; border-color: rgba(244,63,94,0.3); }
+        .vr-p-soon { background: #FEF3C7; color: #92400E; border-color: #FDE68A; }
+        html.dark .vr-p-soon { background: rgba(245,158,11,0.2); color: #FCD34D; border-color: rgba(245,158,11,0.3); }
+        .vr-p-wait { background: #E0F2FE; color: #075985; border-color: #BAE6FD; }
+        html.dark .vr-p-wait { background: rgba(14,165,233,0.2); color: #7DD3FC; border-color: rgba(14,165,233,0.3); }
+        .vr-p-rep { background: #E0E7FF; color: #3730A3; border-color: #C7D2FE; }
+        html.dark .vr-p-rep { background: rgba(99,102,241,0.2); color: #A5B4FC; border-color: rgba(99,102,241,0.3); }
+        .vr-p-pend { background: #F3E8FF; color: #6B21A8; border-color: #E9D5FF; }
+        html.dark .vr-p-pend { background: rgba(168,85,247,0.2); color: #D8B4FE; border-color: rgba(168,85,247,0.3); }
+
+        .vr-obs { font-size: 0.75rem; color: #64748B; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        html.dark .vr-obs { color: #94A3B8; }
+
+        .vr-acts { display: inline-flex; align-items: center; gap: 4px; }
+        .vr-btn { width: 2rem; height: 2rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; border: none; }
+        .vr-btn-c { background: #F3F6FA; color: #64748B; }
+        html.dark .vr-btn-c { background: #132846; color: #94A3B8; }
+        .vr-btn-c:hover, .vr-btn-c-on { background: #FBBF24 !important; color: #020617 !important; }
+        .vr-btn-e { background: #EAF0F6; color: #004C97; }
+        html.dark .vr-btn-e { background: #132846; color: #00A8E8; }
+        .vr-btn-e:hover { background: #004C97; color: #FFFFFF; }
+
+        /* Native Card styles */
+        .vc { background: var(--bg-surface); border: 1px solid var(--border-line); border-left-width: 4px; border-radius: 0.75rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; content-visibility: auto; contain-intrinsic-size: auto 190px; }
+        .vc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+        .vc-id { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+        .vc-fam { width: 1.75rem; height: 1.75rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; flex-shrink: 0; }
+        .vc-meta { min-width: 0; }
+        .vc-code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; font-size: 0.875rem; color: #004C97; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        html.dark .vc-code { color: #00A8E8; }
+        .vc-resp { font-size: 11px; color: #64748B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vc-desc { font-weight: 700; font-size: 0.875rem; line-height: 1.35; }
+        .vc-cust { padding: 0.55rem 0.65rem; border-radius: 0.5rem; background: #FFFBEB; border: 1px solid #FDE68A; font-size: 0.75rem; }
+        html.dark .vc-cust { background: rgba(245,158,11,0.14); border-color: rgba(251,191,36,0.3); }
+        .vc-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-line); font-size: 0.75rem; }
+        .vc-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94A3B8; display: block; }
+        .vc-acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 2px; }
+        .vc-b { padding: 6px 12px; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 700; cursor: pointer; border: none; }
+        .vc-b-c { background: #F3F6FA; color: #334155; }
+        html.dark .vc-b-c { background: #132846; color: #E2E8F0; }
+        .vc-b-c-on { background: #FBBF24; color: #020617; }
+        .vc-b-e { background: #004C97; color: #FFFFFF; }
+
+        .vr-more-td { padding: 0.85rem; text-align: center; background: var(--bg-subtle); }
+        .vr-more-btn { padding: 6px 16px; border-radius: 8px; background: #EAF0F6; color: #004C97; font-size: 0.75rem; font-weight: 700; cursor: pointer; border: 1px solid var(--border-line); }
+        html.dark .vr-more-btn { background: #132846; color: #00A8E8; }
+        .vr-more-btn:hover { background: #004C97; color: #FFFFFF; }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
@@ -2357,8 +2481,41 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         let metaCacheTodayISO = '';
         let dirtyViews = { command: true, inventory: true, custody: true, lab: true, dropdowns: true };
         let invRenderToken = 0;
+        let invPageItemsCache = [];
+        let invRenderedCount = 0;
+        let invPrewarmHandle = null;
+        const INV_FIRST_BATCH = 35;
+        const INV_NEXT_BATCH = 45;
         let lastWindowWasMobile = window.innerWidth < 768;
         let sheetJsLoadPromise = null;
+
+        function normalizeInstrument(raw, fallbackId) {
+            const x = raw && typeof raw === 'object' ? raw : {};
+            const str = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+            let pc = str(x.proxCal);
+            if (pc.length > 10 && /^\d{4}-\d{2}-\d{2}/.test(pc)) pc = pc.slice(0, 10);
+            let cd = str(x.custodyDate);
+            if (cd.length > 10 && /^\d{4}-\d{2}-\d{2}/.test(cd)) cd = cd.slice(0, 10);
+            return {
+                ...x,
+                id: Number(x.id) || fallbackId,
+                code: str(x.code),
+                desc: str(x.desc) || 'Instrumento',
+                cc: str(x.cc),
+                setor: str(x.setor) || 'Voith Turbo (Industrial)',
+                local: str(x.local),
+                resp: str(x.resp),
+                min: str(x.min),
+                max: str(x.max),
+                proxCal: pc,
+                status: str(x.status),
+                obs: str(x.obs),
+                custodyHolder: str(x.custodyHolder),
+                custodyReturnTo: str(x.custodyReturnTo),
+                custodyDate: cd,
+                custodyReason: str(x.custodyReason)
+            };
+        }
 
         function deepCloneFast(obj) {
             return (typeof structuredClone === 'function') ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
@@ -2390,7 +2547,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
         }
         function isoToDayNum(iso) {
-            if (!iso || iso.length !== 10 || iso.charCodeAt(4) !== 45 || iso.charCodeAt(7) !== 45) return null;
+            if (typeof iso !== 'string' || iso.length !== 10 || iso.charCodeAt(4) !== 45 || iso.charCodeAt(7) !== 45) return null;
             let cached = isoDayCache.get(iso);
             if (cached !== undefined) return cached;
             const y = +iso.slice(0, 4), m = +iso.slice(5, 7), d = +iso.slice(8, 10);
@@ -2502,29 +2659,30 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         }
 
         function getCountdownMeta(dateStr, st) {
-            if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { text:'', cls:'' };
-            if (st === 'EM REPARO' || st === 'AGUARDANDO CALIBRAÇÃO' || st === 'PENDÊNCIA DE DATA') return { text:'', cls:'' };
+            if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { text:'', cls:'', vcls:'' };
+            if (st === 'EM REPARO' || st === 'AGUARDANDO CALIBRAÇÃO' || st === 'PENDÊNCIA DE DATA') return { text:'', cls:'', vcls:'' };
             const diff = daysBetween(currentRefISO || getTodayISO(), dateStr);
-            if (diff < 0) return { text: `Vencido há ${Math.abs(diff)}d`, cls: 'text-rose-600 dark:text-rose-400 font-bold' };
-            if (diff <= 30) return { text: `Vence em ${diff}d`, cls: 'text-amber-600 dark:text-amber-400 font-bold' };
-            return { text: `+${Math.round(diff/30)}m válidos`, cls: 'text-emerald-600 dark:text-emerald-400 font-semibold' };
+            if (diff === null) return { text:'', cls:'', vcls:'' };
+            if (diff < 0) return { text: `Vencido há ${Math.abs(diff)}d`, cls: 'text-rose-600 dark:text-rose-400 font-bold', vcls: 'vr-cd-over' };
+            if (diff <= 30) return { text: `Vence em ${diff}d`, cls: 'text-amber-600 dark:text-amber-400 font-bold', vcls: 'vr-cd-soon' };
+            return { text: `+${Math.round(diff/30)}m válidos`, cls: 'text-emerald-600 dark:text-emerald-400 font-semibold', vcls: 'vr-cd-ok' };
         }
 
         function getFamily(desc) {
             const d = String(desc||'').toLowerCase();
-            if (/torqu|dinam|balan|força/.test(d)) return { key:'TORQUE', label:'Torque / Força', icon:'fa-wrench', cls:'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300' };
-            if (/mult[ií]m|meg[oô]m|ohm|loop|tac[oô]m/.test(d)) return { key:'ELETRICA', label:'Elétrica', icon:'fa-bolt', cls:'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300' };
-            if (/man[oô]m|press[aã]o|term[oô]m|temper/.test(d)) return { key:'TEMP_PRESSAO', label:'Temp. / Pressão', icon:'fa-temperature-half', cls:'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300' };
-            return { key:'DIMENSIONAL', label:'Dimensional', icon:'fa-ruler-combined', cls:'bg-sky-100 dark:bg-sky-500/20 text-[#004C97] dark:text-[#00A8E8]' };
+            if (/torqu|dinam|balan|força/.test(d)) return { key:'TORQUE', label:'Torque / Força', icon:'fa-wrench', cls:'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300', vcls:'vr-f-tor' };
+            if (/mult[ií]m|meg[oô]m|ohm|loop|tac[oô]m/.test(d)) return { key:'ELETRICA', label:'Elétrica', icon:'fa-bolt', cls:'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300', vcls:'vr-f-ele' };
+            if (/man[oô]m|press[aã]o|term[oô]m|temper/.test(d)) return { key:'TEMP_PRESSAO', label:'Temp. / Pressão', icon:'fa-temperature-half', cls:'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300', vcls:'vr-f-tmp' };
+            return { key:'DIMENSIONAL', label:'Dimensional', icon:'fa-ruler-combined', cls:'bg-sky-100 dark:bg-sky-500/20 text-[#004C97] dark:text-[#00A8E8]', vcls:'vr-f-dim' };
         }
 
         function getStatusStyle(st) {
-            if (st === 'EM DIA') return { pill:'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30', accent:'border-l-emerald-500' };
-            if (st === 'VENCIDA') return { pill:'bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-500/30', accent:'border-l-rose-600' };
-            if (st === 'PRÓXIMA DO VENCIMENTO') return { pill:'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30', accent:'border-l-amber-500' };
-            if (st === 'AGUARDANDO CALIBRAÇÃO') return { pill:'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-500/30', accent:'border-l-sky-500' };
-            if (st === 'EM REPARO') return { pill:'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30', accent:'border-l-indigo-500' };
-            return { pill:'bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30', accent:'border-l-purple-500' };
+            if (st === 'EM DIA') return { pill:'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30', accent:'border-l-emerald-500', vp:'vr-p-ok', va:'vr-s-ok' };
+            if (st === 'VENCIDA') return { pill:'bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-500/30', accent:'border-l-rose-600', vp:'vr-p-over', va:'vr-s-over' };
+            if (st === 'PRÓXIMA DO VENCIMENTO') return { pill:'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30', accent:'border-l-amber-500', vp:'vr-p-soon', va:'vr-s-soon' };
+            if (st === 'AGUARDANDO CALIBRAÇÃO') return { pill:'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-500/30', accent:'border-l-sky-500', vp:'vr-p-wait', va:'vr-s-wait' };
+            if (st === 'EM REPARO') return { pill:'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30', accent:'border-l-indigo-500', vp:'vr-p-rep', va:'vr-s-rep' };
+            return { pill:'bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30', accent:'border-l-purple-500', vp:'vr-p-pend', va:'vr-s-pend' };
         }
 
         function invalidateInstMeta(it) {
@@ -2638,8 +2796,32 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             setTimeout(() => root.classList.remove('vp-theme-switching'), 180);
         }
 
-        // ---- Navegação & Menu Sistema (Lazy View Rendering) ----
-        function navigateTo(view) {
+        // ---- Navegação & Menu Sistema (Instant Zero-Lag Tab Switch) ----
+        function scheduleInventoryPrewarm() {
+            if (!dirtyViews.inventory || currentView === 'inventory') return;
+            if (invPrewarmHandle) {
+                if (typeof cancelIdleCallback === 'function') cancelIdleCallback(invPrewarmHandle);
+                else clearTimeout(invPrewarmHandle);
+                invPrewarmHandle = null;
+            }
+            const run = () => {
+                invPrewarmHandle = null;
+                if (!dirtyViews.inventory || currentView === 'inventory') return;
+                if (dirtyViews.dropdowns) {
+                    populateFilterDropdowns();
+                    dirtyViews.dropdowns = false;
+                }
+                applyInventoryFilters();
+                dirtyViews.inventory = false;
+            };
+            if (typeof requestIdleCallback === 'function') {
+                invPrewarmHandle = requestIdleCallback(run, { timeout: 450 });
+            } else {
+                invPrewarmHandle = setTimeout(run, 90);
+            }
+        }
+
+        function navigateTo(view, skipAutoRender = false) {
             const changed = currentView !== view;
             currentView = view;
             ['command', 'inventory', 'custody', 'lab'].forEach(v => {
@@ -2649,6 +2831,9 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             document.querySelectorAll('[data-nav]').forEach(btn => {
                 btn.classList.toggle('is-active', btn.getAttribute('data-nav') === view);
             });
+            if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
+            if (skipAutoRender) return;
+
             if (dirtyViews.dropdowns && (view === 'inventory' || view === 'command')) {
                 populateFilterDropdowns();
                 dirtyViews.dropdowns = false;
@@ -2658,16 +2843,25 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 renderCommandCenter();
                 dirtyViews.command = false;
             } else if (view === 'inventory' && dirtyViews.inventory) {
-                applyInventoryFilters();
+                // Pinta a troca de aba no frame atual e popula o inventário imediatamente no próximo frame
                 dirtyViews.inventory = false;
+                requestAnimationFrame(() => {
+                    if (currentView === 'inventory') applyInventoryFilters();
+                    else dirtyViews.inventory = true;
+                });
             } else if (view === 'custody' && dirtyViews.custody) {
-                renderCustodyBoard();
                 dirtyViews.custody = false;
+                requestAnimationFrame(() => {
+                    if (currentView === 'custody') renderCustodyBoard();
+                    else dirtyViews.custody = true;
+                });
             } else if (view === 'lab' && dirtyViews.lab) {
-                renderLabTables();
                 dirtyViews.lab = false;
+                requestAnimationFrame(() => {
+                    if (currentView === 'lab') renderLabTables();
+                    else dirtyViews.lab = true;
+                });
             }
-            if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
         }
 
         function toggleSystemMenu(e) {
@@ -3022,16 +3216,35 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 document.getElementById('cloudModalErr').classList.add('hidden');
                 setCloudUI('syncing', 'Sincronizando...');
             }
+            const fetchFreshWithTimeout = async () => {
+                const sep = url.includes('?') ? '&' : '?';
+                const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const tid = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+                try {
+                    const res = await fetch(`${url}${sep}t=${Date.now()}`, {
+                        method:'GET', redirect:'follow', cache:'no-store',
+                        signal: ctrl ? ctrl.signal : undefined
+                    });
+                    return await res.text();
+                } finally {
+                    if (tid) clearTimeout(tid);
+                }
+            };
             try {
                 let raw;
                 if (usePrefetch && window.__VOITH_CLOUD_PREFETCH__ && window.__VOITH_CLOUD_PREFETCH__.url === url) {
                     const p = window.__VOITH_CLOUD_PREFETCH__.promise;
                     window.__VOITH_CLOUD_PREFETCH__ = null;
-                    raw = await p;
+                    try {
+                        raw = await Promise.race([
+                            p,
+                            new Promise((_, rej) => setTimeout(() => rej(new Error('Prefetch timeout')), 12000))
+                        ]);
+                    } catch {
+                        raw = await fetchFreshWithTimeout();
+                    }
                 } else {
-                    const sep = url.includes('?') ? '&' : '?';
-                    const res = await fetch(`${url}${sep}t=${Date.now()}`, { method:'GET', redirect:'follow', cache:'no-store' });
-                    raw = await res.text();
+                    raw = await fetchFreshWithTimeout();
                 }
                 lastCloudCheckMs = Date.now();
                 const data = JSON.parse(raw);
@@ -3044,7 +3257,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                     if (silent && (isSyncing || syncTimer)) return;
                     isApplyingCloud = true;
                     if (Array.isArray(data.instrumentsData)) {
-                        instrumentsData = data.instrumentsData.map((x,i) => ({ ...x, id: Number(x.id) || (i+1) }));
+                        instrumentsData = data.instrumentsData.map((x,i) => normalizeInstrument(x, i+1));
                         sortByCode(instrumentsData);
                         safeSet(KEYS.inst, JSON.stringify(instrumentsData));
                     }
@@ -3246,6 +3459,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 renderDynamicSimulator();
                 renderCommandCenter();
                 dirtyViews.command = false;
+                scheduleInventoryPrewarm();
             } else if (currentView === 'inventory') {
                 renderDynamicSimulator();
                 applyInventoryFilters();
@@ -3503,7 +3717,11 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         const QUICK_STATUS_KEYS = new Set(['', 'VENCIDA', 'PRÓXIMA DO VENCIMENTO', 'EM DIA', 'AGUARDANDO CALIBRAÇÃO']);
 
         function jumpToInventoryFilter(opts = {}) {
-            navigateTo('inventory');
+            navigateTo('inventory', true);
+            if (dirtyViews.dropdowns) {
+                populateFilterDropdowns();
+                dirtyViews.dropdowns = false;
+            }
             resetInventoryFilters(false);
             if (opts.status) {
                 const fs = document.getElementById('fStatus');
@@ -3515,6 +3733,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             if (opts.setor) document.getElementById('fSetor').value = opts.setor;
             if (opts.resp) document.getElementById('fResp').value = opts.resp;
             if (opts.month) document.getElementById('fMonth').value = opts.month;
+            dirtyViews.inventory = false;
             applyInventoryFilters();
         }
 
@@ -3698,40 +3917,41 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
             const retDest = it.custodyReturnTo || it.local || it.resp || '';
             const dOut = hasCust ? daysBetween(it.custodyDate, todayISO) : null;
+            const ptr = canEdit ? ' vr-ptr' : '';
 
-            return `<tr class="border-l-4 ${ss.accent} ${sel ? 'bg-[#004C97]/10 dark:bg-[#00A8E8]/15' : 'hover:bg-[#F7F9FC] dark:hover:bg-[#0D1D34]'}">
-                <td class="editor-only p-3 text-center"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="rounded cursor-pointer"></td>
-                <td class="p-3">
-                    <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-xs">${escapeHtml(it.code)}</div>
-                    ${it.resp ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[130px]">${escapeHtml(it.resp)}</div>` : ''}
+            return `<tr data-id="${it.id}" class="vr ${ss.va}${sel ? ' vr-sel' : ''}">
+                <td class="editor-only vr-td-c"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelectRow(${it.id},this.checked,this)" class="vr-chk"></td>
+                <td class="vr-td">
+                    <div class="vr-code">${escapeHtml(it.code)}</div>
+                    ${it.resp ? `<div class="vr-resp">${escapeHtml(it.resp)}</div>` : ''}
                 </td>
-                <td class="p-3">
-                    <div class="flex items-start gap-2">
-                        <span class="w-6 h-6 rounded-md ${fam.cls} flex items-center justify-center text-[10px] shrink-0 mt-0.5" title="${fam.label}"><i class="fa-solid ${fam.icon}"></i></span>
+                <td class="vr-td">
+                    <div class="vr-flex">
+                        <span class="vr-fam ${fam.vcls}" title="${fam.label}"><i class="fa-solid ${fam.icon}"></i></span>
                         <div>
-                            <div class="font-semibold leading-snug">${escapeHtml(it.desc)}</div>
-                            ${hasRange ? `<div class="font-mono text-[10px] text-slate-500 mt-0.5">${escapeHtml(it.min||'0')} – ${escapeHtml(it.max||'-')}</div>` : ''}
+                            <div class="vr-desc">${escapeHtml(it.desc)}</div>
+                            ${hasRange ? `<div class="vr-rng">${escapeHtml(it.min||'0')} – ${escapeHtml(it.max||'-')}</div>` : ''}
                         </div>
                     </div>
                 </td>
-                <td class="p-3"><span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F3F6FA] dark:bg-[#132846] text-slate-700 dark:text-slate-300">${escapeHtml(it.setor.replace('Voith Turbo ',''))}</span></td>
-                <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'local')">
-                    ${it.local ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#EAF0F6] dark:bg-[#132846] text-xs font-semibold"><i class="fa-solid fa-location-dot text-[10px] text-[#004C97] dark:text-[#00A8E8]"></i>${escapeHtml(it.local)}</span>` : '<span class="text-[11px] text-orange-600 font-semibold">Sem local</span>'}
-                    ${hasCust ? `<div class="mt-1.5 px-2 py-1 rounded bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-[10px] leading-tight max-w-[205px]">
-                        <div class="font-extrabold text-amber-800 dark:text-amber-300 truncate"><i class="fa-solid fa-handshake mr-1"></i>${escapeHtml(it.custodyHolder)}${dOut!==null && dOut>=7 ? ` <span class="text-rose-600">(${dOut}d!)</span>` : ''}</div>
-                        ${retDest ? `<div class="text-slate-600 dark:text-slate-300 truncate">↩ ${escapeHtml(retDest)}</div>` : ''}
+                <td class="vr-td"><span class="vr-sec">${escapeHtml(String(it.setor||'').replace('Voith Turbo ',''))}</span></td>
+                <td class="vr-td${ptr}" ondblclick="inlineEditCell(this,${it.id},'local')">
+                    ${it.local ? `<span class="vr-loc"><i class="fa-solid fa-location-dot"></i>${escapeHtml(it.local)}</span>` : '<span class="vr-noloc">Sem local</span>'}
+                    ${hasCust ? `<div class="vr-cust">
+                        <div class="vr-cust-h"><i class="fa-solid fa-handshake"></i> ${escapeHtml(it.custodyHolder)}${dOut!==null && dOut>=7 ? ` <span class="vr-late">(${dOut}d!)</span>` : ''}</div>
+                        ${retDest ? `<div class="vr-cust-r">↩ ${escapeHtml(retDest)}</div>` : ''}
                     </div>` : ''}
                 </td>
-                <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'proxCal')">
-                    <div class="font-mono font-bold text-xs">${fmtBR(it.proxCal)}</div>
-                    ${cd.text ? `<div class="text-[10px] ${cd.cls}">${cd.text}</div>` : ''}
+                <td class="vr-td${ptr}" ondblclick="inlineEditCell(this,${it.id},'proxCal')">
+                    <div class="vr-dt">${fmtBR(it.proxCal)}</div>
+                    ${cd.text ? `<div class="vr-cd ${cd.vcls}">${cd.text}</div>` : ''}
                 </td>
-                <td class="p-3"><span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold whitespace-nowrap ${ss.pill}">${st}</span></td>
-                <td class="p-3 text-xs text-slate-500 max-w-[150px] truncate ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'obs')" title="${escapeHtml(it.obs||'')}">${escapeHtml(it.obs||'-')}</td>
-                <td class="p-3 text-center">
-                    <div class="inline-flex items-center gap-1">
-                        <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only w-8 h-8 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846] hover:bg-amber-400 hover:text-slate-950 text-slate-500'} flex items-center justify-center cursor-pointer" title="${hasCust?'Gerenciar / Devolver Cautela':'Registrar Cautela'}"><i class="fa-solid fa-handshake text-xs"></i></button>
-                        <button type="button" onclick="openInspectorModal(${it.id})" class="w-8 h-8 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] flex items-center justify-center cursor-pointer" title="${canEdit?'Editar':'Ver ficha'}"><i class="fa-solid ${canEdit?'fa-sliders':'fa-eye'} text-xs"></i></button>
+                <td class="vr-td"><span class="vr-pill ${ss.vp}">${st}</span></td>
+                <td class="vr-td vr-obs${ptr}" ondblclick="inlineEditCell(this,${it.id},'obs')" title="${escapeHtml(it.obs||'')}">${escapeHtml(it.obs||'-')}</td>
+                <td class="vr-td-c">
+                    <div class="vr-acts">
+                        <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only vr-btn ${hasCust?'vr-btn-c-on':'vr-btn-c'}" title="${hasCust?'Gerenciar / Devolver Cautela':'Registrar Cautela'}"><i class="fa-solid fa-handshake"></i></button>
+                        <button type="button" onclick="openInspectorModal(${it.id})" class="vr-btn vr-btn-e" title="${canEdit?'Editar':'Ver ficha'}"><i class="fa-solid ${canEdit?'fa-sliders':'fa-eye'}"></i></button>
                     </div>
                 </td>
             </tr>`;
@@ -3742,32 +3962,60 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const st = m.st, ss = m.ss, fam = m.fam, cd = m.cd;
             const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
             const retDest = it.custodyReturnTo || it.local || it.resp || '';
-            return `<div class="vp-card rounded-xl p-4 border-l-4 ${ss.accent} space-y-3">
-                <div class="flex items-start justify-between gap-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <input type="checkbox" ${selectedIds.has(it.id)?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="editor-only rounded cursor-pointer">
-                        <span class="w-7 h-7 rounded-lg ${fam.cls} flex items-center justify-center text-xs shrink-0"><i class="fa-solid ${fam.icon}"></i></span>
-                        <div class="min-w-0">
-                            <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-sm truncate">${escapeHtml(it.code)}</div>
-                            <div class="text-[11px] text-slate-500 truncate">${escapeHtml(it.resp || 'Sem responsável')}</div>
+            return `<div data-id="${it.id}" class="vc ${ss.va}">
+                <div class="vc-top">
+                    <div class="vc-id">
+                        <input type="checkbox" ${selectedIds.has(it.id)?'checked':''} onchange="toggleSelectRow(${it.id},this.checked,this)" class="editor-only vr-chk">
+                        <span class="vc-fam ${fam.vcls}"><i class="fa-solid ${fam.icon}"></i></span>
+                        <div class="vc-meta">
+                            <div class="vc-code">${escapeHtml(it.code)}</div>
+                            <div class="vc-resp">${escapeHtml(it.resp || 'Sem responsável')}</div>
                         </div>
                     </div>
-                    <span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold shrink-0 ${ss.pill}">${st}</span>
+                    <span class="vr-pill ${ss.vp}">${st}</span>
                 </div>
-                <div class="font-bold text-sm leading-snug">${escapeHtml(it.desc)}</div>
-                ${hasCust ? `<div class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-xs">
-                    <div class="font-extrabold text-amber-800 dark:text-amber-300"><i class="fa-solid fa-handshake mr-1"></i>Em posse: ${escapeHtml(it.custodyHolder)}</div>
-                    ${retDest ? `<div class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Devolver p/: <strong>${escapeHtml(retDest)}</strong></div>` : ''}
+                <div class="vc-desc">${escapeHtml(it.desc)}</div>
+                ${hasCust ? `<div class="vc-cust">
+                    <div class="vr-cust-h"><i class="fa-solid fa-handshake"></i> Em posse: ${escapeHtml(it.custodyHolder)}</div>
+                    ${retDest ? `<div class="vr-cust-r">Devolver p/: <strong>${escapeHtml(retDest)}</strong></div>` : ''}
                 </div>` : ''}
-                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#DCE4EE] dark:border-[#172E4E] text-xs">
-                    <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Local</span><span class="font-semibold">${escapeHtml(it.local || 'Sem local')}</span></div>
-                    <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Validade</span><span class="font-mono font-bold">${fmtBR(it.proxCal)}</span> ${cd.text ? `<span class="block text-[10px] ${cd.cls}">${cd.text}</span>` : ''}</div>
+                <div class="vc-grid">
+                    <div><span class="vc-lbl">Local</span><strong>${escapeHtml(it.local || 'Sem local')}</strong></div>
+                    <div><span class="vc-lbl">Validade</span><span class="vr-dt">${fmtBR(it.proxCal)}</span>${cd.text ? `<div class="vr-cd ${cd.vcls}">${cd.text}</div>` : ''}</div>
                 </div>
-                <div class="flex items-center justify-end gap-1.5 pt-1">
-                    <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only px-3 py-1.5 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846]'} text-xs font-bold cursor-pointer"><i class="fa-solid fa-handshake mr-1"></i>${hasCust?'Devolver':'Posse'}</button>
-                    <button type="button" onclick="openInspectorModal(${it.id})" class="px-3 py-1.5 rounded-lg bg-[#004C97] text-white text-xs font-bold cursor-pointer">${canEdit?'Editar':'Detalhes'}</button>
+                <div class="vc-acts">
+                    <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only vc-b ${hasCust?'vc-b-c-on':'vc-b-c'}"><i class="fa-solid fa-handshake"></i> ${hasCust?'Devolver':'Posse'}</button>
+                    <button type="button" onclick="openInspectorModal(${it.id})" class="vc-b vc-b-e">${canEdit?'Editar':'Detalhes'}</button>
                 </div>
             </div>`;
+        }
+
+        function buildLoadMoreSentinel(cardsMode, remaining) {
+            if (cardsMode) {
+                return `<div id="invLoadMoreSentinel" style="grid-column:1/-1;text-align:center;padding:0.75rem"><button type="button" onclick="appendMoreInventoryRows()" class="vr-more-btn">Carregar mais (${remaining} restantes)</button></div>`;
+            }
+            return `<tr id="invLoadMoreSentinel"><td colspan="9" class="vr-more-td"><button type="button" onclick="appendMoreInventoryRows()" class="vr-more-btn">Role para baixo ou clique para carregar mais (${remaining} restantes)</button></td></tr>`;
+        }
+
+        function appendMoreInventoryRows() {
+            if (invRenderedCount >= invPageItemsCache.length) return;
+            const cardsMode = isCardsViewActive();
+            const targetEl = document.getElementById(cardsMode ? 'inventoryCardsWrap' : 'inventoryTableBody');
+            if (!targetEl) return;
+            const sentinel = document.getElementById('invLoadMoreSentinel');
+            if (sentinel) sentinel.remove();
+
+            const canEdit = isEditor();
+            const todayISO = metaCacheTodayISO || getTodayISO();
+            const nextEnd = Math.min(invRenderedCount + INV_NEXT_BATCH, invPageItemsCache.length);
+            const slice = invPageItemsCache.slice(invRenderedCount, nextEnd);
+            const htmlChunk = cardsMode
+                ? slice.map(it => buildCardHtml(it, canEdit)).join('')
+                : slice.map(it => buildTableRowHtml(it, canEdit, todayISO)).join('');
+            invRenderedCount = nextEnd;
+
+            const remaining = invPageItemsCache.length - invRenderedCount;
+            targetEl.insertAdjacentHTML('beforeend', remaining > 0 ? htmlChunk + buildLoadMoreSentinel(cardsMode, remaining) : htmlChunk);
         }
 
         function renderInventoryView() {
@@ -3775,9 +4023,12 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const cards = document.getElementById('inventoryCardsWrap');
             if (!tbody || !cards) return;
 
-            const token = ++invRenderToken;
+            ++invRenderToken;
             const start = (invPage - 1) * invPageSize;
             const pageItems = filteredInv.slice(start, start + invPageSize);
+            invPageItemsCache = pageItems;
+            invRenderedCount = 0;
+
             const canEdit = isEditor();
             const cardsMode = isCardsViewActive();
             const todayISO = metaCacheTodayISO || getTodayISO();
@@ -3792,10 +4043,10 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
             if (pageItems.length === 0) {
                 if (cardsMode) {
-                    cards.innerHTML = '<div class="col-span-full p-10 text-center text-slate-400 bg-[#F7F9FC] dark:bg-[#0D1D34] rounded-xl text-sm">Nenhum instrumento encontrado.</div>';
+                    cards.innerHTML = '<div style="grid-column:1/-1;padding:2.5rem;text-align:center;color:#94A3B8;font-size:0.875rem">Nenhum instrumento encontrado.</div>';
                     tbody.innerHTML = '';
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="9" class="p-10 text-center text-slate-400">Nenhum instrumento corresponde aos filtros atuais.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="padding:2.5rem;text-align:center;color:#94A3B8">Nenhum instrumento corresponde aos filtros atuais.</td></tr>';
                     cards.innerHTML = '';
                 }
                 return;
@@ -3808,29 +4059,19 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const otherEl = cardsMode ? tbody : cards;
             if (otherEl.firstChild) otherEl.innerHTML = '';
 
-            // Renderização instantânea para <= 50 itens; fatiada via requestAnimationFrame para "Todos" (zero travamento!)
-            const FIRST_BATCH = 40;
-            const NEXT_BATCH = 80;
-            const buildFn = cardsMode
-                ? (it) => buildCardHtml(it, canEdit)
-                : (it) => buildTableRowHtml(it, canEdit, todayISO);
+            // Renderiza apenas os 35 primeiros itens (zero travamento mesmo com "Todos"!) e carrega o resto sob demanda ao rolar
+            const initialCount = Math.min(pageItems.length, INV_FIRST_BATCH);
+            const slice = pageItems.slice(0, initialCount);
+            const rowsHtml = cardsMode
+                ? slice.map(it => buildCardHtml(it, canEdit)).join('')
+                : slice.map(it => buildTableRowHtml(it, canEdit, todayISO)).join('');
+            invRenderedCount = initialCount;
 
-            if (pageItems.length <= FIRST_BATCH + 10) {
-                targetEl.innerHTML = pageItems.map(buildFn).join('');
-                return;
-            }
+            const remaining = pageItems.length - invRenderedCount;
+            targetEl.innerHTML = remaining > 0 ? rowsHtml + buildLoadMoreSentinel(cardsMode, remaining) : rowsHtml;
 
-            targetEl.innerHTML = pageItems.slice(0, FIRST_BATCH).map(buildFn).join('');
-            let offset = FIRST_BATCH;
-            function pumpNextChunk() {
-                if (token !== invRenderToken) return;
-                const end = Math.min(offset + NEXT_BATCH, pageItems.length);
-                const chunkHtml = pageItems.slice(offset, end).map(buildFn).join('');
-                targetEl.insertAdjacentHTML('beforeend', chunkHtml);
-                offset = end;
-                if (offset < pageItems.length) requestAnimationFrame(pumpNextChunk);
-            }
-            requestAnimationFrame(pumpNextChunk);
+            const wrap = document.getElementById('inventoryTableWrap');
+            if (wrap) wrap.scrollTop = 0;
         }
 
         function stepPage(delta) {
@@ -3914,8 +4155,10 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         }
 
         // Batch Selection & Dock
-        function toggleSelectRow(id, checked) {
+        function toggleSelectRow(id, checked, inputEl) {
             if (checked) selectedIds.add(id); else selectedIds.delete(id);
+            const row = inputEl && inputEl.closest ? inputEl.closest('tr') : null;
+            if (row) row.classList.toggle('vr-sel', checked);
             updateBatchDock();
         }
         function toggleSelectAllPage(checked) {
@@ -5087,9 +5330,27 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
             try {
                 const sInst = JSON.parse(safeGet(KEYS.inst) || 'null');
-                instrumentsData = (Array.isArray(sInst) && sInst.length > 0) ? sInst : parseTsvData(RAW_OFFICIAL_TSV, 1);
-            } catch { instrumentsData = parseTsvData(RAW_OFFICIAL_TSV, 1); }
+                const rawList = (Array.isArray(sInst) && sInst.length > 0) ? sInst : parseTsvData(RAW_OFFICIAL_TSV, 1);
+                instrumentsData = rawList.map((x, i) => normalizeInstrument(x, i + 1));
+            } catch { instrumentsData = parseTsvData(RAW_OFFICIAL_TSV, 1).map((x, i) => normalizeInstrument(x, i + 1)); }
             sortByCode(instrumentsData);
+
+            // Infinite scroll passivo no container da tabela e na janela (modo Cartões)
+            const tblWrap = document.getElementById('inventoryTableWrap');
+            if (tblWrap) {
+                tblWrap.addEventListener('scroll', () => {
+                    if (currentView !== 'inventory' || invRenderedCount >= invPageItemsCache.length) return;
+                    if (tblWrap.scrollTop + tblWrap.clientHeight >= tblWrap.scrollHeight - 260) {
+                        appendMoreInventoryRows();
+                    }
+                }, { passive: true });
+            }
+            window.addEventListener('scroll', () => {
+                if (currentView !== 'inventory' || !isCardsViewActive() || invRenderedCount >= invPageItemsCache.length) return;
+                if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 360) {
+                    appendMoreInventoryRows();
+                }
+            }, { passive: true });
 
             try {
                 const sHist = JSON.parse(safeGet(KEYS.hist) || 'null');
@@ -5106,7 +5367,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
             restoreAuth();
             applyViewModeUI();
-            applyAuthUI();
+            try { applyAuthUI(); } catch (e) { console.error('Init render error:', e); }
             loadFromCloud(false, true, false);
             validateSessionQuietly();
         }
