@@ -1510,7 +1510,7 @@
 
     <!-- ==================== MODAL: IMPRESSÃO (FOLHA ARMÁRIO & PDF ISO) ==================== -->
     <div id="printModal" onclick="if(event.target===this) closePrintModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 id="printModalTitle" class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-print text-[#00A8E8]"></i> Gerar Documento PDF</h3>
                 <button type="button" onclick="closePrintModal()" class="text-white/75 hover:text-white text-lg font-bold cursor-pointer">&times;</button>
@@ -1518,26 +1518,67 @@
             <div class="p-6 space-y-4">
                 <div class="editor-only">
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Modelo</label>
-                    <select id="printTplSel" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-bold">
+                    <select id="printTplSel" onchange="updatePrintPreviewCount()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-bold">
                         <option value="CABINET">Folha Porta de Armário (p/ Plastificar)</option>
                         <option value="ISO">Formulário Oficial Auditoria ISO Voith</option>
                     </select>
                 </div>
+
+                <!-- Atalhos rápidos para busca/recolhimento na fábrica -->
+                <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span class="font-bold uppercase text-slate-400 mr-1">Atalhos:</span>
+                    <button type="button" onclick="applyPrintQuickPreset('VENCIDA')" class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-400/30 font-extrabold cursor-pointer hover:opacity-85 transition">Somente Vencidos</button>
+                    <button type="button" onclick="applyPrintQuickPreset('__URGENT__')" class="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30 font-bold cursor-pointer hover:opacity-85 transition">Vencidos + Próx. 30d</button>
+                    <button type="button" onclick="applyPrintQuickPreset('__THIS_MONTH__')" class="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-500/15 text-[#004C97] dark:text-[#00A8E8] border border-sky-200 dark:border-sky-400/30 font-bold cursor-pointer hover:opacity-85 transition">Mês Atual</button>
+                    <button type="button" onclick="applyPrintQuickPreset('CLEAR')" class="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold cursor-pointer">Limpar</button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Mês de Vencimento</label>
+                        <select id="printMonthSel" onchange="updatePrintPreviewCount()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-semibold"></select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status</label>
+                        <select id="printStatusSel" onchange="updatePrintPreviewCount()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-semibold">
+                            <option value="">Todos os Status</option>
+                            <option value="VENCIDA">Somente Vencidos</option>
+                            <option value="__URGENT__">Vencidos + Próx. 30 dias</option>
+                            <option value="PRÓXIMA DO VENCIMENTO">Próxima do Vencimento (30d)</option>
+                            <option value="EM DIA">Em Dia</option>
+                            <option value="AGUARDANDO CALIBRAÇÃO">Aguardando Calibração</option>
+                            <option value="EM REPARO">Em Reparo</option>
+                            <option value="PENDÊNCIA DE DATA">Pendência de Data</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div>
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Localização / Armário</label>
-                    <input type="text" id="printLocalInp" list="dlLocais" placeholder="Todos ou ex: Armario T1" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm">
+                    <input type="text" id="printLocalInp" oninput="updatePrintPreviewCount()" list="dlLocais" placeholder="Todos ou ex: Armario T1" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm">
                 </div>
-                <div>
-                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Setor</label>
-                    <select id="printSetorSel" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm"></select>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Setor</label>
+                        <select id="printSetorSel" onchange="updatePrintPreviewCount()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Responsável</label>
+                        <select id="printRespSel" onchange="updatePrintPreviewCount()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm"></select>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Responsável</label>
-                    <select id="printRespSel" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm"></select>
-                </div>
-                <div class="flex justify-end gap-2 pt-3 border-t border-[#DCE4EE] dark:border-[#172E4E]">
-                    <button type="button" onclick="closePrintModal()" class="px-4 py-2 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] text-xs font-bold cursor-pointer">Cancelar</button>
-                    <button type="button" onclick="executePrintDocument()" class="px-5 py-2 rounded-lg bg-[#004C97] hover:bg-[#003A75] text-white text-xs font-extrabold cursor-pointer">Gerar & Imprimir</button>
+
+                <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer select-none pt-0.5">
+                    <input type="checkbox" id="printChecklistChk" class="rounded cursor-pointer">
+                    <span>Incluir coluna de conferência (<strong>☐</strong>) para marcar itens encontrados na fábrica</span>
+                </label>
+
+                <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#DCE4EE] dark:border-[#172E4E]">
+                    <span id="printPreviewCount" class="font-mono text-xs font-bold text-[#004C97] dark:text-[#00A8E8]">0 itens selecionados</span>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="closePrintModal()" class="px-4 py-2 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] text-xs font-bold cursor-pointer">Cancelar</button>
+                        <button type="button" id="printExecuteBtn" onclick="executePrintDocument()" class="px-5 py-2 rounded-lg bg-[#004C97] hover:bg-[#003A75] disabled:opacity-40 text-white text-xs font-extrabold cursor-pointer">Gerar & Imprimir</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3021,7 +3062,13 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             fill('fSetor', sectors, 'Todos os Setores');
             fill('fLocal', locals, 'Todas as Localizações', '<option value="__NONE__">⚠️ Sem Local Definido</option>');
             fill('fResp', resps, 'Todos os Responsáveis');
+            const monthOptions = months.map(ym => {
+                const [y,m] = ym.split('-');
+                const cnt = instrumentsData.filter(x => x.proxCal && x.proxCal.startsWith(ym)).length;
+                return { v:ym, l:`${mNames[Number(m)-1]}/${y} (${cnt})` };
+            });
             fill('fMonth', months.map(ym => { const [y,m] = ym.split('-'); return { v:ym, l:`${mNames[Number(m)-1]}/${y}` }; }), 'Todos os Meses');
+            fill('printMonthSel', monthOptions, 'Todos os Meses');
             fill('printSetorSel', sectors, 'Todos os Setores');
             fill('printRespSel', resps, 'Todos os Responsáveis');
 
@@ -4455,45 +4502,120 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         }
 
         // ---- Impressão PDF (Folha Porta de Armário & Auditoria ISO) ----
+        function filterPrintItems(loc, sec, resp, month, status) {
+            return instrumentsData.filter(i => {
+                if (loc && !(i.local||'').toLowerCase().includes(loc.toLowerCase())) return false;
+                if (sec && !i.setor.includes(sec)) return false;
+                if (resp && i.resp !== resp) return false;
+                if (month && !(i.proxCal && i.proxCal.startsWith(month))) return false;
+                if (status) {
+                    const st = calcStatus(i.proxCal, i.status);
+                    if (status === '__URGENT__') {
+                        if (st !== 'VENCIDA' && st !== 'PRÓXIMA DO VENCIMENTO') return false;
+                    } else if (st !== status) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+        function updatePrintPreviewCount() {
+            const loc = (document.getElementById('printLocalInp')?.value || '').trim();
+            const sec = document.getElementById('printSetorSel')?.value || '';
+            const resp = document.getElementById('printRespSel')?.value || '';
+            const month = document.getElementById('printMonthSel')?.value || '';
+            const status = document.getElementById('printStatusSel')?.value || '';
+            const items = filterPrintItems(loc, sec, resp, month, status);
+            const cntEl = document.getElementById('printPreviewCount');
+            const btn = document.getElementById('printExecuteBtn');
+            if (cntEl) {
+                cntEl.textContent = `${items.length} ${items.length === 1 ? 'item selecionado' : 'itens selecionados'}`;
+                cntEl.className = items.length === 0
+                    ? 'font-mono text-xs font-bold text-rose-600 dark:text-rose-400'
+                    : 'font-mono text-xs font-bold text-[#004C97] dark:text-[#00A8E8]';
+            }
+            if (btn) btn.disabled = items.length === 0;
+        }
+        function applyPrintQuickPreset(kind) {
+            const mSel = document.getElementById('printMonthSel');
+            const sSel = document.getElementById('printStatusSel');
+            const chk = document.getElementById('printChecklistChk');
+            if (kind === 'CLEAR') {
+                mSel.value = ''; sSel.value = '';
+                document.getElementById('printLocalInp').value = '';
+                document.getElementById('printSetorSel').value = '';
+                document.getElementById('printRespSel').value = '';
+                if (chk) chk.checked = false;
+            } else if (kind === '__THIS_MONTH__') {
+                const curYM = (currentRefISO || getTodayISO()).slice(0, 7);
+                const hasOpt = [...mSel.options].some(o => o.value === curYM);
+                mSel.value = hasOpt ? curYM : '';
+                sSel.value = '';
+                if (chk) chk.checked = true;
+                if (!hasOpt) showToast('Não há vencimentos cadastrados no mês atual.', 'info');
+            } else {
+                sSel.value = kind;
+                if (chk) chk.checked = true;
+            }
+            updatePrintPreviewCount();
+        }
         function openPrintModal(tpl = 'CABINET', preset = {}) {
             if (tpl === 'ISO' && !requireEditor()) return;
             document.getElementById('printTplSel').value = tpl;
             document.getElementById('printLocalInp').value = preset.local || '';
             document.getElementById('printSetorSel').value = preset.setor || '';
             document.getElementById('printRespSel').value = preset.resp || '';
+            document.getElementById('printMonthSel').value = preset.month || '';
+            document.getElementById('printStatusSel').value = preset.status || '';
+            document.getElementById('printChecklistChk').checked = Boolean(preset.month || preset.status);
             document.getElementById('printModalTitle').innerHTML = tpl === 'CABINET'
-                ? '<i class="fa-solid fa-print text-[#00A8E8]"></i> Folha Porta de Armário'
+                ? '<i class="fa-solid fa-print text-[#00A8E8]"></i> Folha Porta de Armário / Recolhimento'
                 : '<i class="fa-solid fa-file-pdf text-rose-400"></i> Relatório Oficial Auditoria ISO';
+            updatePrintPreviewCount();
             document.getElementById('printModal').classList.remove('hidden');
         }
         function closePrintModal() { document.getElementById('printModal').classList.add('hidden'); }
-        function quickPrintCabinet(loc) { executePrintDocument('CABINET', loc, '', ''); }
-        function quickPrintResp(resp) { if (!requireEditor()) return; executePrintDocument('ISO', '', '', resp); }
-        function executePrintDocument(forceTpl, forceLoc, forceSetor, forceResp) {
+        function quickPrintCabinet(loc) { executePrintDocument('CABINET', loc, '', '', '', '', false); }
+        function quickPrintResp(resp) { if (!requireEditor()) return; executePrintDocument('ISO', '', '', resp, '', '', false); }
+        function executePrintDocument(forceTpl, forceLoc, forceSetor, forceResp, forceMonth, forceStatus, forceChecklist) {
             const tpl = forceTpl || (isEditor() ? document.getElementById('printTplSel').value : 'CABINET');
             const loc = (forceLoc !== undefined ? forceLoc : document.getElementById('printLocalInp').value).trim();
             const sec = forceSetor !== undefined ? forceSetor : document.getElementById('printSetorSel').value;
             const resp = forceResp !== undefined ? forceResp : document.getElementById('printRespSel').value;
+            const month = forceMonth !== undefined ? forceMonth : (document.getElementById('printMonthSel')?.value || '');
+            const status = forceStatus !== undefined ? forceStatus : (document.getElementById('printStatusSel')?.value || '');
+            const withCheck = forceChecklist !== undefined ? Boolean(forceChecklist) : Boolean(document.getElementById('printChecklistChk')?.checked);
 
-            const items = instrumentsData.filter(i => {
-                if (loc && !(i.local||'').toLowerCase().includes(loc.toLowerCase())) return false;
-                if (sec && !i.setor.includes(sec)) return false;
-                if (resp && i.resp !== resp) return false;
-                return true;
-            });
+            const items = filterPrintItems(loc, sec, resp, month, status);
             if (items.length === 0) { showToast('Nenhum instrumento encontrado para esses filtros.', 'error'); return; }
             closePrintModal();
 
             const w = window.open('', '_blank');
             if (!w) { showToast('Permita pop-ups para gerar o PDF.', 'error'); return; }
-            const title = tpl === 'CABINET' ? `INVENTÁRIO PORTA DE ARMÁRIO — ${loc || 'GERAL'}` : 'RELATÓRIO OFICIAL DE CONTROLE METROLÓGICO (ISO)';
+
+            const mNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+            const monthLabel = month ? `${mNames[Number(month.split('-')[1])-1]}/${month.split('-')[0]}` : '';
+            const statusLabels = { 'VENCIDA':'Somente Vencidos', '__URGENT__':'Vencidos + Próx. 30d', 'PRÓXIMA DO VENCIMENTO':'Próx. 30 dias', 'EM DIA':'Em Dia', 'AGUARDANDO CALIBRAÇÃO':'Aguardando Calibração', 'EM REPARO':'Em Reparo', 'PENDÊNCIA DE DATA':'Pendência de Data' };
+            const filterParts = [];
+            if (monthLabel) filterParts.push(`Mês: ${monthLabel}`);
+            if (status) filterParts.push(`Status: ${statusLabels[status] || status}`);
+            if (loc) filterParts.push(`Local: ${loc}`);
+            if (sec) filterParts.push(`Setor: ${sec.replace('Voith Turbo ', '')}`);
+            if (resp) filterParts.push(`Resp.: ${resp}`);
+
+            const title = tpl === 'CABINET'
+                ? (withCheck && !loc ? `CHECKLIST DE RECOLHIMENTO P/ CALIBRAÇÃO${monthLabel ? ' — ' + monthLabel.toUpperCase() : ''}` : `INVENTÁRIO PORTA DE ARMÁRIO — ${loc || (monthLabel ? monthLabel.toUpperCase() : 'GERAL')}`)
+                : 'RELATÓRIO OFICIAL DE CONTROLE METROLÓGICO (ISO)';
+
             const rowsHtml = items.map(i => {
                 const st = calcStatus(i.proxCal, i.status);
                 const c = st==='VENCIDA'?'#DC2626':st==='PRÓXIMA DO VENCIMENTO'?'#D97706':st==='EM DIA'?'#059669':'#004C97';
+                const locHtml = `${escapeHtml(i.local || 'Sem local')}${i.custodyHolder ? `<br><span style="font-size:9px;color:#B45309;font-weight:700">Posse: ${escapeHtml(i.custodyHolder)}</span>` : ''}`;
                 return `<tr>
+                    ${withCheck ? '<td style="text-align:center;font-size:14px;width:24px;color:#475569">☐</td>' : ''}
                     <td style="font-family:monospace;font-weight:700;color:#004C97">${escapeHtml(i.code)}</td>
                     <td><strong>${escapeHtml(i.desc)}</strong>${i.max?`<br><span style="font-size:10px;color:#555">Faixa: ${escapeHtml(i.min||'0')} a ${escapeHtml(i.max)}</span>`:''}</td>
-                    <td>${escapeHtml(i.local||'-')}</td>
+                    <td>${locHtml}</td>
                     <td>${escapeHtml(i.resp||'-')}</td>
                     <td style="font-family:monospace;font-weight:700">${fmtBR(i.proxCal)}</td>
                     <td style="font-weight:700;color:${c}">${st}</td>
@@ -4503,8 +4625,9 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
             <style>
                 body{font-family:Arial,sans-serif;color:#0F172A;margin:24px;font-size:11px}
-                .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #004C97;padding-bottom:12px;margin-bottom:16px}
+                .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #004C97;padding-bottom:12px;margin-bottom:14px}
                 .brand{font-size:22px;font-weight:800;letter-spacing:3px;color:#004C97}
+                .flt{background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;padding:6px 10px;margin-bottom:12px;font-size:10px;color:#334155}
                 table{width:100%;border-collapse:collapse}
                 th{background:#004C97;color:#fff;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase}
                 td{border-bottom:1px solid #CBD5E1;padding:6px 8px;vertical-align:top}
@@ -4516,7 +4639,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                     <div><div class="brand">VOITH <span style="color:#00A8E8;font-size:12px;letter-spacing:1px">TURBO</span></div><div style="font-weight:700;font-size:13px;margin-top:4px">${escapeHtml(title)}</div></div>
                     <div style="text-align:right;font-size:10px;color:#475569">Emissão: <strong>${fmtBR(getTodayISO())}</strong><br>Ref.: <strong>${fmtBR(currentRefISO)}</strong> • Total: <strong>${items.length} itens</strong></div>
                 </div>
-                <table><thead><tr><th>Código</th><th>Instrumento / Faixa</th><th>Local</th><th>Responsável</th><th>Validade</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+                ${filterParts.length ? `<div class="flt"><strong>Filtros aplicados:</strong> ${escapeHtml(filterParts.join('  •  '))}</div>` : ''}
+                <table><thead><tr>${withCheck?'<th style="text-align:center;width:24px">OK</th>':''}<th>Código</th><th>Instrumento / Faixa</th><th>Local</th><th>Responsável</th><th>Validade</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <div class="ftr"><span>Voith Turbo — Controle Metrológico</span><span>Conferido por: ___________________________ Data: ___/___/_____</span></div>
                 <script>window.onload=function(){window.print();}<\/script>
             </body></html>`);
