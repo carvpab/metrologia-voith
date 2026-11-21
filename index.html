@@ -711,10 +711,10 @@
                         <button type="button" onclick="copySummaryReport('FILTERED')" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1.5" title="Copiar lista filtrada atual para colar no Teams ou E-mail">
                             <i class="fa-regular fa-copy text-[#00A8E8]"></i> Copiar Lista
                         </button>
-                        <button type="button" onclick="openPrintModal('CABINET')" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1.5">
+                        <button type="button" onclick="openPrintModalFromInventory('CABINET')" class="px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1.5">
                             <i class="fa-solid fa-print text-[#00A8E8]"></i> Folha Armário
                         </button>
-                        <button type="button" onclick="openPrintModal('ISO')" class="editor-only px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1.5">
+                        <button type="button" onclick="openPrintModalFromInventory('ISO')" class="editor-only px-3 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1.5">
                             <i class="fa-solid fa-file-pdf text-rose-400"></i> PDF ISO
                         </button>
                     </div>
@@ -777,7 +777,20 @@
 
                     <!-- Painel Retrátil de Filtros Avançados -->
                     <div id="invAdvFiltersPanel" class="hidden bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E] rounded-xl p-4 space-y-3.5">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
+                                <select id="fStatus" onchange="onAdvStatusChange()" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-xs font-semibold">
+                                    <option value="">Todos os Status</option>
+                                    <option value="VENCIDA">Vencida</option>
+                                    <option value="__URGENT__">Vencidos + Próx. 30d</option>
+                                    <option value="PRÓXIMA DO VENCIMENTO">Próxima do Vencimento (30d)</option>
+                                    <option value="EM DIA">Em Dia</option>
+                                    <option value="AGUARDANDO CALIBRAÇÃO">Aguardando Calibração</option>
+                                    <option value="EM REPARO">Em Reparo</option>
+                                    <option value="PENDÊNCIA DE DATA">Pendência de Data</option>
+                                </select>
+                            </div>
                             <div>
                                 <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Setor</label>
                                 <select id="fSetor" onchange="applyInventoryFilters()" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-xs font-semibold"></select>
@@ -3266,11 +3279,15 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         }
 
         // ---- Inventário: Filtros, Debounce, Chips, Tabela, Cartões, Edição Inline ----
+        const QUICK_STATUS_KEYS = new Set(['', 'VENCIDA', 'PRÓXIMA DO VENCIMENTO', 'EM DIA', 'AGUARDANDO CALIBRAÇÃO']);
+
         function jumpToInventoryFilter(opts = {}) {
             navigateTo('inventory');
             resetInventoryFilters(false);
             if (opts.status) {
-                quickStatusTab = opts.status;
+                const fs = document.getElementById('fStatus');
+                if (fs) fs.value = opts.status;
+                quickStatusTab = QUICK_STATUS_KEYS.has(opts.status) ? opts.status : '';
                 updateQuickStatusTabsUI();
             }
             if (opts.local) document.getElementById('fLocal').value = opts.local;
@@ -3282,13 +3299,30 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         function setQuickStatusTab(val) {
             quickStatusTab = val;
+            const fs = document.getElementById('fStatus');
+            if (fs && !val.startsWith('__')) {
+                fs.value = val;
+            }
             updateQuickStatusTabsUI();
             applyInventoryFilters();
         }
+
+        function onAdvStatusChange() {
+            const val = document.getElementById('fStatus')?.value || '';
+            if (!quickStatusTab.startsWith('__')) {
+                quickStatusTab = QUICK_STATUS_KEYS.has(val) ? val : '';
+                updateQuickStatusTabsUI();
+            }
+            applyInventoryFilters();
+        }
+
         function updateQuickStatusTabsUI() {
+            const fsVal = document.getElementById('fStatus')?.value || '';
             document.querySelectorAll('.qtab-btn').forEach(btn => {
                 const v = btn.getAttribute('data-qtab') || '';
-                const on = v === quickStatusTab;
+                const on = v === ''
+                    ? (quickStatusTab === '' && fsVal === '')
+                    : (v === quickStatusTab);
                 if (on) {
                     btn.className = 'qtab-btn px-3.5 py-1.5 rounded-lg font-extrabold bg-[#004C97] text-white shadow cursor-pointer transition inline-flex items-center gap-1.5';
                 } else if (v === '__CUSTODY__') {
@@ -3314,7 +3348,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         function resetInventoryFilters(shouldApply = true) {
             document.getElementById('invSearchInput').value = '';
-            ['fSetor','fLocal','fResp','fMonth','fFamily'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            ['fStatus','fSetor','fLocal','fResp','fMonth','fFamily'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
             quickStatusTab = '';
             invSortField = ''; invSortDir = 'asc';
             updateQuickStatusTabsUI();
@@ -3324,8 +3358,18 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         function removeSingleInvFilter(k) {
             if (k === 'q') document.getElementById('invSearchInput').value = '';
-            else if (k === 'tab') { quickStatusTab = ''; updateQuickStatusTabsUI(); }
-            else { const el = document.getElementById(k); if (el) el.value = ''; }
+            else if (k === 'tab') {
+                quickStatusTab = '';
+                updateQuickStatusTabsUI();
+            } else if (k === 'fStatus') {
+                const fs = document.getElementById('fStatus');
+                if (fs) fs.value = '';
+                if (!quickStatusTab.startsWith('__')) quickStatusTab = '';
+                updateQuickStatusTabsUI();
+            } else {
+                const el = document.getElementById(k);
+                if (el) el.value = '';
+            }
             applyInventoryFilters();
         }
 
@@ -3347,6 +3391,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         function applyInventoryFilters() {
             const q = (document.getElementById('invSearchInput')?.value || '').trim().toLowerCase();
+            const statusSel = document.getElementById('fStatus')?.value || '';
             const setor = document.getElementById('fSetor')?.value || '';
             const local = document.getElementById('fLocal')?.value || '';
             const resp = document.getElementById('fResp')?.value || '';
@@ -3357,7 +3402,15 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 const st = calcStatus(it.proxCal, it.status);
                 if (quickStatusTab === '__CUSTODY__' && !(it.custodyHolder && it.custodyHolder.trim())) return false;
                 else if (quickStatusTab === '__NOLOC__' && it.local && it.local.trim()) return false;
-                else if (quickStatusTab && !quickStatusTab.startsWith('__') && st !== quickStatusTab) return false;
+                else if (quickStatusTab && !quickStatusTab.startsWith('__') && !statusSel && st !== quickStatusTab) return false;
+
+                if (statusSel) {
+                    if (statusSel === '__URGENT__') {
+                        if (st !== 'VENCIDA' && st !== 'PRÓXIMA DO VENCIMENTO') return false;
+                    } else if (st !== statusSel) {
+                        return false;
+                    }
+                }
 
                 if (setor && !it.setor.includes(setor)) return false;
                 if (local === '__NONE__' && it.local && it.local.trim()) return false;
@@ -3383,13 +3436,15 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             }
 
             // Active Filter Chips & Badge
-            const advCount = [setor, local, resp, month, fam].filter(Boolean).length;
+            const advCount = [statusSel, setor, local, resp, month, fam].filter(Boolean).length;
             const advBadge = document.getElementById('advFilterCountBadge');
             if (advBadge) { advBadge.textContent = advCount; advBadge.classList.toggle('hidden', advCount === 0); }
 
             const chips = [];
             if (q) chips.push({ k:'q', l:`Busca: "${q}"` });
-            if (quickStatusTab) chips.push({ k:'tab', l: quickStatusTab==='__CUSTODY__'?'Em Posse':quickStatusTab==='__NOLOC__'?'Sem Local':quickStatusTab });
+            if (quickStatusTab === '__CUSTODY__') chips.push({ k:'tab', l:'Em Posse' });
+            else if (quickStatusTab === '__NOLOC__') chips.push({ k:'tab', l:'Sem Local' });
+            if (statusSel) chips.push({ k:'fStatus', l:`Status: ${statusSel==='__URGENT__'?'Vencidos + Próx. 30d':statusSel}` });
             if (setor) chips.push({ k:'fSetor', l:`Setor: ${setor.replace('Voith Turbo ','')}` });
             if (local) chips.push({ k:'fLocal', l:`Local: ${local==='__NONE__'?'Sem Local':local}` });
             if (resp) chips.push({ k:'fResp', l:`Resp.: ${resp}` });
@@ -4558,6 +4613,16 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 if (chk) chk.checked = true;
             }
             updatePrintPreviewCount();
+        }
+        function openPrintModalFromInventory(tpl = 'CABINET') {
+            const locVal = document.getElementById('fLocal')?.value || '';
+            openPrintModal(tpl, {
+                local: locVal === '__NONE__' ? '' : locVal,
+                setor: document.getElementById('fSetor')?.value || '',
+                resp: document.getElementById('fResp')?.value || '',
+                month: document.getElementById('fMonth')?.value || '',
+                status: document.getElementById('fStatus')?.value || ''
+            });
         }
         function openPrintModal(tpl = 'CABINET', preset = {}) {
             if (tpl === 'ISO' && !requireEditor()) return;
