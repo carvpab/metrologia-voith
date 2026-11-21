@@ -26,6 +26,8 @@
             }
         })();
     </script>
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -51,8 +53,7 @@
             }
         };
     </script>
-    <!-- SheetJS (.XLS / .XLSX / .CSV) -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS é carregado sob demanda apenas ao importar .XLS/.XLSX (startup ultrarrápido) -->
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Google Fonts: Space Grotesk + Plus Jakarta Sans + JetBrains Mono -->
@@ -72,6 +73,8 @@
             --text-mute: #64788F;
             --voith-blue: #004C97;
             --voith-cyan: #00A8E8;
+            --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-fast: cubic-bezier(0.2, 0.8, 0.2, 1);
         }
         html.dark {
             color-scheme: dark;
@@ -90,7 +93,11 @@
             background-color: var(--bg-canvas);
             color: var(--text-main);
             font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-            transition: background-color 0.2s ease, color 0.2s ease;
+            text-rendering: optimizeSpeed;
+        }
+        html.vp-theme-switching body,
+        html.vp-theme-switching .vp-card {
+            transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
         }
 
         /* Signature Voith Precision Hero with subtle blueprint engineering grid */
@@ -101,6 +108,7 @@
                 linear-gradient(125deg, #001229 0%, #00234B 48%, #003F80 100%);
             position: relative;
             overflow: hidden;
+            contain: paint;
         }
         .voith-telemetry-hero::before {
             content: "";
@@ -133,28 +141,40 @@
             margin: 0 0.14em;
         }
 
-        /* Precision Architectural Card */
+        /* Precision Architectural Card — GPU-only transform & border transitions */
         .vp-card {
             background-color: var(--bg-surface);
             border: 1px solid var(--border-line);
-            transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+            transition: transform 0.14s var(--ease-spring), border-color 0.14s ease;
         }
         .vp-card-hover:hover {
             border-color: #004C97;
-            box-shadow: 0 12px 30px -14px rgba(0, 40, 85, 0.22);
-            transform: translateY(-1px);
+            box-shadow: 0 10px 24px -14px rgba(0, 40, 85, 0.24);
+            transform: translate3d(0, -2px, 0);
+        }
+        .vp-card-hover:active {
+            transform: translate3d(0, 0, 0) scale(0.992);
         }
         html.dark .vp-card-hover:hover {
             border-color: #00A8E8;
-            box-shadow: 0 12px 30px -14px rgba(0, 168, 232, 0.22);
+            box-shadow: 0 10px 24px -14px rgba(0, 168, 232, 0.24);
+        }
+
+        /* Tactile button micro-press */
+        button:not(:disabled) {
+            transition: transform 0.12s var(--ease-fast), background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+        }
+        button:not(:disabled):active {
+            transform: scale(0.975);
         }
 
         /* Header Navigation Active Indicator */
         .vp-nav-tab {
             position: relative;
             color: var(--text-sec);
-            transition: color 0.16s ease, background-color 0.16s ease;
+            transition: color 0.12s ease;
         }
+        .vp-nav-tab:active { transform: none !important; }
         .vp-nav-tab:hover { color: #004C97; }
         html.dark .vp-nav-tab:hover { color: #38BDF8; }
         .vp-nav-tab.is-active {
@@ -172,12 +192,18 @@
             background: linear-gradient(90deg, #004C97, #00A8E8);
             border-radius: 2px 2px 0 0;
             transform: scaleX(0);
-            transition: transform 0.2s cubic-bezier(.22,1,.36,1);
+            transition: transform 0.16s var(--ease-spring);
+            will-change: transform;
         }
         .vp-nav-tab.is-active::after { transform: scaleX(1); }
 
-        /* Sticky precision table */
-        .vp-table-wrap { max-height: 66vh; overflow-y: auto; }
+        /* Sticky precision table with scroll containment & off-screen paint skipping */
+        .vp-table-wrap {
+            max-height: 66vh;
+            overflow-y: auto;
+            contain: content;
+            overscroll-behavior: contain;
+        }
         .vp-table-wrap table { border-collapse: separate; border-spacing: 0; }
         .vp-table-wrap thead th {
             position: sticky;
@@ -186,10 +212,21 @@
             background-color: var(--bg-subtle);
             border-bottom: 1.5px solid var(--border-strong);
         }
+        #inventoryTableBody tr {
+            content-visibility: auto;
+            contain-intrinsic-size: auto 56px;
+        }
+        #inventoryCardsWrap > div {
+            content-visibility: auto;
+            contain-intrinsic-size: auto 190px;
+        }
         body.vp-compact #inventoryTableBody td {
             padding-top: 0.42rem !important;
             padding-bottom: 0.42rem !important;
             font-size: 0.77rem !important;
+        }
+        body.vp-compact #inventoryTableBody tr {
+            contain-intrinsic-size: auto 40px;
         }
 
         /* Custom subtle scrollbars */
@@ -198,12 +235,39 @@
         ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.35); border-radius: 9999px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(0, 76, 151, 0.55); }
 
-        /* Smooth View Fade */
+        /* Ultra-Fluid GPU Keyframe Animations (60/120fps) */
         @keyframes vpFadeUp {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translate3d(0, 6px, 0); }
+            to { opacity: 1; transform: translate3d(0, 0, 0); }
         }
-        .vp-animate { animation: vpFadeUp 0.24s ease-out both; }
+        @keyframes vpOverlayIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes vpModalPop {
+            from { opacity: 0; transform: translate3d(0, 10px, 0) scale3d(0.97, 0.97, 1); }
+            to { opacity: 1; transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
+        }
+        @keyframes vpDrawerIn {
+            from { opacity: 0.5; transform: translate3d(42px, 0, 0); }
+            to { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+        @keyframes vpDockUp {
+            from { opacity: 0; transform: translate3d(-50%, 18px, 0); }
+            to { opacity: 1; transform: translate3d(-50%, 0, 0); }
+        }
+        @keyframes vpDropIn {
+            from { opacity: 0; transform: translate3d(0, -6px, 0) scale3d(0.97, 0.97, 1); }
+            to { opacity: 1; transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
+        }
+
+        .vp-animate { animation: vpFadeUp 0.15s var(--ease-spring) both; }
+        .vp-modal-overlay:not(.hidden) { animation: vpOverlayIn 0.14s ease-out both; }
+        .vp-modal-overlay:not(.hidden) > div { animation: vpModalPop 0.17s var(--ease-spring) both; }
+        #inspectorOverlay:not(.hidden) { animation: vpOverlayIn 0.14s ease-out both; }
+        #inspectorOverlay:not(.hidden) > div { animation: vpDrawerIn 0.19s var(--ease-spring) both; }
+        #batchDock:not(.hidden) { animation: vpDockUp 0.18s var(--ease-spring) both; }
+        #systemMenuDropdown:not(.hidden) { animation: vpDropIn 0.13s var(--ease-spring) both; transform-origin: top right; }
 
         /* Auth Visibility Rules */
         body.vp-readonly .editor-only { display: none !important; }
@@ -211,9 +275,17 @@
         body:not(.vp-readonly) .readonly-only { display: none !important; }
         body:not(.vp-admin) .admin-only { display: none !important; }
 
-        /* SVG Compliance Arc smooth animation */
+        /* SVG Compliance Arc smooth fast animation */
         #heroGaugeProgress {
-            transition: stroke-dashoffset 0.75s cubic-bezier(.22,1,.36,1), stroke 0.3s ease;
+            transition: stroke-dashoffset 0.42s var(--ease-spring), stroke 0.2s ease;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
@@ -223,7 +295,7 @@
     <input type="file" id="xlsFileInput" accept=".xls,.xlsx,.csv" onchange="handleImportFileSelect(event)" class="hidden">
 
     <!-- ==================== HEADER ARQUITETÔNICO VOITH PRECISION OS ==================== -->
-    <header class="sticky top-0 z-40 bg-white/90 dark:bg-[#061121]/90 backdrop-blur-xl border-b border-[#DCE4EE] dark:border-[#172E4E]">
+    <header class="sticky top-0 z-40 bg-white/[0.98] dark:bg-[#061121]/[0.98] border-b border-[#DCE4EE] dark:border-[#172E4E] shadow-[0_2px_14px_-6px_rgba(0,24,51,0.14)]">
         <!-- Faixa Fina de Telemetria Superior -->
         <div class="bg-[#001833] text-slate-300 text-[11px] border-b border-white/10">
             <div class="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 h-9 flex items-center justify-between gap-3">
@@ -427,7 +499,7 @@
                             </div>
 
                             <!-- Simulador Dinâmico de Horizonte (calculado sempre a partir de HOJE) -->
-                            <div class="bg-white/[0.07] backdrop-blur-md border border-white/15 rounded-xl p-3.5 max-w-2xl space-y-2.5">
+                            <div class="bg-[#001D3D]/70 border border-white/15 rounded-xl p-3.5 max-w-2xl space-y-2.5">
                                 <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                                     <span class="font-bold text-sky-300 flex items-center gap-1.5">
                                         <i class="fa-solid fa-gauge-high"></i>
@@ -467,7 +539,7 @@
 
                         <!-- Coluna Direita: Anel de Conformidade SVG Vetorial de Alta Precisão -->
                         <div class="lg:col-span-4 flex justify-center lg:justify-end">
-                            <div class="bg-white/[0.06] backdrop-blur-md border border-white/15 rounded-2xl p-6 w-full max-w-[320px] flex flex-col items-center gap-4 shadow-2xl">
+                            <div class="bg-[#001A38]/75 border border-white/15 rounded-2xl p-6 w-full max-w-[320px] flex flex-col items-center gap-4 shadow-2xl">
                                 <div class="w-full flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-sky-300">
                                     <span>Índice de Conformidade</span>
                                     <span id="heroGaugeStatusTag" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px]">OK</span>
@@ -1047,7 +1119,7 @@
     </main>
 
     <!-- FLOATING BATCH ACTION DOCK (APARECE AO MARCAR ITENS NO INVENTÁRIO) -->
-    <div id="batchDock" class="editor-only hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-4xl bg-[#001833]/95 backdrop-blur-xl text-white border border-[#00A8E8]/40 rounded-2xl shadow-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div id="batchDock" class="editor-only hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-4xl bg-[#001833]/[0.98] text-white border border-[#00A8E8]/40 rounded-2xl shadow-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2.5">
             <span class="font-mono text-xs font-extrabold px-2.5 py-1 rounded-lg bg-[#00A8E8] text-[#001429]"><span id="batchCountLabel">0</span> selecionados</span>
             <button type="button" onclick="clearBatchSelection()" class="text-xs text-slate-300 hover:text-white underline cursor-pointer">Limpar</button>
@@ -1092,7 +1164,7 @@
     <datalist id="dlDestinos"></datalist>
 
     <!-- ==================== SPOTLIGHT COMMAND PALETTE (CTRL+K) ==================== -->
-    <div id="cmdPaletteModal" onclick="if(event.target===this) closeCommandPalette()" class="fixed inset-0 bg-[#001229]/70 backdrop-blur-sm z-[90] hidden flex items-start justify-center pt-[10vh] px-4">
+    <div id="cmdPaletteModal" onclick="if(event.target===this) closeCommandPalette()" class="fixed inset-0 bg-[#001229]/70 vp-modal-overlay z-[90] hidden flex items-start justify-center pt-[10vh] px-4">
         <div class="w-full max-w-2xl bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[75vh]">
             <div class="px-4 py-3.5 border-b border-[#DCE4EE] dark:border-[#172E4E] flex items-center gap-3">
                 <i class="fa-solid fa-magnifying-glass text-[#004C97] dark:text-[#00A8E8] text-base"></i>
@@ -1111,7 +1183,7 @@
     </div>
 
     <!-- ==================== PRECISION INSPECTOR DRAWER (SLIDE-OVER) ==================== -->
-    <div id="inspectorOverlay" onclick="if(event.target===this) closeInspectorModal()" class="fixed inset-0 bg-[#001229]/60 backdrop-blur-[2px] z-[60] hidden flex justify-end">
+    <div id="inspectorOverlay" onclick="if(event.target===this) closeInspectorModal()" class="fixed inset-0 bg-[#001024]/65 z-[60] hidden flex justify-end">
         <div class="bg-white dark:bg-[#091527] w-full max-w-xl h-full shadow-2xl border-l border-[#DCE4EE] dark:border-[#172E4E] flex flex-col overflow-hidden">
             <!-- Header do Inspector -->
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between gap-3 shrink-0">
@@ -1262,7 +1334,7 @@
     </div>
 
     <!-- ==================== MODAL: CAUTELA RÁPIDA (SINGLE / BATCH / PICKER) ==================== -->
-    <div id="custodyModal" onclick="if(event.target===this) closeCustodyModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="custodyModal" onclick="if(event.target===this) closeCustodyModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[92vh] flex flex-col">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between shrink-0">
                 <h3 id="custModalTitle" class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-handshake text-amber-300"></i> Cautela Rápida</h3>
@@ -1347,7 +1419,7 @@
     </div>
 
     <!-- ==================== MODAL: ENVIO EXTERNO (SINGLE / LOTE) ==================== -->
-    <div id="externalModal" onclick="if(event.target===this) closeExternalModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="externalModal" onclick="if(event.target===this) closeExternalModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 id="extModalTitle" class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-truck-ramp-box text-[#00A8E8]"></i> Envio para Calibração Externa</h3>
@@ -1388,7 +1460,7 @@
     </div>
 
     <!-- ==================== MODAL: CONFIRMAR RETORNO DO LABORATÓRIO ==================== -->
-    <div id="returnLabModal" onclick="if(event.target===this) closeReturnLabModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="returnLabModal" onclick="if(event.target===this) closeReturnLabModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-circle-check"></i> Confirmar Retorno de Calibração</h3>
@@ -1435,7 +1507,7 @@
     </div>
 
     <!-- ==================== MODAL: PERDIDO / DESATIVADO ==================== -->
-    <div id="lostModal" onclick="if(event.target===this) closeLostModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="lostModal" onclick="if(event.target===this) closeLostModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-rose-700 text-white px-6 py-4 flex items-center justify-between">
                 <h3 id="lostModalTitle" class="font-display font-bold text-base">Cadastrar Perdido / Desativado</h3>
@@ -1480,7 +1552,7 @@
     </div>
 
     <!-- ==================== MODAL: IMPORTAÇÃO INTELIGENTE COM PRÉVIA COMPARATIVA ==================== -->
-    <div id="importModal" onclick="if(event.target===this) closeImportModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="importModal" onclick="if(event.target===this) closeImportModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-file-excel text-emerald-400"></i> Importação Inteligente (Com Prévia)</h3>
@@ -1522,7 +1594,7 @@
     </div>
 
     <!-- ==================== MODAL: IMPRESSÃO (FOLHA ARMÁRIO & PDF ISO) ==================== -->
-    <div id="printModal" onclick="if(event.target===this) closePrintModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="printModal" onclick="if(event.target===this) closePrintModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 id="printModalTitle" class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-print text-[#00A8E8]"></i> Gerar Documento PDF</h3>
@@ -1598,7 +1670,7 @@
     </div>
 
     <!-- ==================== MODAL: CONFIRMAÇÃO GENÉRICA (SEM window.confirm) ==================== -->
-    <div id="confirmModal" onclick="if(event.target===this) closeConfirmModal()" class="fixed inset-0 bg-[#001229]/70 backdrop-blur-sm z-[85] hidden flex items-center justify-center p-4">
+    <div id="confirmModal" onclick="if(event.target===this) closeConfirmModal()" class="fixed inset-0 bg-[#001229]/70 vp-modal-overlay z-[85] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div class="bg-rose-600 text-white px-5 py-3.5 flex items-center justify-between">
                 <h3 id="confirmTitle" class="font-display font-bold text-sm">Confirmar Ação</h3>
@@ -1615,7 +1687,7 @@
     </div>
 
     <!-- ==================== MODAL: BACKUP JSON ==================== -->
-    <div id="backupModal" onclick="if(event.target===this) closeBackupModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="backupModal" onclick="if(event.target===this) closeBackupModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base"><i class="fa-solid fa-shield-halved text-[#00A8E8] mr-2"></i>Backup & Restauração</h3>
@@ -1635,7 +1707,7 @@
     </div>
 
     <!-- ==================== MODAL: GOOGLE SHEETS CLOUD ==================== -->
-    <div id="cloudModal" onclick="if(event.target===this) closeCloudModal()" class="fixed inset-0 bg-[#001229]/65 backdrop-blur-sm z-[75] hidden flex items-center justify-center p-4">
+    <div id="cloudModal" onclick="if(event.target===this) closeCloudModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-cloud text-[#00A8E8]"></i> Google Sheets Cloud Sync</h3>
@@ -1661,7 +1733,7 @@
     </div>
 
     <!-- ==================== MODAL: CONFLITO DE EDIÇÃO ==================== -->
-    <div id="conflictModal" class="fixed inset-0 bg-[#001229]/75 backdrop-blur-sm z-[85] hidden flex items-center justify-center p-4">
+    <div id="conflictModal" class="fixed inset-0 bg-[#001229]/75 vp-modal-overlay z-[85] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-amber-400 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-amber-500 text-slate-950 px-6 py-4 font-display font-bold text-base flex items-center gap-2">
                 <i class="fa-solid fa-code-branch"></i> Conflito de Edição Detectado
@@ -1677,7 +1749,7 @@
     </div>
 
     <!-- ==================== MODAL: LOGIN EDITOR ==================== -->
-    <div id="loginModal" onclick="if(event.target===this) closeLoginModal()" class="fixed inset-0 bg-[#001229]/70 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div id="loginModal" onclick="if(event.target===this) closeLoginModal()" class="fixed inset-0 bg-[#001229]/70 vp-modal-overlay z-[80] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base flex items-center gap-2"><i class="fa-solid fa-user-lock text-[#00A8E8]"></i> Acesso ao Modo Editor</h3>
@@ -1706,7 +1778,7 @@
     </div>
 
     <!-- ==================== MODAL: ALTERAR MINHA SENHA ==================== -->
-    <div id="changePassModal" onclick="if(event.target===this) closeChangePassModal()" class="fixed inset-0 bg-[#001229]/70 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div id="changePassModal" onclick="if(event.target===this) closeChangePassModal()" class="fixed inset-0 bg-[#001229]/70 vp-modal-overlay z-[80] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
                 <h3 class="font-display font-bold text-base"><i class="fa-solid fa-key text-[#00A8E8] mr-2"></i>Alterar Minha Senha</h3>
@@ -1726,7 +1798,7 @@
     </div>
 
     <!-- ==================== MODAL: GERENCIAR USUÁRIOS (ADMIN PABLO) ==================== -->
-    <div id="adminUsersModal" onclick="if(event.target===this) closeAdminUsersModal()" class="fixed inset-0 bg-[#001229]/70 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div id="adminUsersModal" onclick="if(event.target===this) closeAdminUsersModal()" class="fixed inset-0 bg-[#001229]/70 vp-modal-overlay z-[80] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[88vh] flex flex-col">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between shrink-0">
                 <h3 class="font-display font-bold text-base"><i class="fa-solid fa-users-gear text-amber-300 mr-2"></i>Gerenciar Usuários (Admin)</h3>
@@ -1757,7 +1829,7 @@
     </div>
 
     <!-- ==================== MODAL: REDEFINIR SENHA DE USUÁRIO (ADMIN) ==================== -->
-    <div id="resetPassModal" onclick="if(event.target===this) closeResetPassModal()" class="fixed inset-0 bg-[#001229]/75 backdrop-blur-sm z-[85] hidden flex items-center justify-center p-4">
+    <div id="resetPassModal" onclick="if(event.target===this) closeResetPassModal()" class="fixed inset-0 bg-[#001229]/75 vp-modal-overlay z-[85] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div class="bg-amber-500 text-slate-950 px-5 py-3.5 font-display font-bold text-sm flex justify-between">
                 <span>Redefinir Senha</span>
@@ -2267,7 +2339,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         let syncTimer = null;
         let pendingAuditEvents = [];
 
-        // Undo, Command Palette, Modals State
+        // Undo, Command Palette, Modals & Performance Cache State
         let undoStack = [];
         const MAX_UNDO = 10;
         let searchDebounceTimer = null;
@@ -2277,6 +2349,20 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         let externalBatchIds = [];
         let pendingImportItems = [];
         let confirmCallback = null;
+
+        // Turbo Engine Caches (Zero-lag rendering & filtering)
+        const isoDayCache = new Map();
+        const instMetaCache = new WeakMap();
+        let metaCacheRefISO = '';
+        let metaCacheTodayISO = '';
+        let dirtyViews = { command: true, inventory: true, custody: true, lab: true, dropdowns: true };
+        let invRenderToken = 0;
+        let lastWindowWasMobile = window.innerWidth < 768;
+        let sheetJsLoadPromise = null;
+
+        function deepCloneFast(obj) {
+            return (typeof structuredClone === 'function') ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+        }
 
         // ---- Utilitários Seguros ----
         function escapeHtml(v) {
@@ -2303,11 +2389,23 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const dt = new Date(y, (m - 1) + months, dayOne ? 1 : d);
             return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
         }
+        function isoToDayNum(iso) {
+            if (!iso || iso.length !== 10 || iso.charCodeAt(4) !== 45 || iso.charCodeAt(7) !== 45) return null;
+            let cached = isoDayCache.get(iso);
+            if (cached !== undefined) return cached;
+            const y = +iso.slice(0, 4), m = +iso.slice(5, 7), d = +iso.slice(8, 10);
+            if (!y || !m || !d) { isoDayCache.set(iso, null); return null; }
+            const num = Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+            if (isoDayCache.size > 4000) isoDayCache.clear();
+            isoDayCache.set(iso, num);
+            return num;
+        }
         function daysBetween(fromISO, toISO) {
-            if (!fromISO || !toISO || !/^\d{4}-\d{2}-\d{2}$/.test(fromISO) || !/^\d{4}-\d{2}-\d{2}$/.test(toISO)) return null;
-            const [fy,fm,fd] = fromISO.split('-').map(Number);
-            const [ty,tm,td] = toISO.split('-').map(Number);
-            return Math.round((new Date(ty, tm-1, td) - new Date(fy, fm-1, fd)) / 86400000);
+            const a = isoToDayNum(fromISO);
+            if (a === null) return null;
+            const b = isoToDayNum(toISO);
+            if (b === null) return null;
+            return b - a;
         }
         function fmtBR(iso) {
             if (!iso) return '-';
@@ -2429,6 +2527,34 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             return { pill:'bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30', accent:'border-l-purple-500' };
         }
 
+        function invalidateInstMeta(it) {
+            if (it) instMetaCache.delete(it);
+        }
+        function getInstMeta(it) {
+            const ref = currentRefISO || metaCacheTodayISO || getTodayISO();
+            let m = instMetaCache.get(it);
+            if (m && m.ref === ref && m.proxCal === it.proxCal && m.rawStatus === it.status && m.desc === it.desc && m.local === it.local && m.holder === it.custodyHolder && m.resp === it.resp && m.obs === it.obs) {
+                return m;
+            }
+            const st = getInstMeta(it).st;
+            const fam = getFamily(it.desc);
+            const cd = getCountdownMeta(it.proxCal, st);
+            const hay = `${it.code} ${it.desc} ${it.local||''} ${it.resp||''} ${it.setor||''} ${it.min||''} ${it.max||''} ${it.custodyHolder||''} ${it.custodyReturnTo||''} ${it.obs||''}`.toLowerCase();
+            m = {
+                ref, st, fam, cd, hay,
+                ss: getStatusStyle(st),
+                proxCal: it.proxCal,
+                rawStatus: it.status,
+                desc: it.desc,
+                local: it.local,
+                holder: it.custodyHolder,
+                resp: it.resp,
+                obs: it.obs
+            };
+            instMetaCache.set(it, m);
+            return m;
+        }
+
         // ---- Toast & Confirm ----
         function showToast(msg, type = 'info', opts = {}) {
             let wrap = document.getElementById('toastWrap');
@@ -2484,13 +2610,17 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             if (icon) icon.className = isDark ? 'fa-solid fa-sun text-amber-300' : 'fa-solid fa-moon';
         }
         function toggleTheme() {
-            const next = !document.documentElement.classList.contains('dark');
+            const root = document.documentElement;
+            root.classList.add('vp-theme-switching');
+            const next = !root.classList.contains('dark');
             applyTheme(next);
             safeSet(KEYS.dark, next ? 'true' : 'false');
+            setTimeout(() => root.classList.remove('vp-theme-switching'), 180);
         }
 
-        // ---- Navegação & Menu Sistema ----
+        // ---- Navegação & Menu Sistema (Lazy View Rendering) ----
         function navigateTo(view) {
+            const changed = currentView !== view;
             currentView = view;
             ['command', 'inventory', 'custody', 'lab'].forEach(v => {
                 const sec = document.getElementById(`view-${v}`);
@@ -2499,9 +2629,25 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             document.querySelectorAll('[data-nav]').forEach(btn => {
                 btn.classList.toggle('is-active', btn.getAttribute('data-nav') === view);
             });
-            if (view === 'custody') renderCustodyBoard();
-            if (view === 'lab') renderLabTables();
-            window.scrollTo({ top: 0, behavior: 'instant' });
+            if (dirtyViews.dropdowns && (view === 'inventory' || view === 'command')) {
+                populateFilterDropdowns();
+                dirtyViews.dropdowns = false;
+            }
+            if (view === 'command' && dirtyViews.command) {
+                renderDynamicSimulator();
+                renderCommandCenter();
+                dirtyViews.command = false;
+            } else if (view === 'inventory' && dirtyViews.inventory) {
+                applyInventoryFilters();
+                dirtyViews.inventory = false;
+            } else if (view === 'custody' && dirtyViews.custody) {
+                renderCustodyBoard();
+                dirtyViews.custody = false;
+            } else if (view === 'lab' && dirtyViews.lab) {
+                renderLabTables();
+                dirtyViews.lab = false;
+            }
+            if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
         }
 
         function toggleSystemMenu(e) {
@@ -2778,9 +2924,9 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         function pushUndo(label) {
             undoStack.push({
                 label,
-                inst: JSON.parse(JSON.stringify(instrumentsData)),
-                hist: JSON.parse(JSON.stringify(calibrationHistory)),
-                lost: JSON.parse(JSON.stringify(lostInstrumentsData))
+                inst: deepCloneFast(instrumentsData),
+                hist: deepCloneFast(calibrationHistory),
+                lost: deepCloneFast(lostInstrumentsData)
             });
             if (undoStack.length > MAX_UNDO) undoStack.shift();
             updateUndoUI();
@@ -3040,18 +3186,59 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         }
         function setRefDateISO(iso) {
             currentRefISO = iso || getTodayISO();
-            renderAll();
+            renderAll(false);
         }
         function resetRefDate() { setRefDateISO(getTodayISO()); }
 
-        // ---- Renderização Global (Command Center + Dropdowns + Views) ----
-        function renderAll() {
-            populateFilterDropdowns();
-            renderDynamicSimulator();
-            renderCommandCenter();
-            applyInventoryFilters();
-            renderCustodyBoard();
-            renderLabTables();
+        function updateNavCountersFast() {
+            let inCustody = 0;
+            for (let i = 0; i < instrumentsData.length; i++) {
+                const h = instrumentsData[i].custodyHolder;
+                if (h && h.trim()) inCustody++;
+            }
+            let inTransit = 0;
+            for (let i = 0; i < calibrationHistory.length; i++) {
+                if (calibrationHistory[i].status !== 'CONCLUÍDO') inTransit++;
+            }
+            document.getElementById('navCountInventory').textContent = instrumentsData.length;
+            document.getElementById('navCountCustody').textContent = inCustody;
+            document.getElementById('navCountCustodyMob').textContent = inCustody;
+            document.getElementById('navCountLab').textContent = inTransit;
+        }
+
+        // ---- Renderização Global Otimizada (Renderiza apenas a aba visível; demais sob demanda) ----
+        function renderAll(dataChanged = true) {
+            metaCacheTodayISO = getTodayISO();
+            metaCacheRefISO = currentRefISO || metaCacheTodayISO;
+            dirtyViews.command = true;
+            dirtyViews.inventory = true;
+            dirtyViews.custody = true;
+            dirtyViews.lab = true;
+            if (dataChanged) dirtyViews.dropdowns = true;
+
+            if (dirtyViews.dropdowns) {
+                populateFilterDropdowns();
+                dirtyViews.dropdowns = false;
+            }
+            updateNavCountersFast();
+
+            if (currentView === 'command') {
+                renderDynamicSimulator();
+                renderCommandCenter();
+                dirtyViews.command = false;
+            } else if (currentView === 'inventory') {
+                renderDynamicSimulator();
+                applyInventoryFilters();
+                dirtyViews.inventory = false;
+            } else if (currentView === 'custody') {
+                renderDynamicSimulator();
+                renderCustodyBoard();
+                dirtyViews.custody = false;
+            } else if (currentView === 'lab') {
+                renderDynamicSimulator();
+                renderLabTables();
+                dirtyViews.lab = false;
+            }
         }
 
         function populateFilterDropdowns() {
@@ -3075,10 +3262,17 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             fill('fSetor', sectors, 'Todos os Setores');
             fill('fLocal', locals, 'Todas as Localizações', '<option value="__NONE__">⚠️ Sem Local Definido</option>');
             fill('fResp', resps, 'Todos os Responsáveis');
+            const ymPopCounts = {};
+            for (let i = 0; i < instrumentsData.length; i++) {
+                const pc = instrumentsData[i].proxCal;
+                if (pc && pc.length >= 7) {
+                    const ym = pc.slice(0, 7);
+                    ymPopCounts[ym] = (ymPopCounts[ym] || 0) + 1;
+                }
+            }
             const monthOptions = months.map(ym => {
                 const [y,m] = ym.split('-');
-                const cnt = instrumentsData.filter(x => x.proxCal && x.proxCal.startsWith(ym)).length;
-                return { v:ym, l:`${mNames[Number(m)-1]}/${y} (${cnt})` };
+                return { v:ym, l:`${mNames[Number(m)-1]}/${y} (${ymPopCounts[ym] || 0})` };
             });
             fill('fMonth', months.map(ym => { const [y,m] = ym.split('-'); return { v:ym, l:`${mNames[Number(m)-1]}/${y}` }; }), 'Todos os Meses');
             fill('printMonthSel', monthOptions, 'Todos os Meses');
@@ -3104,7 +3298,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const today = getTodayISO();
 
             instrumentsData.forEach(it => {
-                const st = calcStatus(it.proxCal, it.status);
+                const st = getInstMeta(it).st;
                 if (c[st] !== undefined) c[st]++;
                 if (!it.local || !it.local.trim()) noLocal++;
                 if (it.custodyHolder && it.custodyHolder.trim()) {
@@ -3156,15 +3350,22 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             document.getElementById('kpiPending').textContent = c['PENDÊNCIA DE DATA'];
             document.getElementById('kpiInTransit').textContent = inTransit;
 
-            // 12-Month Calibration Radar (proportional bars)
+            // 12-Month Calibration Radar (O(N) single pass)
+            const ymCounts = {};
+            for (let i = 0; i < instrumentsData.length; i++) {
+                const pc = instrumentsData[i].proxCal;
+                if (pc && pc.length >= 7) {
+                    const ym = pc.slice(0, 7);
+                    ymCounts[ym] = (ymCounts[ym] || 0) + 1;
+                }
+            }
             const [ry, rm] = (currentRefISO || today).split('-').map(Number);
             const mLbl = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
             const buckets = [];
             for (let i = 0; i < 12; i++) {
                 const dt = new Date(ry, (rm - 1) + i, 1);
                 const ym = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
-                const cnt = instrumentsData.filter(x => x.proxCal && x.proxCal.startsWith(ym)).length;
-                buckets.push({ ym, label: `${mLbl[dt.getMonth()]}/${String(dt.getFullYear()).slice(2)}`, cnt, idx: i });
+                buckets.push({ ym, label: `${mLbl[dt.getMonth()]}/${String(dt.getFullYear()).slice(2)}`, cnt: ymCounts[ym] || 0, idx: i });
             }
             const maxCnt = Math.max(1, ...buckets.map(b => b.cnt));
             document.getElementById('radar12Months').innerHTML = buckets.map(b => {
@@ -3190,7 +3391,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 if (!loc) return;
                 if (!cabMap[loc]) cabMap[loc] = { total:0, ok:0, soon:0, over:0 };
                 cabMap[loc].total++;
-                const st = calcStatus(it.proxCal, it.status);
+                const st = getInstMeta(it).st;
                 if (st === 'EM DIA') cabMap[loc].ok++;
                 else if (st === 'PRÓXIMA DO VENCIMENTO') cabMap[loc].soon++;
                 else if (st === 'VENCIDA') cabMap[loc].over++;
@@ -3226,7 +3427,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 const s = it.setor || 'Outros';
                 if (!secMap[s]) secMap[s] = { total:0, ok:0, soon:0, over:0 };
                 secMap[s].total++;
-                const st = calcStatus(it.proxCal, it.status);
+                const st = getInstMeta(it).st;
                 if (st === 'EM DIA') secMap[s].ok++;
                 else if (st === 'PRÓXIMA DO VENCIMENTO') secMap[s].soon++;
                 else if (st === 'VENCIDA') secMap[s].over++;
@@ -3256,7 +3457,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 const r = (it.resp || '').trim(); if (!r) return;
                 if (!techMap[r]) techMap[r] = { total:0, over:0, soon:0 };
                 techMap[r].total++;
-                const st = calcStatus(it.proxCal, it.status);
+                const st = getInstMeta(it).st;
                 if (st === 'VENCIDA') techMap[r].over++;
                 else if (st === 'PRÓXIMA DO VENCIMENTO') techMap[r].soon++;
             });
@@ -3343,7 +3544,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
         function debouncedFilterInventory() {
             clearTimeout(searchDebounceTimer);
-            searchDebounceTimer = setTimeout(applyInventoryFilters, 120);
+            searchDebounceTimer = setTimeout(applyInventoryFilters, 55);
         }
 
         function resetInventoryFilters(shouldApply = true) {
@@ -3399,7 +3600,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const fam = document.getElementById('fFamily')?.value || '';
 
             filteredInv = instrumentsData.filter(it => {
-                const st = calcStatus(it.proxCal, it.status);
+                const m = getInstMeta(it);
+                const st = m.st;
                 if (quickStatusTab === '__CUSTODY__' && !(it.custodyHolder && it.custodyHolder.trim())) return false;
                 else if (quickStatusTab === '__NOLOC__' && it.local && it.local.trim()) return false;
                 else if (quickStatusTab && !quickStatusTab.startsWith('__') && !statusSel && st !== quickStatusTab) return false;
@@ -3417,11 +3619,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 if (local && local !== '__NONE__' && it.local !== local) return false;
                 if (resp && it.resp !== resp) return false;
                 if (month && !(it.proxCal && it.proxCal.startsWith(month))) return false;
-                if (fam && getFamily(it.desc).key !== fam) return false;
-                if (q) {
-                    const hay = `${it.code} ${it.desc} ${it.local||''} ${it.resp||''} ${it.setor||''} ${it.min||''} ${it.max||''} ${it.custodyHolder||''} ${it.custodyReturnTo||''} ${it.obs||''}`.toLowerCase();
-                    if (!hay.includes(q)) return false;
-                }
+                if (fam && m.fam.key !== fam) return false;
+                if (q && !m.hay.includes(q)) return false;
                 return true;
             });
 
@@ -3465,115 +3664,153 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             renderInventoryView();
         }
 
+        function isCardsViewActive() {
+            if (invViewMode === 'cards') return true;
+            if (invViewMode === 'table') return false;
+            return window.innerWidth < 768;
+        }
+
+        function buildTableRowHtml(it, canEdit, todayISO) {
+            const m = getInstMeta(it);
+            const st = m.st, ss = m.ss, fam = m.fam, cd = m.cd;
+            const sel = selectedIds.has(it.id);
+            const hasRange = (it.min && it.min !== '-') || (it.max && it.max !== '-');
+            const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
+            const retDest = it.custodyReturnTo || it.local || it.resp || '';
+            const dOut = hasCust ? daysBetween(it.custodyDate, todayISO) : null;
+
+            return `<tr class="border-l-4 ${ss.accent} ${sel ? 'bg-[#004C97]/10 dark:bg-[#00A8E8]/15' : 'hover:bg-[#F7F9FC] dark:hover:bg-[#0D1D34]'}">
+                <td class="editor-only p-3 text-center"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="rounded cursor-pointer"></td>
+                <td class="p-3">
+                    <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-xs">${escapeHtml(it.code)}</div>
+                    ${it.resp ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[130px]">${escapeHtml(it.resp)}</div>` : ''}
+                </td>
+                <td class="p-3">
+                    <div class="flex items-start gap-2">
+                        <span class="w-6 h-6 rounded-md ${fam.cls} flex items-center justify-center text-[10px] shrink-0 mt-0.5" title="${fam.label}"><i class="fa-solid ${fam.icon}"></i></span>
+                        <div>
+                            <div class="font-semibold leading-snug">${escapeHtml(it.desc)}</div>
+                            ${hasRange ? `<div class="font-mono text-[10px] text-slate-500 mt-0.5">${escapeHtml(it.min||'0')} – ${escapeHtml(it.max||'-')}</div>` : ''}
+                        </div>
+                    </div>
+                </td>
+                <td class="p-3"><span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F3F6FA] dark:bg-[#132846] text-slate-700 dark:text-slate-300">${escapeHtml(it.setor.replace('Voith Turbo ',''))}</span></td>
+                <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'local')">
+                    ${it.local ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#EAF0F6] dark:bg-[#132846] text-xs font-semibold"><i class="fa-solid fa-location-dot text-[10px] text-[#004C97] dark:text-[#00A8E8]"></i>${escapeHtml(it.local)}</span>` : '<span class="text-[11px] text-orange-600 font-semibold">Sem local</span>'}
+                    ${hasCust ? `<div class="mt-1.5 px-2 py-1 rounded bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-[10px] leading-tight max-w-[205px]">
+                        <div class="font-extrabold text-amber-800 dark:text-amber-300 truncate"><i class="fa-solid fa-handshake mr-1"></i>${escapeHtml(it.custodyHolder)}${dOut!==null && dOut>=7 ? ` <span class="text-rose-600">(${dOut}d!)</span>` : ''}</div>
+                        ${retDest ? `<div class="text-slate-600 dark:text-slate-300 truncate">↩ ${escapeHtml(retDest)}</div>` : ''}
+                    </div>` : ''}
+                </td>
+                <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'proxCal')">
+                    <div class="font-mono font-bold text-xs">${fmtBR(it.proxCal)}</div>
+                    ${cd.text ? `<div class="text-[10px] ${cd.cls}">${cd.text}</div>` : ''}
+                </td>
+                <td class="p-3"><span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold whitespace-nowrap ${ss.pill}">${st}</span></td>
+                <td class="p-3 text-xs text-slate-500 max-w-[150px] truncate ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'obs')" title="${escapeHtml(it.obs||'')}">${escapeHtml(it.obs||'-')}</td>
+                <td class="p-3 text-center">
+                    <div class="inline-flex items-center gap-1">
+                        <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only w-8 h-8 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846] hover:bg-amber-400 hover:text-slate-950 text-slate-500'} flex items-center justify-center cursor-pointer" title="${hasCust?'Gerenciar / Devolver Cautela':'Registrar Cautela'}"><i class="fa-solid fa-handshake text-xs"></i></button>
+                        <button type="button" onclick="openInspectorModal(${it.id})" class="w-8 h-8 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] flex items-center justify-center cursor-pointer" title="${canEdit?'Editar':'Ver ficha'}"><i class="fa-solid ${canEdit?'fa-sliders':'fa-eye'} text-xs"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+        }
+
+        function buildCardHtml(it, canEdit) {
+            const m = getInstMeta(it);
+            const st = m.st, ss = m.ss, fam = m.fam, cd = m.cd;
+            const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
+            const retDest = it.custodyReturnTo || it.local || it.resp || '';
+            return `<div class="vp-card rounded-xl p-4 border-l-4 ${ss.accent} space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" ${selectedIds.has(it.id)?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="editor-only rounded cursor-pointer">
+                        <span class="w-7 h-7 rounded-lg ${fam.cls} flex items-center justify-center text-xs shrink-0"><i class="fa-solid ${fam.icon}"></i></span>
+                        <div class="min-w-0">
+                            <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-sm truncate">${escapeHtml(it.code)}</div>
+                            <div class="text-[11px] text-slate-500 truncate">${escapeHtml(it.resp || 'Sem responsável')}</div>
+                        </div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold shrink-0 ${ss.pill}">${st}</span>
+                </div>
+                <div class="font-bold text-sm leading-snug">${escapeHtml(it.desc)}</div>
+                ${hasCust ? `<div class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-xs">
+                    <div class="font-extrabold text-amber-800 dark:text-amber-300"><i class="fa-solid fa-handshake mr-1"></i>Em posse: ${escapeHtml(it.custodyHolder)}</div>
+                    ${retDest ? `<div class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Devolver p/: <strong>${escapeHtml(retDest)}</strong></div>` : ''}
+                </div>` : ''}
+                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#DCE4EE] dark:border-[#172E4E] text-xs">
+                    <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Local</span><span class="font-semibold">${escapeHtml(it.local || 'Sem local')}</span></div>
+                    <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Validade</span><span class="font-mono font-bold">${fmtBR(it.proxCal)}</span> ${cd.text ? `<span class="block text-[10px] ${cd.cls}">${cd.text}</span>` : ''}</div>
+                </div>
+                <div class="flex items-center justify-end gap-1.5 pt-1">
+                    <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only px-3 py-1.5 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846]'} text-xs font-bold cursor-pointer"><i class="fa-solid fa-handshake mr-1"></i>${hasCust?'Devolver':'Posse'}</button>
+                    <button type="button" onclick="openInspectorModal(${it.id})" class="px-3 py-1.5 rounded-lg bg-[#004C97] text-white text-xs font-bold cursor-pointer">${canEdit?'Editar':'Detalhes'}</button>
+                </div>
+            </div>`;
+        }
+
         function renderInventoryView() {
             const tbody = document.getElementById('inventoryTableBody');
             const cards = document.getElementById('inventoryCardsWrap');
             if (!tbody || !cards) return;
 
+            const token = ++invRenderToken;
             const start = (invPage - 1) * invPageSize;
             const pageItems = filteredInv.slice(start, start + invPageSize);
             const canEdit = isEditor();
+            const cardsMode = isCardsViewActive();
+            const todayISO = metaCacheTodayISO || getTodayISO();
+
+            const totalPages = Math.ceil(filteredInv.length / invPageSize) || 1;
+            document.getElementById('invPaginationInfo').textContent = pageItems.length === 0
+                ? '0 instrumentos'
+                : `Exibindo ${start + 1}–${Math.min(start + invPageSize, filteredInv.length)} de ${filteredInv.length} instrumentos`;
+            document.getElementById('invPageLabel').textContent = `${invPage} / ${totalPages}`;
+            document.getElementById('btnPrevPage').disabled = invPage <= 1;
+            document.getElementById('btnNextPage').disabled = invPage >= totalPages;
 
             if (pageItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="p-10 text-center text-slate-400">Nenhum instrumento corresponde aos filtros atuais.</td></tr>';
-                cards.innerHTML = '<div class="col-span-full p-10 text-center text-slate-400 bg-[#F7F9FC] dark:bg-[#0D1D34] rounded-xl text-sm">Nenhum instrumento encontrado.</div>';
-                document.getElementById('invPaginationInfo').textContent = '0 instrumentos';
-                document.getElementById('invPageLabel').textContent = '1 / 1';
+                if (cardsMode) {
+                    cards.innerHTML = '<div class="col-span-full p-10 text-center text-slate-400 bg-[#F7F9FC] dark:bg-[#0D1D34] rounded-xl text-sm">Nenhum instrumento encontrado.</div>';
+                    tbody.innerHTML = '';
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="9" class="p-10 text-center text-slate-400">Nenhum instrumento corresponde aos filtros atuais.</td></tr>';
+                    cards.innerHTML = '';
+                }
                 return;
             }
 
             const chkAll = document.getElementById('chkSelectAllPage');
             if (chkAll) chkAll.checked = pageItems.every(i => selectedIds.has(i.id));
 
-            tbody.innerHTML = pageItems.map(it => {
-                const st = calcStatus(it.proxCal, it.status);
-                const ss = getStatusStyle(st);
-                const fam = getFamily(it.desc);
-                const cd = getCountdownMeta(it.proxCal, st);
-                const sel = selectedIds.has(it.id);
-                const hasRange = (it.min && it.min !== '-') || (it.max && it.max !== '-');
-                const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
-                const retDest = it.custodyReturnTo || it.local || it.resp || '';
-                const dOut = hasCust ? daysBetween(it.custodyDate, getTodayISO()) : null;
+            const targetEl = cardsMode ? cards : tbody;
+            const otherEl = cardsMode ? tbody : cards;
+            if (otherEl.firstChild) otherEl.innerHTML = '';
 
-                return `<tr class="border-l-4 ${ss.accent} ${sel ? 'bg-[#004C97]/10 dark:bg-[#00A8E8]/15' : 'hover:bg-[#F7F9FC] dark:hover:bg-[#0D1D34]'} transition-colors">
-                    <td class="editor-only p-3 text-center"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="rounded cursor-pointer"></td>
-                    <td class="p-3">
-                        <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-xs">${escapeHtml(it.code)}</div>
-                        ${it.resp ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[130px]">${escapeHtml(it.resp)}</div>` : ''}
-                    </td>
-                    <td class="p-3">
-                        <div class="flex items-start gap-2">
-                            <span class="w-6 h-6 rounded-md ${fam.cls} flex items-center justify-center text-[10px] shrink-0 mt-0.5" title="${fam.label}"><i class="fa-solid ${fam.icon}"></i></span>
-                            <div>
-                                <div class="font-semibold leading-snug">${escapeHtml(it.desc)}</div>
-                                ${hasRange ? `<div class="font-mono text-[10px] text-slate-500 mt-0.5">${escapeHtml(it.min||'0')} – ${escapeHtml(it.max||'-')}</div>` : ''}
-                            </div>
-                        </div>
-                    </td>
-                    <td class="p-3"><span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F3F6FA] dark:bg-[#132846] text-slate-700 dark:text-slate-300">${escapeHtml(it.setor.replace('Voith Turbo ',''))}</span></td>
-                    <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'local')">
-                        ${it.local ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#EAF0F6] dark:bg-[#132846] text-xs font-semibold"><i class="fa-solid fa-location-dot text-[10px] text-[#004C97] dark:text-[#00A8E8]"></i>${escapeHtml(it.local)}</span>` : '<span class="text-[11px] text-orange-600 font-semibold">Sem local</span>'}
-                        ${hasCust ? `<div class="mt-1.5 px-2 py-1 rounded bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-[10px] leading-tight max-w-[205px]">
-                            <div class="font-extrabold text-amber-800 dark:text-amber-300 truncate"><i class="fa-solid fa-handshake mr-1"></i>${escapeHtml(it.custodyHolder)}${dOut!==null && dOut>=7 ? ` <span class="text-rose-600">(${dOut}d!)</span>` : ''}</div>
-                            ${retDest ? `<div class="text-slate-600 dark:text-slate-300 truncate">↩ ${escapeHtml(retDest)}</div>` : ''}
-                        </div>` : ''}
-                    </td>
-                    <td class="p-3 ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'proxCal')">
-                        <div class="font-mono font-bold text-xs">${fmtBR(it.proxCal)}</div>
-                        ${cd.text ? `<div class="text-[10px] ${cd.cls}">${cd.text}</div>` : ''}
-                    </td>
-                    <td class="p-3"><span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold whitespace-nowrap ${ss.pill}">${st}</span></td>
-                    <td class="p-3 text-xs text-slate-500 max-w-[150px] truncate ${canEdit?'cursor-pointer':''}" ondblclick="inlineEditCell(this,${it.id},'obs')" title="${escapeHtml(it.obs||'')}">${escapeHtml(it.obs||'-')}</td>
-                    <td class="p-3 text-center">
-                        <div class="inline-flex items-center gap-1">
-                            <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only w-8 h-8 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846] hover:bg-amber-400 hover:text-slate-950 text-slate-500'} flex items-center justify-center cursor-pointer transition" title="${hasCust?'Gerenciar / Devolver Cautela':'Registrar Cautela'}"><i class="fa-solid fa-handshake text-xs"></i></button>
-                            <button type="button" onclick="openInspectorModal(${it.id})" class="w-8 h-8 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] flex items-center justify-center cursor-pointer transition" title="${canEdit?'Editar':'Ver ficha'}"><i class="fa-solid ${canEdit?'fa-sliders':'fa-eye'} text-xs"></i></button>
-                        </div>
-                    </td>
-                </tr>`;
-            }).join('');
+            // Renderização instantânea para <= 50 itens; fatiada via requestAnimationFrame para "Todos" (zero travamento!)
+            const FIRST_BATCH = 40;
+            const NEXT_BATCH = 80;
+            const buildFn = cardsMode
+                ? (it) => buildCardHtml(it, canEdit)
+                : (it) => buildTableRowHtml(it, canEdit, todayISO);
 
-            cards.innerHTML = pageItems.map(it => {
-                const st = calcStatus(it.proxCal, it.status);
-                const ss = getStatusStyle(st);
-                const fam = getFamily(it.desc);
-                const cd = getCountdownMeta(it.proxCal, st);
-                const hasCust = Boolean(it.custodyHolder && it.custodyHolder.trim());
-                const retDest = it.custodyReturnTo || it.local || it.resp || '';
-                return `<div class="vp-card rounded-xl p-4 border-l-4 ${ss.accent} space-y-3">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <input type="checkbox" ${selectedIds.has(it.id)?'checked':''} onchange="toggleSelectRow(${it.id}, this.checked)" class="editor-only rounded cursor-pointer">
-                            <span class="w-7 h-7 rounded-lg ${fam.cls} flex items-center justify-center text-xs shrink-0"><i class="fa-solid ${fam.icon}"></i></span>
-                            <div class="min-w-0">
-                                <div class="font-mono font-bold text-[#004C97] dark:text-[#00A8E8] text-sm truncate">${escapeHtml(it.code)}</div>
-                                <div class="text-[11px] text-slate-500 truncate">${escapeHtml(it.resp || 'Sem responsável')}</div>
-                            </div>
-                        </div>
-                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold shrink-0 ${ss.pill}">${st}</span>
-                    </div>
-                    <div class="font-bold text-sm leading-snug">${escapeHtml(it.desc)}</div>
-                    ${hasCust ? `<div class="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 text-xs">
-                        <div class="font-extrabold text-amber-800 dark:text-amber-300"><i class="fa-solid fa-handshake mr-1"></i>Em posse: ${escapeHtml(it.custodyHolder)}</div>
-                        ${retDest ? `<div class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Devolver p/: <strong>${escapeHtml(retDest)}</strong></div>` : ''}
-                    </div>` : ''}
-                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#DCE4EE] dark:border-[#172E4E] text-xs">
-                        <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Local</span><span class="font-semibold">${escapeHtml(it.local || 'Sem local')}</span></div>
-                        <div><span class="text-[10px] font-bold uppercase text-slate-400 block">Validade</span><span class="font-mono font-bold">${fmtBR(it.proxCal)}</span> ${cd.text ? `<span class="block text-[10px] ${cd.cls}">${cd.text}</span>` : ''}</div>
-                    </div>
-                    <div class="flex items-center justify-end gap-1.5 pt-1">
-                        <button type="button" onclick="openCustodyModal([${it.id}])" class="editor-only px-3 py-1.5 rounded-lg ${hasCust?'bg-amber-400 text-slate-950':'bg-[#F3F6FA] dark:bg-[#132846]'} text-xs font-bold cursor-pointer"><i class="fa-solid fa-handshake mr-1"></i>${hasCust?'Devolver':'Posse'}</button>
-                        <button type="button" onclick="openInspectorModal(${it.id})" class="px-3 py-1.5 rounded-lg bg-[#004C97] text-white text-xs font-bold cursor-pointer">${canEdit?'Editar':'Detalhes'}</button>
-                    </div>
-                </div>`;
-            }).join('');
+            if (pageItems.length <= FIRST_BATCH + 10) {
+                targetEl.innerHTML = pageItems.map(buildFn).join('');
+                return;
+            }
 
-            const totalPages = Math.ceil(filteredInv.length / invPageSize) || 1;
-            document.getElementById('invPaginationInfo').textContent = `Exibindo ${start + 1}–${Math.min(start + invPageSize, filteredInv.length)} de ${filteredInv.length} instrumentos`;
-            document.getElementById('invPageLabel').textContent = `${invPage} / ${totalPages}`;
-            document.getElementById('btnPrevPage').disabled = invPage <= 1;
-            document.getElementById('btnNextPage').disabled = invPage >= totalPages;
+            targetEl.innerHTML = pageItems.slice(0, FIRST_BATCH).map(buildFn).join('');
+            let offset = FIRST_BATCH;
+            function pumpNextChunk() {
+                if (token !== invRenderToken) return;
+                const end = Math.min(offset + NEXT_BATCH, pageItems.length);
+                const chunkHtml = pageItems.slice(offset, end).map(buildFn).join('');
+                targetEl.insertAdjacentHTML('beforeend', chunkHtml);
+                offset = end;
+                if (offset < pageItems.length) requestAnimationFrame(pumpNextChunk);
+            }
+            requestAnimationFrame(pumpNextChunk);
         }
 
         function stepPage(delta) {
@@ -3617,6 +3854,8 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             if (invViewMode === 'auto') invViewMode = window.innerWidth < 768 ? 'table' : 'cards';
             else invViewMode = invViewMode === 'cards' ? 'table' : 'cards';
             applyViewModeUI();
+            if (currentView === 'inventory') renderInventoryView();
+            else dirtyViews.inventory = true;
         }
 
         function inlineEditCell(cell, id, field) {
@@ -3839,7 +4078,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
         function copyCurrentInstrumentCard() {
             const id = Number(document.getElementById('inspId').value);
             const it = instrumentsData.find(x => x.id === id); if (!it) return;
-            const st = calcStatus(it.proxCal, it.status);
+            const st = getInstMeta(it).st;
             const txt = `🔧 *${it.code}* — ${it.desc}\n• Status: ${st} (Val.: ${fmtBR(it.proxCal)})\n• Setor: ${it.setor} | Local: ${it.local || 'Sem local'} | Resp.: ${it.resp || '-'}` + (it.custodyHolder ? `\n• 🤝 Em posse de: ${it.custodyHolder} → Devolver p/: ${it.custodyReturnTo || it.local || '-'}` : '');
             copyToClipboard(txt, `Ficha de ${it.code} copiada!`);
         }
@@ -3882,7 +4121,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
 
             const canEdit = isEditor();
             const renderCard = (it) => {
-                const st = calcStatus(it.proxCal, it.status);
+                const st = getInstMeta(it).st;
                 const ss = getStatusStyle(st);
                 const dOut = daysBetween(it.custodyDate, today);
                 const ageTag = dOut === null ? '' : dOut >= 15
@@ -4386,7 +4625,7 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             cmdResults = [];
 
             // 1. Instrumentos
-            const instMatches = instrumentsData.filter(i => !q || `${i.code} ${i.desc} ${i.local||''} ${i.resp||''} ${i.custodyHolder||''}`.toLowerCase().includes(q)).slice(0, q ? 8 : 4);
+            const instMatches = instrumentsData.filter(i => !q || getInstMeta(i).hay.includes(q)).slice(0, q ? 8 : 4);
             instMatches.forEach(i => {
                 const st = calcStatus(i.proxCal, i.status);
                 cmdResults.push({
@@ -4511,9 +4750,29 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
             const txt = document.getElementById('importPasteArea').value;
             showDiffForItems(parseTsvData(txt, 1));
         }
-        function handleImportFileSelect(ev) {
+        function ensureSheetJs() {
+            if (typeof XLSX !== 'undefined') return Promise.resolve();
+            if (sheetJsLoadPromise) return sheetJsLoadPromise;
+            sheetJsLoadPromise = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+                s.onload = () => resolve();
+                s.onerror = () => { sheetJsLoadPromise = null; reject(new Error('Falha ao carregar leitor de Excel.')); };
+                document.head.appendChild(s);
+            });
+            return sheetJsLoadPromise;
+        }
+        async function handleImportFileSelect(ev) {
             if (!requireEditor()) { ev.target.value = ''; return; }
             const file = ev.target.files[0]; if (!file) return;
+            if (typeof XLSX === 'undefined') showToast('Carregando leitor de Excel...', 'info');
+            try {
+                await ensureSheetJs();
+            } catch {
+                showToast('Sem conexão para carregar o leitor .XLSX.', 'error');
+                ev.target.value = '';
+                return;
+            }
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -4783,7 +5042,16 @@ AC424694\tSúbito\tmarço, 2027\tEM DIA\t4311 F\tVoith Turbo (Ferroviária)\tArm
                 closeChangePassModal(); closeAdminUsersModal(); closeResetPassModal(); closeConfirmModal();
             }
         });
-        window.addEventListener('resize', () => { if (invViewMode === 'auto') applyViewModeUI(); });
+        window.addEventListener('resize', () => {
+            if (invViewMode !== 'auto') return;
+            const nowMob = window.innerWidth < 768;
+            if (nowMob !== lastWindowWasMobile) {
+                lastWindowWasMobile = nowMob;
+                applyViewModeUI();
+                if (currentView === 'inventory') renderInventoryView();
+                else dirtyViews.inventory = true;
+            }
+        }, { passive: true });
 
         // ---- Inicialização ----
         let initialized = false;
