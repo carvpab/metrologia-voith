@@ -3,11 +3,84 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VOITH TURBO — Precision Metrology OS v15</title>
-  <script type="module" crossorigin src="./assets/index-CqX4APMw.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DolhvjyA.css">
+    <title>VOITH TURBO — Precision Metrology OS v16.4 (Cockpit v12)</title>
+    <link rel="stylesheet" href="css/cockpit.css" />
 </head>
 <body>
-    <div id="app"></div>
+    <aside class="sidebar no-print">
+        <div>
+            <div class="brand">
+                <div class="brand-badge">V</div>
+                <div>
+                    <div style="font-weight:800;font-size:14px;letter-spacing:0.02em;">VOITH</div>
+                    <div style="font-size:10px;color:var(--text-muted);font-weight:600;">TURBO METROLOGY OS</div>
+                </div>
+            </div>
+
+            <div class="nav-section">Workspaces</div>
+            <button type="button" class="nav-btn active" data-tab="dashboard"><span>Command Center</span></button>
+            <button type="button" class="nav-btn" data-tab="inventory"><span>Inventário</span><span class="pill-count" id="pillInv">0</span></button>
+            <button type="button" class="nav-btn" data-tab="custody"><span>Cautela &amp; Campo</span><span class="pill-count" id="pillCust">0</span></button>
+            <button type="button" class="nav-btn" data-tab="lab"><span>Lab &amp; Baixas</span><span class="pill-count" id="pillLab">0</span></button>
+            <button type="button" class="nav-btn" data-tab="lost"><span>Perdidos / Baixados</span><span class="pill-count" id="pillLost">0</span></button>
+
+            <div class="nav-section">Operacional</div>
+            <button type="button" class="nav-btn" id="btnPrintArmario"><span>Folha Armário / Lista</span></button>
+            <button type="button" class="nav-btn" id="btnCopyExpired"><span>Copiar Vencidos</span></button>
+            <button type="button" class="nav-btn" id="btnOpenDbSidebar"><span>Banco SQL (Nuvem)</span></button>
+            <button type="button" class="nav-btn" id="btnToggleDark"><span>Modo Escuro</span></button>
+
+            <div class="nav-section">Governança &amp; v16</div>
+            <button type="button" class="nav-btn" data-tab="receipts"><span>Comprovantes SHA-256</span><span class="pill-count" id="pillRec">0</span></button>
+            <button type="button" class="nav-btn" data-tab="risk"><span>Risco &amp; SLA Lab</span></button>
+            <button type="button" class="nav-btn" data-tab="audit"><span>Auditoria Imutável</span></button>
+            <button type="button" class="nav-btn" data-tab="outbox"><span>Fila Offline &amp; OTA</span><span class="pill-count" id="pillOutbox">0</span></button>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="user-card">
+                <div class="user-avatar" id="userAvatar">PC</div>
+                <div style="min-width:0;flex:1;">
+                    <div id="userDisplayName" style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Modo Consulta</div>
+                    <div id="userRoleLabel" style="font-size:10.5px;color:var(--text-muted);">Leitura • v16.4</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm btn-primary" id="btnAuthModal" style="flex:1;">Entrar</button>
+                <button type="button" class="btn btn-sm" id="btnFactory" title="Alto Contraste Fábrica">Fábrica</button>
+                <button type="button" class="btn btn-sm" id="btnDensity" title="Densidade da Tabela">Densidade</button>
+            </div>
+        </div>
+    </aside>
+
+    <div class="main">
+        <header class="topbar no-print">
+            <div>
+                <div id="topPageTitle" style="font-weight:800;font-size:15px;">Command Center</div>
+                <div id="topPageSub" style="font-size:11px;color:var(--text-muted);">Telemetria executiva e saúde da frota Voith Turbo</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div class="search-box">
+                    <input id="txtGlobalSearch" type="text" placeholder="Buscar código, armário, técnico..." />
+                    <span class="kbd">Ctrl K</span>
+                </div>
+                <button type="button" class="btn btn-primary" id="btnAddInstrument">+ Novo Item</button>
+                <button type="button" class="btn" id="btnQuickCustody">Cautela</button>
+                <button type="button" class="btn" id="btnBackupExport">Backup</button>
+                <button type="button" class="btn" id="btnConnectDb" title="Configurar chave Supabase">
+                    <span class="sync-dot" id="dbDot"></span>
+                    <span id="dbStatusText">Conectando...</span>
+                </button>
+            </div>
+        </header>
+
+        <main class="content" id="workspaceRoot"></main>
+    </div>
+
+    <div class="modal-backdrop" id="modalBackdrop">
+        <div class="modal" id="modalCard"></div>
+    </div>
+
+    <script src="js/app.js"></script>
 </body>
 </html>
