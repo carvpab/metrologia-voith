@@ -559,6 +559,8 @@ function updateOfflineQueueBanner() {
     const pendingN = DeltaTracker.pendingCount();
     const shouldShow = isEditor() && !hasConflict && (offlineDirty || (!navigator.onLine && pendingN > 0));
     banner.classList.toggle('hidden', !shouldShow);
+    banner.hidden = !shouldShow;
+    banner.style.display = shouldShow ? 'flex' : 'none';
     if (!shouldShow) return;
 
     const count = Math.max(1, pendingN);
@@ -701,7 +703,7 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
             updateOfflineQueueBanner();
             const dt = srvTime ? new Date(srvTime) : new Date();
             document.getElementById('cloudLastSync').textContent = isNaN(dt.getTime()) ? new Date().toLocaleString('pt-BR') : dt.toLocaleString('pt-BR');
-            setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.3)' : 'Nuvem Online');
+            setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.5)' : 'Nuvem Online');
             if (feedback) showToast(`Sincronizado (${instrumentsData.length} instrumentos).`, 'success');
             else if (silent) showToast('Atualizações da nuvem carregadas.', 'info');
             return true;
@@ -800,11 +802,11 @@ async function pushCloud(feedback = false, force = false) {
                         <span class="truncate"><span class="ck-conflict-code">${escapeHtml(c.code)}</span>${c.desc ? ` — ${escapeHtml(c.desc)}` : ''}</span>
                         <span class="font-mono text-[10px] text-slate-500 shrink-0">rev.${c.clientRev} → rev.${c.serverRev}</span>
                     </div>`).join('');
-                    itemsBox.classList.remove('hidden');
+                    itemsBox.classList.remove('hidden'); itemsBox.hidden = false; itemsBox.style.display = 'flex';
                 }
             } else {
                 if (scopeEl) scopeEl.innerHTML = `Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">${escapeHtml(timeStr)}</strong>). Escolha como prosseguir:`;
-                if (itemsBox) { itemsBox.innerHTML = ''; itemsBox.classList.add('hidden'); }
+                if (itemsBox) { itemsBox.innerHTML = ''; itemsBox.classList.add('hidden'); itemsBox.hidden = true; itemsBox.style.display = 'none'; }
             }
             document.getElementById('conflictModal').classList.remove('hidden');
             updateOfflineQueueBanner();
@@ -820,7 +822,7 @@ async function pushCloud(feedback = false, force = false) {
         lastCloudCheckMs = Date.now();
         VoithDB.saveSnapshot(instrumentsData, calibrationHistory, lostInstrumentsData, controlledLists, lastServerUpdatedAt);
         document.getElementById('cloudLastSync').textContent = new Date().toLocaleString('pt-BR');
-        if (!pendingSync) setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.3)' : 'Nuvem Online');
+        if (!pendingSync) setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.5)' : 'Nuvem Online');
         updateOfflineQueueBanner();
         if (feedback) showToast(useDelta ? 'Alterações salvas via Delta Sync!' : 'Base salva na nuvem com sucesso!', 'success');
     } catch (err) {
