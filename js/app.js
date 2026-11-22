@@ -28,7 +28,9 @@
             document.getElementById('inspSetor').value = it.setor || '';
             document.getElementById('inspResp').value = it.resp || '';
             document.getElementById('inspLocal').value = it.local || '';
-            document.getElementById('inspDate').value = it.proxCal ? fmtBR(it.proxCal) : '';
+            const brVal = it.proxCal ? fmtBR(it.proxCal) : '';
+            document.getElementById('inspDate').value = brVal;
+            document.getElementById('inspCycleManualDate').value = brVal;
             document.getElementById('inspDatePick').value = it.proxCal || '';
             document.getElementById('inspStatus').value = it.status || 'AUTO';
             const resolvedCycle = inferCycleMonths(it.desc, it.cycleMonths);
@@ -44,7 +46,7 @@
             document.getElementById('inspObs').value = it.obs || '';
             document.getElementById('inspDupWarn').classList.add('hidden');
 
-            ['inspCode','inspCC','inspDesc','inspMin','inspMax','inspSetor','inspResp','inspLocal','inspDate','inspStatus','inspCycle','inspCycleCustom','inspCustHolder','inspCustReturn','inspCustDate','inspCustReason','inspObs'].forEach(fid => {
+            ['inspCode','inspCC','inspDesc','inspMin','inspMax','inspSetor','inspResp','inspLocal','inspDate','inspStatus','inspCycle','inspCycleCustom','inspCycleManualDate','inspCustHolder','inspCustReturn','inspCustDate','inspCustReason','inspObs'].forEach(fid => {
                 const el = document.getElementById(fid);
                 el.disabled = !canEdit;
                 el.classList.toggle('opacity-75', !canEdit);
@@ -77,15 +79,42 @@
             else warn.classList.add('hidden');
             return Boolean(dup);
         }
+        function onInspDateInput(inp) {
+            maskBRDate(inp);
+            const man = document.getElementById('inspCycleManualDate');
+            if (man && man.value !== inp.value) man.value = inp.value;
+        }
+        function onInspManualDateInput(inp) {
+            maskBRDate(inp);
+            const main = document.getElementById('inspDate');
+            if (main && main.value !== inp.value) main.value = inp.value;
+        }
+        function setInspDateFromISO(iso) {
+            const br = fmtBR(iso);
+            const main = document.getElementById('inspDate');
+            const man = document.getElementById('inspCycleManualDate');
+            if (main) main.value = br;
+            if (man) man.value = br;
+        }
         function onInspCycleChange(focusInput = true) {
             const sel = document.getElementById('inspCycle');
-            const wrap = document.getElementById('inspCycleCustomWrap');
-            const inp = document.getElementById('inspCycleCustom');
-            if (!sel || !wrap) return;
+            const customWrap = document.getElementById('inspCycleCustomWrap');
+            const customInp = document.getElementById('inspCycleCustom');
+            const manWrap = document.getElementById('inspCycleManualDateWrap');
+            const manInp = document.getElementById('inspCycleManualDate');
+            if (!sel) return;
             const isCustom = sel.value === 'CUSTOM';
-            wrap.classList.toggle('hidden', !isCustom);
-            if (isCustom && focusInput && inp && !inp.disabled) {
-                setTimeout(() => inp.focus(), 20);
+            const isManual = sel.value === '0';
+            if (customWrap) customWrap.classList.toggle('hidden', !isCustom);
+            if (manWrap) manWrap.classList.toggle('hidden', !isManual);
+            if (isManual && manInp) {
+                const mainVal = document.getElementById('inspDate')?.value || '';
+                if (manInp.value !== mainVal) manInp.value = mainVal;
+                if (focusInput && !manInp.disabled) {
+                    setTimeout(() => { manInp.focus(); manInp.select(); }, 20);
+                }
+            } else if (isCustom && focusInput && customInp && !customInp.disabled) {
+                setTimeout(() => customInp.focus(), 20);
             }
         }
         function saveInspector(goNext = false) {
@@ -96,7 +125,7 @@
             if (!code || !desc) { showToast('Preencha Código e Descrição.', 'error'); return; }
             if (checkInspectorDuplicate()) { showToast(`Código ${code} duplicado.`, 'error'); return; }
 
-            const rawD = document.getElementById('inspDate').value.trim();
+            const rawD = (document.getElementById('inspCycle').value === '0' ? (document.getElementById('inspCycleManualDate').value.trim() || document.getElementById('inspDate').value.trim()) : document.getElementById('inspDate').value.trim());
             const iso = parseManualISO(rawD);
             if (rawD && !iso) { showToast('Data de validade inválida (DD/MM/AAAA).', 'error'); return; }
 
@@ -445,6 +474,7 @@
                 validInp.value = '';
                 validInp.placeholder = 'DD/MM/AAAA (Manual)';
                 if (ct) ct.textContent = '(Manual)';
+                setTimeout(() => validInp.focus(), 40);
             } else {
                 validInp.value = fmtBR(addMonthsISO(getTodayISO(), cycleM, true));
                 validInp.placeholder = 'DD/MM/AAAA';

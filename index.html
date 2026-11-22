@@ -1143,8 +1143,8 @@
                     <div>
                         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Próx. Calibração (DD/MM/AAAA)</label>
                         <div class="relative flex items-center">
-                            <input type="text" id="inspDate" oninput="maskBRDate(this)" maxlength="10" placeholder="01/07/2027" class="w-full px-3 py-2 pr-9 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-sm font-bold">
-                            <input type="date" id="inspDatePick" onchange="if(this.value) document.getElementById('inspDate').value=fmtBR(this.value)" style="position:absolute;right:0;top:0;width:36px;height:100%;opacity:0;pointer-events:none" tabindex="-1">
+                            <input type="text" id="inspDate" oninput="onInspDateInput(this)" maxlength="10" placeholder="01/07/2027" class="w-full px-3 py-2 pr-9 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-sm font-bold">
+                            <input type="date" id="inspDatePick" onchange="if(this.value) setInspDateFromISO(this.value)" style="position:absolute;right:0;top:0;width:36px;height:100%;opacity:0;pointer-events:none" tabindex="-1">
                             <button type="button" onclick="openPicker('inspDatePick')" class="editor-only absolute right-2.5 text-slate-400 hover:text-[#004C97] cursor-pointer"><svg class="vp-ico" aria-hidden="true"><use href="#i-calendar"/></svg></button>
                         </div>
                     </div>
@@ -1176,6 +1176,10 @@
                         <div id="inspCycleCustomWrap" class="hidden mt-1.5 flex items-center gap-2">
                             <input type="number" id="inspCycleCustom" min="1" max="120" step="1" placeholder="Ex: 3, 9, 48" class="w-full px-3 py-1.5 bg-white dark:bg-[#091527] border border-[#004C97] dark:border-[#00A8E8] rounded-lg font-mono text-xs font-bold">
                             <span class="text-[11px] font-semibold text-slate-500 shrink-0">meses</span>
+                        </div>
+                        <div id="inspCycleManualDateWrap" class="hidden mt-1.5 space-y-1">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-[#004C97] dark:text-[#00A8E8]">Data de Validade Manual (DD/MM/AAAA)</label>
+                            <input type="text" id="inspCycleManualDate" oninput="onInspManualDateInput(this)" maxlength="10" placeholder="DD/MM/AAAA" class="w-full px-3 py-1.5 bg-white dark:bg-[#091527] border border-[#004C97] dark:border-[#00A8E8] rounded-lg font-mono text-xs font-bold">
                         </div>
                     </div>
                 </div>
