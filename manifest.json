@@ -1,22 +1,15 @@
 {
   "name": "VOITH TURBO — Precision Metrology OS",
   "short_name": "Voith Metrologia",
-  "description": "Painel de Controle Metrológico, Cautelas de Campo e Calibração Externa — Voith Turbo Brasil",
+  "description": "Sistema corporativo de gestão metrológica, cautelas e calibração externa — Voith Turbo Brasil",
   "start_url": "./index.html",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#001833",
   "theme_color": "#001833",
-  "lang": "pt-BR",
+  "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23001833'/%3E%3Cpath d='M38 52h30l28 68 28-68h30l-45 94h-26z' fill='%2300A8E8'/%3E%3C/svg%3E",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='104' fill='%23001833'/%3E%3Cpath d='M100 138h80l76 182 76-182h80L292 390h-72z' fill='%2300A8E8'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23001833'/%3E%3Cpath d='M104 144h80l72 176 72-176h80L288 384h-64z' fill='%2300A8E8'/%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

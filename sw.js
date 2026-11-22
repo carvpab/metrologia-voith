@@ -1,11 +1,22 @@
-// VOITH TURBO — Precision Metrology OS • Service Worker v10a4 (Background Cache & Offline Engine)
-const CACHE_APP = 'voith-metrologia-app-v10a4';
-const CACHE_CDN = 'voith-metrologia-cdn-v10a4';
-const APP_SHELL = ['./', './index.html', './manifest.json'];
+// VOITH TURBO — Precision Metrology OS • Service Worker v11 (Modular Cache & Offline Engine)
+const CACHE_APP = 'voith-metrologia-app-v11';
+const CACHE_CDN = 'voith-metrologia-cdn-v11';
+const APP_SHELL = [
+    './',
+    './index.html',
+    './manifest.json',
+    './css/tailwind.css',
+    './css/cockpit.css',
+    './js/utils.js',
+    './js/db.js',
+    './js/cloud.js',
+    './js/views.js',
+    './js/app.js',
+    './data/seed.tsv'
+];
 
-// Nunca interceptar o Google Apps Script (Cloud Sync e Login precisam ser sempre ao vivo!)
 const BYPASS_HOSTS = ['script.google.com', 'script.googleusercontent.com'];
-const CACHE_FIRST_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdnjs.cloudflare.com', 'cdn.sheetjs.com'];
+const CACHE_FIRST_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.sheetjs.com'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -32,19 +43,15 @@ self.addEventListener('fetch', (event) => {
     let url;
     try { url = new URL(req.url); } catch { return; }
 
-    // 1. Google Sheets / Apps Script: 100% direto da rede
     if (BYPASS_HOSTS.some((h) => url.hostname.endsWith(h))) return;
 
-    // 2. Fontes, FontAwesome e SheetJS: Cache-First (zero downloads repetidos)
     if (CACHE_FIRST_HOSTS.some((h) => url.hostname.endsWith(h))) {
         event.respondWith(
             caches.open(CACHE_CDN).then((cache) =>
                 cache.match(req).then((cached) => {
                     if (cached) return cached;
                     return fetch(req).then((res) => {
-                        if (res && (res.ok || res.type === 'opaque')) {
-                            cache.put(req, res.clone());
-                        }
+                        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
                         return res;
                     });
                 })
@@ -53,7 +60,6 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3. Mesmo domínio (index.html, manifest.json): Stale-While-Revalidate (abre em ~15ms e atualiza em segundo plano)
     if (url.origin === self.location.origin) {
         event.respondWith(
             caches.open(CACHE_APP).then((cache) =>
