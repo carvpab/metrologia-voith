@@ -1,0 +1,10 @@
+{
+  "version": "16.0.0",
+  "releaseName": "Release 4 — Cursor Pagination, OTA Changelog/Rollback & ERP/Webhook Connectors",
+  "minSupported": "13.0.0",
+  "changelog": [
+    "Paginação por cursor (query_instruments_page) no PostgreSQL para consultas escaláveis",
+    "Verificação OTA com exibição de changelog e canal de rollback seguro (app_releases)",
+    "Conectores de eventos de domínio e webhooks prontos para integração ERP/SAP/CMMS"
+  ]
+}
