@@ -945,6 +945,16 @@
         }
         html.dark .ck-conflict-code { color: #00A8E8; }
 
+        
+        /* Garante que .hidden sempre oculte componentes customizados com display próprio */
+        .ck-offline-banner.hidden,
+        .ck-conflict-list.hidden,
+        .ck-mob-strip.hidden,
+        .ck-radar-avg.hidden,
+        .ck-mob-badge.hidden {
+            display: none !important;
+        }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
