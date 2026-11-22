@@ -171,7 +171,7 @@
             if (id === -1) {
                 pushUndo(`Cadastro ${code}`);
                 const nid = instrumentsData.length ? Math.max(...instrumentsData.map(x => x.id)) + 1 : 1;
-                const created = normalizeInstrument({ id: nid, ...payload }, nid);
+                const created = normalizeInstrument({ id: nid, rev: 0, ...payload }, nid);
                 instrumentsData.unshift(created);
                 DeltaTracker.markInstUpsert(created);
                 queueAudit({ module:'Inventário', action:'Novo Cadastro', target:code, field:'Instrumento', before:'-', after:`${desc} | ${payload.local||'Sem local'}`, details:`Cadastrou ${code}` });
@@ -1191,7 +1191,13 @@ async function initApp() {
     applyViewModeUI();
     initInspectorSwipeGesture();
 
-    const snap = await VoithDB.loadSnapshot();
+    const [snap, savedPendingDelta] = await Promise.all([
+        VoithDB.loadSnapshot(),
+        VoithDB.get('pendingDelta')
+    ]);
+    if (savedPendingDelta && DeltaTracker.hydrate(savedPendingDelta)) {
+        offlineDirty = true;
+    }
     if (snap && Array.isArray(snap.inst) && snap.inst.length > 0) {
         instrumentsData = snap.inst.map((x, i) => normalizeInstrument(x, i + 1));
         calibrationHistory = Array.isArray(snap.hist) ? snap.hist : [];

@@ -1,7 +1,7 @@
 // ============================================================================
 // VOITH TURBO — PRECISION METROLOGY OS v11 • UTILS, STATE & CANONICALIZER
 // ============================================================================
-const DEFAULT_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec";
+const DEFAULT_SHEETS_API_URL = (window.VOITH_CONFIG && window.VOITH_CONFIG.SHEETS_API_URL) || "";
 const KEYS = {
     inst: 'voith_instruments_official_v313',
     hist: 'voith_history_official_v313',
@@ -228,7 +228,8 @@ function normalizeInstrument(raw, fallbackId) {
         custodyReturnTo: str(x.custodyReturnTo),
         custodyDate: cd,
         custodyReason: str(x.custodyReason),
-        cycleMonths: inferCycleMonths(desc, x.cycleMonths)
+        cycleMonths: inferCycleMonths(desc, x.cycleMonths),
+        rev: x.rev === 0 ? 0 : Math.max(1, Number(x.rev) || 1)
     };
 }
 

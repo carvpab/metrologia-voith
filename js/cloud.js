@@ -79,6 +79,7 @@ function applyAuthUI() {
         closeRapidLocalModal(); closeAuditVaultModal();
     }
     updateUndoUI();
+    if (typeof updateOfflineQueueBanner === 'function') updateOfflineQueueBanner();
     renderAll();
 }
 
@@ -528,7 +529,7 @@ async function toggleInspectorItemAudit() {
     }).join('');
 }
 
-// ---- Motor Cloud Sync (Delta Sync v11 + Fallback Full Sync + Fila Offline) ----
+// ---- Motor Cloud Sync v11.3 (Delta Sync + Trava `rev` por Item + Banner Fila Offline) ----
 function getCloudUrl() { return DEFAULT_SHEETS_API_URL.trim(); }
 function setCloudUI(state, text) {
     const pill = document.getElementById('cloudPillBtn');
@@ -549,10 +550,68 @@ function setCloudUI(state, text) {
     dot.className = `w-2.5 h-2.5 rounded-full ${styles[1]}`;
 }
 
+function updateOfflineQueueBanner() {
+    const banner = document.getElementById('offlineQueueBanner');
+    const txt = document.getElementById('offlineQueueText');
+    const btn = document.getElementById('offlineRetryBtn');
+    if (!banner || !txt) return;
+
+    const pendingN = DeltaTracker.pendingCount();
+    const shouldShow = isEditor() && !hasConflict && (offlineDirty || (!navigator.onLine && pendingN > 0));
+    banner.classList.toggle('hidden', !shouldShow);
+    if (!shouldShow) return;
+
+    const count = Math.max(1, pendingN);
+    const label = count === 1 ? '1 alteração pendente' : `${count} alterações pendentes`;
+    if (!navigator.onLine) {
+        txt.textContent = `${label} de envio — serão sincronizadas ao reconectar.`;
+    } else if (isSyncing) {
+        txt.textContent = `Reenviando ${label} para o Google Sheets...`;
+    } else {
+        txt.textContent = `${label} de envio — clique em "Reenviar agora" para sincronizar.`;
+    }
+    if (btn) btn.disabled = isSyncing;
+}
+
+function retryOfflineSyncNow() {
+    if (!requireEditor()) return;
+    if (!navigator.onLine) {
+        showToast('Sem conexão no momento. Assim que o sinal voltar, enviaremos automaticamente.', 'info');
+        return;
+    }
+    clearTimeout(syncTimer);
+    syncTimer = null;
+    pushCloud(true, false);
+}
+
+function applyRevUpdates(revUpdates) {
+    if (!revUpdates || typeof revUpdates !== 'object') return;
+    const applyTo = (arr, mapObj) => {
+        if (!mapObj || typeof mapObj !== 'object') return;
+        for (let i = 0; i < arr.length; i++) {
+            const k = String(arr[i].id);
+            if (mapObj[k] !== undefined) {
+                arr[i].rev = Number(mapObj[k]) || (Number(arr[i].rev) || 1);
+            }
+        }
+    };
+    applyTo(instrumentsData, revUpdates.inst);
+    applyTo(calibrationHistory, revUpdates.hist);
+    applyTo(lostInstrumentsData, revUpdates.lost);
+}
+
+let lastConflictScope = 'full';
+
 function scheduleCloudSync() {
     if (!isEditor() || !getCloudUrl() || !isCloudReady || isApplyingCloud) return;
     if (hasConflict) { setCloudUI('warning', 'Conflito'); return; }
-    if (!navigator.onLine) { offlineDirty = true; setCloudUI('warning', 'Fila Offline'); return; }
+    if (!navigator.onLine) {
+        offlineDirty = true;
+        VoithDB.set('pendingDelta', DeltaTracker.serialize());
+        setCloudUI('warning', 'Fila Offline');
+        updateOfflineQueueBanner();
+        return;
+    }
     if (isSyncing) { pendingSync = true; return; }
     clearTimeout(syncTimer);
     setCloudUI('syncing', 'Salvando...');
@@ -607,6 +666,17 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
         const srvTime = String(data.updatedAt || data.savedAt || '').trim();
         if (silent && srvTime && srvTime === lastServerUpdatedAt) return true;
 
+        // Se há fila offline pendente de um carregamento anterior, não sobrescreve as edições locais silenciosamente
+        if (offlineDirty && DeltaTracker.pendingCount() > 0 && !feedback) {
+            isCloudReady = true;
+            document.body.classList.remove('vp-loading');
+            updateOfflineQueueBanner();
+            if (isEditor() && navigator.onLine) {
+                setTimeout(() => pushCloud(false, false), 250);
+            }
+            return true;
+        }
+
         const hasData = !data.empty && ((data.instrumentsData?.length)||0) + ((data.calibrationHistory?.length)||0) + ((data.lostInstrumentsData?.length)||0) > 0;
         if (hasData) {
             if (silent && (isSyncing || syncTimer)) return true;
@@ -628,9 +698,10 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
             lastServerUpdatedAt = srvTime;
             document.body.classList.remove('vp-loading');
             renderAll();
+            updateOfflineQueueBanner();
             const dt = srvTime ? new Date(srvTime) : new Date();
             document.getElementById('cloudLastSync').textContent = isNaN(dt.getTime()) ? new Date().toLocaleString('pt-BR') : dt.toLocaleString('pt-BR');
-            setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11)' : 'Nuvem Online');
+            setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.3)' : 'Nuvem Online');
             if (feedback) showToast(`Sincronizado (${instrumentsData.length} instrumentos).`, 'success');
             else if (silent) showToast('Atualizações da nuvem carregadas.', 'info');
             return true;
@@ -643,10 +714,11 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
     } catch (err) {
         document.body.classList.remove('vp-loading');
         if (!silent) {
-            setCloudUI('error', 'Erro Sync');
+            setCloudUI('error', navigator.onLine ? 'Erro Sync' : 'Sem Conexão');
             const eb = document.getElementById('cloudModalErr');
             if (eb) { eb.textContent = String(err.message || err); eb.classList.remove('hidden'); }
         }
+        updateOfflineQueueBanner();
         return false;
     }
 }
@@ -655,12 +727,19 @@ async function pushCloud(feedback = false, force = false) {
     const url = getCloudUrl();
     if (!url || !isEditor()) return;
     if (hasConflict && !force) return;
-    if (!navigator.onLine) { offlineDirty = true; setCloudUI('warning', 'Fila Offline'); return; }
+    if (!navigator.onLine) {
+        offlineDirty = true;
+        VoithDB.set('pendingDelta', DeltaTracker.serialize());
+        setCloudUI('warning', 'Fila Offline');
+        updateOfflineQueueBanner();
+        return;
+    }
     if (isSyncing) { pendingSync = true; return; }
     isSyncing = true; pendingSync = false;
     setCloudUI('syncing', 'Salvando...');
+    updateOfflineQueueBanner();
     const auditBatch = pendingAuditEvents.slice();
-    const useDelta = !force && serverSupportsDelta && DeltaTracker.hasDelta();
+    const useDelta = serverSupportsDelta && DeltaTracker.hasDelta();
     const deltaSnap = useDelta ? DeltaTracker.snapshotDelta() : null;
 
     const sendPayload = async (payload) => {
@@ -680,10 +759,10 @@ async function pushCloud(feedback = false, force = false) {
                 auth: getAuthPayload(),
                 updatedAt: new Date().toISOString(),
                 baseUpdatedAt: lastServerUpdatedAt || '',
+                force: Boolean(force),
                 delta: deltaSnap,
                 auditEvents: auditBatch
             });
-            // Se o Apps Script ainda for legado e não reconhecer save_delta, faz fallback automático para full save!
             if (d && d.ok === false && /desconhecid|unknown/i.test(String(d.error || ''))) {
                 serverSupportsDelta = false;
                 d = null;
@@ -705,30 +784,56 @@ async function pushCloud(feedback = false, force = false) {
         }
         if (d.conflict) {
             hasConflict = true; pendingSync = false;
+            lastConflictScope = d.conflictScope || 'full';
             setCloudUI('warning', 'Conflito');
             const dt = d.serverUpdatedAt ? new Date(d.serverUpdatedAt) : null;
-            document.getElementById('conflictTime').textContent = (dt && !isNaN(dt.getTime())) ? dt.toLocaleString('pt-BR') : 'Mais recente';
+            const timeStr = (dt && !isNaN(dt.getTime())) ? dt.toLocaleString('pt-BR') : 'Mais recente';
+            const timeEl = document.getElementById('conflictTime');
+            if (timeEl) timeEl.textContent = timeStr;
+
+            const scopeEl = document.getElementById('conflictScopeMsg');
+            const itemsBox = document.getElementById('conflictItemsBox');
+            if (d.conflictScope === 'item' && Array.isArray(d.conflicts) && d.conflicts.length > 0) {
+                if (scopeEl) scopeEl.innerHTML = `Outro editor alterou o(s) mesmo(s) registro(s) antes de você (<strong id="conflictTime">${escapeHtml(timeStr)}</strong>). Escolha se deseja recarregar a versão mais recente ou sobrescrever apenas estes itens:`;
+                if (itemsBox) {
+                    itemsBox.innerHTML = d.conflicts.map(c => `<div class="ck-conflict-item">
+                        <span class="truncate"><span class="ck-conflict-code">${escapeHtml(c.code)}</span>${c.desc ? ` — ${escapeHtml(c.desc)}` : ''}</span>
+                        <span class="font-mono text-[10px] text-slate-500 shrink-0">rev.${c.clientRev} → rev.${c.serverRev}</span>
+                    </div>`).join('');
+                    itemsBox.classList.remove('hidden');
+                }
+            } else {
+                if (scopeEl) scopeEl.innerHTML = `Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">${escapeHtml(timeStr)}</strong>). Escolha como prosseguir:`;
+                if (itemsBox) { itemsBox.innerHTML = ''; itemsBox.classList.add('hidden'); }
+            }
             document.getElementById('conflictModal').classList.remove('hidden');
+            updateOfflineQueueBanner();
             return;
         }
         if (d.ok === false) throw new Error(d.error || 'Erro ao salvar');
+
+        if (d.revUpdates) applyRevUpdates(d.revUpdates);
         isCloudReady = true; hasConflict = false; offlineDirty = false;
-        DeltaTracker.clear();
+        DeltaTracker.clear(true);
         if (auditBatch.length) pendingAuditEvents.splice(0, auditBatch.length);
         if (d.savedAt) lastServerUpdatedAt = String(d.savedAt).trim();
         lastCloudCheckMs = Date.now();
-        VoithDB.set('lastServerUpdatedAt', lastServerUpdatedAt);
+        VoithDB.saveSnapshot(instrumentsData, calibrationHistory, lostInstrumentsData, controlledLists, lastServerUpdatedAt);
         document.getElementById('cloudLastSync').textContent = new Date().toLocaleString('pt-BR');
-        if (!pendingSync) setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11)' : 'Nuvem Online');
+        if (!pendingSync) setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.3)' : 'Nuvem Online');
+        updateOfflineQueueBanner();
         if (feedback) showToast(useDelta ? 'Alterações salvas via Delta Sync!' : 'Base salva na nuvem com sucesso!', 'success');
     } catch (err) {
         offlineDirty = true;
-        setCloudUI('error', 'Erro ao Salvar');
+        VoithDB.set('pendingDelta', DeltaTracker.serialize());
+        setCloudUI('error', navigator.onLine ? 'Erro ao Salvar' : 'Fila Offline');
         const eb = document.getElementById('cloudModalErr');
         if (eb) { eb.textContent = String(err.message || err); eb.classList.remove('hidden'); }
-        if (feedback) showToast('Erro ao salvar na nuvem.', 'error');
+        updateOfflineQueueBanner();
+        if (feedback) showToast('Erro ao salvar na nuvem — alteração mantida na fila local.', 'error');
     } finally {
         isSyncing = false;
+        updateOfflineQueueBanner();
         if (pendingSync && !hasConflict) { pendingSync = false; pushCloud(false, false); }
     }
 }
@@ -736,8 +841,15 @@ async function pushCloud(feedback = false, force = false) {
 function resolveConflict(mode) {
     document.getElementById('conflictModal').classList.add('hidden');
     hasConflict = false;
-    if (mode === 'reload') loadFromCloud(true, false, false);
-    else { DeltaTracker.markFullSyncRequired(); pushCloud(true, true); }
+    if (mode === 'reload') {
+        offlineDirty = false;
+        DeltaTracker.clear(true);
+        updateOfflineQueueBanner();
+        loadFromCloud(true, false, false);
+    } else {
+        if (lastConflictScope !== 'item') DeltaTracker.markFullSyncRequired();
+        pushCloud(true, true);
+    }
 }
 function openCloudModal() { document.getElementById('cloudModal').classList.remove('hidden'); }
 function closeCloudModal() { document.getElementById('cloudModal').classList.add('hidden'); }
@@ -748,7 +860,14 @@ function forcePushCloud() {
     pushCloud(true, true);
 }
 
+window.addEventListener('offline', () => {
+    if (isEditor()) {
+        setCloudUI('warning', 'Sem Conexão');
+        updateOfflineQueueBanner();
+    }
+});
 window.addEventListener('online', () => {
+    updateOfflineQueueBanner();
     if (offlineDirty && isEditor()) {
         showToast('Conexão restabelecida — reenviando alterações pendentes...', 'info');
         pushCloud(true, false);

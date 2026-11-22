@@ -100,7 +100,7 @@ const VoithDB = (() => {
     return { get, set, loadSnapshot, saveSnapshot };
 })();
 
-// ---- Delta Change Tracker (envia apenas linhas alteradas ao Google Sheets!) ----
+// ---- Delta Change Tracker v11.3 (com Trava de Revisão `rev` por Item + Fila Offline Persistente) ----
 const DeltaTracker = {
     fullRequired: false,
     instUpsert: new Map(),
@@ -109,16 +109,38 @@ const DeltaTracker = {
     histDelete: new Set(),
     lostUpsert: new Map(),
     lostDelete: new Set(),
+    baseRevs: {
+        inst: new Map(),
+        hist: new Map(),
+        lost: new Map()
+    },
+
+    _captureBaseRev(bucket, id, itemRev, sourceArr) {
+        if (this.baseRevs[bucket].has(id)) return this.baseRevs[bucket].get(id);
+        let revVal = itemRev;
+        if (revVal === undefined && Array.isArray(sourceArr)) {
+            const found = sourceArr.find(x => x && x.id === id);
+            if (found) revVal = found.rev;
+        }
+        const resolved = revVal === 0 ? 0 : Math.max(1, Number(revVal) || 1);
+        this.baseRevs[bucket].set(id, resolved);
+        return resolved;
+    },
 
     markInstUpsert(items) {
         (Array.isArray(items) ? items : [items]).forEach(it => {
             if (!it || it.id === undefined) return;
+            const baseRev = this._captureBaseRev('inst', it.id, it.rev);
             this.instDelete.delete(it.id);
-            this.instUpsert.set(it.id, deepCloneFast(it));
+            const copy = deepCloneFast(it);
+            copy._baseRev = baseRev;
+            this.instUpsert.set(it.id, copy);
         });
     },
     markInstDelete(ids) {
         (Array.isArray(ids) ? ids : [ids]).forEach(id => {
+            if (id === undefined || id === null) return;
+            this._captureBaseRev('inst', id, undefined, instrumentsData);
             this.instUpsert.delete(id);
             this.instDelete.add(id);
         });
@@ -127,13 +149,17 @@ const DeltaTracker = {
         (Array.isArray(items) ? items : [items]).forEach(h => {
             if (!h) return;
             if (!h.id) h.id = Date.now() + Math.floor(Math.random() * 10000);
+            const baseRev = this._captureBaseRev('hist', h.id, h.rev);
             this.histDelete.delete(h.id);
-            this.histUpsert.set(h.id, deepCloneFast(h));
+            const copy = deepCloneFast(h);
+            copy._baseRev = baseRev;
+            this.histUpsert.set(h.id, copy);
         });
     },
     markHistDelete(ids) {
         (Array.isArray(ids) ? ids : [ids]).forEach(id => {
             if (!id) return;
+            this._captureBaseRev('hist', id, undefined, calibrationHistory);
             this.histUpsert.delete(id);
             this.histDelete.add(id);
         });
@@ -142,19 +168,29 @@ const DeltaTracker = {
         (Array.isArray(items) ? items : [items]).forEach(l => {
             if (!l) return;
             if (!l.id) l.id = Date.now() + Math.floor(Math.random() * 10000);
+            const baseRev = this._captureBaseRev('lost', l.id, l.rev);
             this.lostDelete.delete(l.id);
-            this.lostUpsert.set(l.id, deepCloneFast(l));
+            const copy = deepCloneFast(l);
+            copy._baseRev = baseRev;
+            this.lostUpsert.set(l.id, copy);
         });
     },
     markLostDelete(ids) {
         (Array.isArray(ids) ? ids : [ids]).forEach(id => {
             if (!id) return;
+            this._captureBaseRev('lost', id, undefined, lostInstrumentsData);
             this.lostUpsert.delete(id);
             this.lostDelete.add(id);
         });
     },
     markFullSyncRequired() {
         this.fullRequired = true;
+    },
+    pendingCount() {
+        const n = this.instUpsert.size + this.instDelete.size +
+                  this.histUpsert.size + this.histDelete.size +
+                  this.lostUpsert.size + this.lostDelete.size;
+        return this.fullRequired ? Math.max(1, n) : n;
     },
     hasDelta() {
         return !this.fullRequired && (
@@ -164,16 +200,55 @@ const DeltaTracker = {
         );
     },
     snapshotDelta() {
+        const delRevs = { inst: {}, hist: {}, lost: {} };
+        this.instDelete.forEach(id => { if (this.baseRevs.inst.has(id)) delRevs.inst[String(id)] = this.baseRevs.inst.get(id); });
+        this.histDelete.forEach(id => { if (this.baseRevs.hist.has(id)) delRevs.hist[String(id)] = this.baseRevs.hist.get(id); });
+        this.lostDelete.forEach(id => { if (this.baseRevs.lost.has(id)) delRevs.lost[String(id)] = this.baseRevs.lost.get(id); });
         return {
             instUpsert: [...this.instUpsert.values()],
             instDelete: [...this.instDelete],
             histUpsert: [...this.histUpsert.values()],
             histDelete: [...this.histDelete],
             lostUpsert: [...this.lostUpsert.values()],
-            lostDelete: [...this.lostDelete]
+            lostDelete: [...this.lostDelete],
+            deleteBaseRevs: delRevs
         };
     },
-    clear() {
+    serialize() {
+        if (!this.fullRequired && this.pendingCount() === 0) return null;
+        return {
+            fullRequired: this.fullRequired,
+            instUpsert: [...this.instUpsert.entries()],
+            instDelete: [...this.instDelete],
+            histUpsert: [...this.histUpsert.entries()],
+            histDelete: [...this.histDelete],
+            lostUpsert: [...this.lostUpsert.entries()],
+            lostDelete: [...this.lostDelete],
+            baseRevs: {
+                inst: [...this.baseRevs.inst.entries()],
+                hist: [...this.baseRevs.hist.entries()],
+                lost: [...this.baseRevs.lost.entries()]
+            }
+        };
+    },
+    hydrate(saved) {
+        this.clear(false);
+        if (!saved || typeof saved !== 'object') return false;
+        this.fullRequired = Boolean(saved.fullRequired);
+        if (Array.isArray(saved.instUpsert)) saved.instUpsert.forEach(([k, v]) => this.instUpsert.set(k, v));
+        if (Array.isArray(saved.instDelete)) saved.instDelete.forEach(id => this.instDelete.add(id));
+        if (Array.isArray(saved.histUpsert)) saved.histUpsert.forEach(([k, v]) => this.histUpsert.set(k, v));
+        if (Array.isArray(saved.histDelete)) saved.histDelete.forEach(id => this.histDelete.add(id));
+        if (Array.isArray(saved.lostUpsert)) saved.lostUpsert.forEach(([k, v]) => this.lostUpsert.set(k, v));
+        if (Array.isArray(saved.lostDelete)) saved.lostDelete.forEach(id => this.lostDelete.add(id));
+        if (saved.baseRevs) {
+            if (Array.isArray(saved.baseRevs.inst)) saved.baseRevs.inst.forEach(([k, v]) => this.baseRevs.inst.set(k, v));
+            if (Array.isArray(saved.baseRevs.hist)) saved.baseRevs.hist.forEach(([k, v]) => this.baseRevs.hist.set(k, v));
+            if (Array.isArray(saved.baseRevs.lost)) saved.baseRevs.lost.forEach(([k, v]) => this.baseRevs.lost.set(k, v));
+        }
+        return this.pendingCount() > 0;
+    },
+    clear(persistClear = true) {
         this.fullRequired = false;
         this.instUpsert.clear();
         this.instDelete.clear();
@@ -181,6 +256,10 @@ const DeltaTracker = {
         this.histDelete.clear();
         this.lostUpsert.clear();
         this.lostDelete.clear();
+        this.baseRevs.inst.clear();
+        this.baseRevs.hist.clear();
+        this.baseRevs.lost.clear();
+        if (persistClear) VoithDB.set('pendingDelta', null);
     }
 };
 
@@ -188,9 +267,13 @@ function ensureHistoryIds() {
     let base = Date.now();
     calibrationHistory.forEach((h, i) => {
         if (!h.id) h.id = base + i;
+        if (h.rev === undefined || h.rev === null || h.rev === '') h.rev = 1;
+        else h.rev = h.rev === 0 ? 0 : Math.max(1, Number(h.rev) || 1);
     });
     lostInstrumentsData.forEach((l, i) => {
         if (!l.id) l.id = base + 5000 + i;
+        if (l.rev === undefined || l.rev === null || l.rev === '') l.rev = 1;
+        else l.rev = l.rev === 0 ? 0 : Math.max(1, Number(l.rev) || 1);
     });
 }
 
@@ -278,6 +361,7 @@ function flushLocalPersistNow() {
     if (!localPersistDirty) return;
     localPersistDirty = false;
     VoithDB.saveSnapshot(instrumentsData, calibrationHistory, lostInstrumentsData, controlledLists, lastServerUpdatedAt);
+    VoithDB.set('pendingDelta', (offlineDirty || DeltaTracker.pendingCount() > 0) ? DeltaTracker.serialize() : null);
 }
 
 function persistAll(opts = {}) {

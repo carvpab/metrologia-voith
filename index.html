@@ -14,9 +14,14 @@
     <!-- Pré-conexão e pré-carregamento paralelo do Google Sheets -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
     <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+    <!-- Configuração Centralizada Voith (Única fonte da URL do Apps Script) -->
     <script>
+        window.VOITH_CONFIG = Object.freeze({
+            SHEETS_API_URL: "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec",
+            APP_VERSION: "11.3"
+        });
         (function() {
-            var url = "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec";
+            var url = window.VOITH_CONFIG.SHEETS_API_URL;
             if (url) {
                 var sep = url.indexOf("?") >= 0 ? "&" : "?";
                 window.__VOITH_CLOUD_PREFETCH__ = {
@@ -252,6 +257,18 @@
                     </div>
                 </div>
             </header>
+
+            <!-- Banner Discreto de Fila Offline / Pendente de Sincronização -->
+            <div id="offlineQueueBanner" class="ck-offline-banner hidden" role="status" aria-live="polite">
+                <div class="ck-offline-inner">
+                    <span class="ck-offline-dot" aria-hidden="true"></span>
+                    <span id="offlineQueueText" class="ck-offline-msg">Alterações pendentes de envio — serão sincronizadas ao reconectar.</span>
+                </div>
+                <button type="button" id="offlineRetryBtn" onclick="retryOfflineSyncNow()" class="ck-offline-btn">
+                    <svg class="vp-ico" aria-hidden="true"><use href="#i-cloud"/></svg>
+                    <span>Reenviar agora</span>
+                </button>
+            </div>
 
             <!-- Faixa Mobile de Status (Simulação / Desfazer — sutil, aparece só quando ativo no celular) -->
             <div id="mobStatusStrip" class="ck-mob-strip hidden">
@@ -1646,10 +1663,11 @@
                 <svg class="vp-ico" aria-hidden="true"><use href="#i-code-branch"/></svg> Conflito de Edição Detectado
             </div>
             <div class="p-6 space-y-4 text-xs">
-                <p>Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">-</strong>). Escolha como prosseguir:</p>
+                <p id="conflictScopeMsg">Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">-</strong>). Escolha como prosseguir:</p>
+                <div id="conflictItemsBox" class="hidden ck-conflict-list"></div>
                 <div class="space-y-2">
                     <button type="button" onclick="resolveConflict('reload')" class="w-full py-2.5 rounded-lg bg-[#004C97] text-white font-bold cursor-pointer">Recarregar Versão Mais Recente (Recomendado)</button>
-                    <button type="button" onclick="resolveConflict('force')" class="w-full py-2.5 rounded-lg bg-rose-600 text-white font-bold cursor-pointer">Manter Minha Versão e Sobrescrever Nuvem</button>
+                    <button type="button" onclick="resolveConflict('force')" class="w-full py-2.5 rounded-lg bg-rose-600 text-white font-bold cursor-pointer">Manter Minha Versão e Sobrescrever</button>
                 </div>
             </div>
         </div>
