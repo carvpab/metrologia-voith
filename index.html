@@ -1164,13 +1164,19 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Periodicidade de Calibração</label>
-                        <select id="inspCycle" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-semibold">
+                        <select id="inspCycle" onchange="onInspCycleChange()" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg text-sm font-semibold">
                             <option value="6">Semestral (6 meses)</option>
                             <option value="12" selected>Anual (12 meses)</option>
                             <option value="18">18 meses</option>
                             <option value="24">Bienal (24 meses)</option>
                             <option value="36">Trienal (36 meses)</option>
+                            <option value="CUSTOM">Personalizado (digitar meses)...</option>
+                            <option value="0">Manual (definir data livre)</option>
                         </select>
+                        <div id="inspCycleCustomWrap" class="hidden mt-1.5 flex items-center gap-2">
+                            <input type="number" id="inspCycleCustom" min="1" max="120" step="1" placeholder="Ex: 3, 9, 48" class="w-full px-3 py-1.5 bg-white dark:bg-[#091527] border border-[#004C97] dark:border-[#00A8E8] rounded-lg font-mono text-xs font-bold">
+                            <span class="text-[11px] font-semibold text-slate-500 shrink-0">meses</span>
+                        </div>
                     </div>
                 </div>
 
@@ -1859,7 +1865,7 @@
                         <input type="text" id="brLabDate" oninput="maskBRDate(this)" maxlength="10" class="w-full px-3 py-2 bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-sm font-bold">
                     </div>
                     <div id="brLabFixedValidWrap" class="hidden">
-                        <label class="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400 mb-1">Validade Fixa p/ Todos *</label>
+                        <label id="brLabFixedValidLabel" class="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400 mb-1">Validade Fixa p/ Todos *</label>
                         <input type="text" id="brLabFixedValid" oninput="maskBRDate(this)" maxlength="10" placeholder="DD/MM/AAAA" class="w-full px-3 py-2 bg-white dark:bg-[#061121] border-2 border-emerald-500 rounded-lg font-mono text-sm font-bold">
                     </div>
                 </div>

@@ -189,9 +189,13 @@ function canonicalizeSector(raw) {
     }
     return cleaned;
 }
+const STANDARD_CYCLES = [6, 12, 18, 24, 36];
 function inferCycleMonths(desc, currentCycle) {
-    const n = Number(currentCycle);
-    if ([6, 12, 18, 24, 36].includes(n)) return n;
+    if (currentCycle === 0 || currentCycle === '0') return 0;
+    if (currentCycle !== undefined && currentCycle !== null && currentCycle !== '') {
+        const n = Math.round(Number(currentCycle));
+        if (Number.isFinite(n) && n >= 1 && n <= 120) return n;
+    }
     const d = normSearch(desc);
     if (/torquimetro|torqueadeira/.test(d)) return 6;
     if (/tampao|anel de rosca|anel roscado|chaveta|esquadro|haste padrao/.test(d)) return 24;

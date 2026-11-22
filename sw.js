@@ -1,6 +1,6 @@
-// VOITH TURBO — Precision Metrology OS • Service Worker v11 (Modular Cache & Offline Engine)
-const CACHE_APP = 'voith-metrologia-app-v11';
-const CACHE_CDN = 'voith-metrologia-cdn-v11';
+// VOITH TURBO — Precision Metrology OS • Service Worker v11.1 (Modular Cache & Offline Engine)
+const CACHE_APP = 'voith-metrologia-app-v11-1';
+const CACHE_CDN = 'voith-metrologia-cdn-v11-1';
 const APP_SHELL = [
     './',
     './index.html',

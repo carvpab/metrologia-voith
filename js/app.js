@@ -31,7 +31,11 @@
             document.getElementById('inspDate').value = it.proxCal ? fmtBR(it.proxCal) : '';
             document.getElementById('inspDatePick').value = it.proxCal || '';
             document.getElementById('inspStatus').value = it.status || 'AUTO';
-            document.getElementById('inspCycle').value = String(inferCycleMonths(it.desc, it.cycleMonths));
+            const resolvedCycle = inferCycleMonths(it.desc, it.cycleMonths);
+            const isStdCycle = resolvedCycle === 0 || STANDARD_CYCLES.includes(resolvedCycle);
+            document.getElementById('inspCycle').value = isStdCycle ? String(resolvedCycle) : 'CUSTOM';
+            document.getElementById('inspCycleCustom').value = isStdCycle ? '' : String(resolvedCycle);
+            onInspCycleChange(false);
             const ab = document.getElementById('inspAuditBox'); if (ab) ab.classList.add('hidden');
             document.getElementById('inspCustHolder').value = it.custodyHolder || '';
             document.getElementById('inspCustReturn').value = it.custodyReturnTo || '';
@@ -40,7 +44,7 @@
             document.getElementById('inspObs').value = it.obs || '';
             document.getElementById('inspDupWarn').classList.add('hidden');
 
-            ['inspCode','inspCC','inspDesc','inspMin','inspMax','inspSetor','inspResp','inspLocal','inspDate','inspStatus','inspCycle','inspCustHolder','inspCustReturn','inspCustDate','inspCustReason','inspObs'].forEach(fid => {
+            ['inspCode','inspCC','inspDesc','inspMin','inspMax','inspSetor','inspResp','inspLocal','inspDate','inspStatus','inspCycle','inspCycleCustom','inspCustHolder','inspCustReturn','inspCustDate','inspCustReason','inspObs'].forEach(fid => {
                 const el = document.getElementById(fid);
                 el.disabled = !canEdit;
                 el.classList.toggle('opacity-75', !canEdit);
@@ -73,6 +77,17 @@
             else warn.classList.add('hidden');
             return Boolean(dup);
         }
+        function onInspCycleChange(focusInput = true) {
+            const sel = document.getElementById('inspCycle');
+            const wrap = document.getElementById('inspCycleCustomWrap');
+            const inp = document.getElementById('inspCycleCustom');
+            if (!sel || !wrap) return;
+            const isCustom = sel.value === 'CUSTOM';
+            wrap.classList.toggle('hidden', !isCustom);
+            if (isCustom && focusInput && inp && !inp.disabled) {
+                setTimeout(() => inp.focus(), 20);
+            }
+        }
         function saveInspector(goNext = false) {
             if (!requireEditor()) return;
             const id = Number(document.getElementById('inspId').value);
@@ -89,6 +104,21 @@
             const custISO = parseManualISO(rawCD);
             if (rawCD && !custISO) { showToast('Data da cautela inválida (DD/MM/AAAA).', 'error'); return; }
 
+            const cycSel = document.getElementById('inspCycle').value;
+            let cycleMonths = 12;
+            if (cycSel === '0') {
+                cycleMonths = 0;
+            } else if (cycSel === 'CUSTOM') {
+                const rawM = Math.round(Number(document.getElementById('inspCycleCustom').value));
+                if (!Number.isFinite(rawM) || rawM < 1 || rawM > 120) {
+                    showToast('Informe uma periodicidade personalizada entre 1 e 120 meses (ou selecione Manual).', 'error');
+                    return;
+                }
+                cycleMonths = rawM;
+            } else {
+                cycleMonths = Number(cycSel) || 12;
+            }
+
             const holder = document.getElementById('inspCustHolder').value.trim();
             const stSel = document.getElementById('inspStatus').value;
             const payload = {
@@ -99,7 +129,7 @@
                 setor: canonicalizeSector(document.getElementById('inspSetor').value.trim() || 'Voith Turbo (Industrial)'),
                 resp: cleanSpaces(document.getElementById('inspResp').value.trim()),
                 local: canonicalizeLocal(document.getElementById('inspLocal').value.trim()),
-                cycleMonths: Number(document.getElementById('inspCycle').value) || 12,
+                cycleMonths,
                 proxCal: iso || '',
                 status: stSel === 'AUTO' ? '' : stSel,
                 custodyHolder: holder,
@@ -409,9 +439,17 @@
             document.getElementById('retLabDate').value = fmtBR(getTodayISO());
             const instForCycle = instrumentsData.find(i => i.code.toUpperCase() === h.code.toUpperCase());
             const cycleM = instForCycle ? inferCycleMonths(instForCycle.desc, instForCycle.cycleMonths) : inferCycleMonths(h.desc, 12);
-            document.getElementById('retLabNewValid').value = fmtBR(addMonthsISO(getTodayISO(), cycleM, true));
+            const validInp = document.getElementById('retLabNewValid');
             const ct = document.getElementById('retLabCycleTag');
-            if (ct) ct.textContent = `(Ciclo ${cycleM}m)`;
+            if (cycleM === 0) {
+                validInp.value = '';
+                validInp.placeholder = 'DD/MM/AAAA (Manual)';
+                if (ct) ct.textContent = '(Manual)';
+            } else {
+                validInp.value = fmtBR(addMonthsISO(getTodayISO(), cycleM, true));
+                validInp.placeholder = 'DD/MM/AAAA';
+                if (ct) ct.textContent = `(Ciclo ${cycleM}m)`;
+            }
             document.getElementById('retLabObs').value = (h.obs||'').replace(/\s*\(Nova validade:.*?\)/g,'').trim();
             const inst = instrumentsData.find(i => i.code.toUpperCase() === h.code.toUpperCase());
             const cb = document.getElementById('retLabCustBox');
@@ -936,18 +974,29 @@ function openBatchReturnLabModal() {
     document.getElementById('brLabDate').value = fmtBR(getTodayISO());
     document.getElementById('brLabFixedValid').value = fmtBR(addMonthsISO(getTodayISO(), 12, true));
     document.getElementById('brLabUseCycleChk').checked = true;
-    document.getElementById('brLabFixedValidWrap').classList.add('hidden');
     document.getElementById('brLabObs').value = '';
     document.getElementById('brLabClearCustChk').checked = false;
+    toggleBatchReturnCycleMode();
     document.getElementById('batchReturnLabModal').classList.remove('hidden');
 }
 function closeBatchReturnLabModal() {
     const m = document.getElementById('batchReturnLabModal');
     if (m) m.classList.add('hidden');
 }
+function hasManualCycleInBatch(items) {
+    return items.some(h => {
+        const inst = instrumentsData.find(i => i.code.toUpperCase() === h.code.toUpperCase());
+        return inst && inferCycleMonths(inst.desc, inst.cycleMonths) === 0;
+    });
+}
 function toggleBatchReturnCycleMode() {
     const useCycle = document.getElementById('brLabUseCycleChk').checked;
-    document.getElementById('brLabFixedValidWrap').classList.toggle('hidden', useCycle);
+    const items = calibrationHistory.filter(h => h.status !== 'CONCLUÍDO' && labSelectedIds.has(h.id));
+    const hasManual = hasManualCycleInBatch(items);
+    const wrap = document.getElementById('brLabFixedValidWrap');
+    const lbl = document.getElementById('brLabFixedValidLabel');
+    if (wrap) wrap.classList.toggle('hidden', useCycle && !hasManual);
+    if (lbl) lbl.textContent = (useCycle && hasManual) ? 'Validade p/ Itens Manuais *' : 'Validade Fixa p/ Todos *';
 }
 function confirmBatchReturnLab() {
     if (!requireEditor()) return;
@@ -956,10 +1005,11 @@ function confirmBatchReturnLab() {
 
     const retISO = parseManualISO(document.getElementById('brLabDate').value) || getTodayISO();
     const useCycle = document.getElementById('brLabUseCycleChk').checked;
+    const needsFixed = !useCycle || hasManualCycleInBatch(items);
     let fixedISO = '';
-    if (!useCycle) {
+    if (needsFixed) {
         fixedISO = parseManualISO(document.getElementById('brLabFixedValid').value);
-        if (!fixedISO) { showToast('Informe uma validade fixa válida (DD/MM/AAAA).', 'error'); return; }
+        if (!fixedISO) { showToast('Informe uma validade válida (DD/MM/AAAA).', 'error'); return; }
     }
     const extraObs = document.getElementById('brLabObs').value.trim();
     const clearCust = document.getElementById('brLabClearCustChk').checked;
@@ -969,7 +1019,7 @@ function confirmBatchReturnLab() {
     items.forEach(h => {
         const inst = instrumentsData.find(i => i.code.toUpperCase() === h.code.toUpperCase());
         const cycleM = inst ? inferCycleMonths(inst.desc, inst.cycleMonths) : inferCycleMonths(h.desc, 12);
-        const newValidISO = useCycle ? addMonthsISO(retISO, cycleM, true) : fixedISO;
+        const newValidISO = (useCycle && cycleM > 0) ? addMonthsISO(retISO, cycleM, true) : fixedISO;
 
         h.dateRetorno = retISO;
         h.newCalDate = newValidISO;
