@@ -1,8 +1,256 @@
 // ============================================================================
-// VOITH TURBO — PRECISION METROLOGY OS v11 • AUTH TOKENS, DELTA SYNC & ADMIN
+// VOITH TURBO — PRECISION METROLOGY OS v12 • SUPABASE SQL, REALTIME & AUTH
 // ============================================================================
 
-// ---- Autenticação Segura (Session Token v11 + Compatibilidade Legada) ----
+// ---- Camada de Transporte Unificada (Supabase / Corporate REST / Legacy Sheets) ----
+function getBackendMode() {
+    const cfg = window.VOITH_CONFIG || {};
+    if (cfg.BACKEND === 'supabase' && cfg.SUPABASE_URL && cfg.SUPABASE_KEY) return 'supabase';
+    if (cfg.BACKEND === 'corporate_rest' && cfg.CORPORATE_API_URL) return 'corporate_rest';
+    if (cfg.SHEETS_API_URL || DEFAULT_SHEETS_API_URL) return 'sheets';
+    return 'none';
+}
+function isCloudConfigured() {
+    return getBackendMode() !== 'none';
+}
+function getCloudUrl() {
+    const cfg = window.VOITH_CONFIG || {};
+    const mode = getBackendMode();
+    if (mode === 'supabase') return String(cfg.SUPABASE_URL || '').replace(/\/+$/, '');
+    if (mode === 'corporate_rest') return String(cfg.CORPORATE_API_URL || '').replace(/\/+$/, '');
+    return String(cfg.SHEETS_API_URL || DEFAULT_SHEETS_API_URL || '').trim();
+}
+function getSupabaseHeaders() {
+    const key = String((window.VOITH_CONFIG && window.VOITH_CONFIG.SUPABASE_KEY) || '').trim();
+    const h = { 'Content-Type': 'application/json', 'apikey': key };
+    // Chaves legadas JWT (eyJ...) aceitam Authorization: Bearer; chaves sb_publishable_ usam apenas apikey
+    if (key.startsWith('eyJ')) h['Authorization'] = `Bearer ${key}`;
+    return h;
+}
+function getBackendLabel() {
+    const mode = getBackendMode();
+    if (mode === 'supabase') return realtimeConnected ? 'Supabase SQL • Tempo Real' : 'Supabase SQL (v12)';
+    if (mode === 'corporate_rest') return 'API Corporativa SQL';
+    return serverSupportsDelta ? 'Nuvem Online (Delta)' : 'Nuvem Online';
+}
+
+async function cloudRpc(payloadObj, timeoutMs = 15000) {
+    const mode = getBackendMode();
+    const base = getCloudUrl();
+    if (!base || mode === 'none') throw new Error('Backend não configurado.');
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const tid = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+        let res;
+        if (mode === 'supabase') {
+            res = await fetch(`${base}/rest/v1/rpc/voith_rpc`, {
+                method: 'POST',
+                headers: getSupabaseHeaders(),
+                body: JSON.stringify({ payload: payloadObj }),
+                cache: 'no-store',
+                signal: ctrl ? ctrl.signal : undefined
+            });
+        } else if (mode === 'corporate_rest') {
+            res = await fetch(`${base}/rpc`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(payloadObj),
+                cache: 'no-store',
+                signal: ctrl ? ctrl.signal : undefined
+            });
+        } else {
+            res = await fetch(base, {
+                method: 'POST',
+                redirect: 'follow',
+                cache: 'no-store',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payloadObj),
+                signal: ctrl ? ctrl.signal : undefined
+            });
+        }
+        const raw = await res.text();
+        let data;
+        try { data = JSON.parse(raw); } catch { throw new Error(`Resposta inválida do servidor (HTTP ${res.status})`); }
+        if (!res.ok) {
+            throw new Error((data && (data.message || data.error || data.hint)) || `Erro HTTP ${res.status}`);
+        }
+        return data;
+    } finally {
+        if (tid) clearTimeout(tid);
+    }
+}
+
+async function cloudLoadState(usePrefetch = false) {
+    const mode = getBackendMode();
+    const base = getCloudUrl();
+    if (!base || mode === 'none') throw new Error('Backend não configurado.');
+
+    const endpoint = mode === 'supabase'
+        ? `${base}/rest/v1/rpc/voith_load_state`
+        : mode === 'corporate_rest'
+            ? `${base}/state`
+            : `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;
+
+    const fetchFresh = async () => {
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const tid = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+        try {
+            let res;
+            if (mode === 'supabase') {
+                res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: getSupabaseHeaders(),
+                    body: '{}',
+                    cache: 'no-store',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+            } else if (mode === 'corporate_rest') {
+                res = await fetch(endpoint, {
+                    method: 'GET',
+                    credentials: 'include',
+                    cache: 'no-store',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+            } else {
+                res = await fetch(endpoint, {
+                    method: 'GET',
+                    redirect: 'follow',
+                    cache: 'no-store',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+            }
+            const raw = await res.text();
+            if (!res.ok) {
+                let errObj = null;
+                try { errObj = JSON.parse(raw); } catch {}
+                throw new Error((errObj && (errObj.message || errObj.error)) || `Erro HTTP ${res.status}`);
+            }
+            return raw;
+        } finally {
+            if (tid) clearTimeout(tid);
+        }
+    };
+
+    let raw;
+    if (usePrefetch && window.__VOITH_CLOUD_PREFETCH__ && window.__VOITH_CLOUD_PREFETCH__.url === endpoint) {
+        const p = window.__VOITH_CLOUD_PREFETCH__.promise;
+        window.__VOITH_CLOUD_PREFETCH__ = null;
+        try {
+            raw = await Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Prefetch timeout')), 12000))]);
+        } catch {
+            raw = await fetchFresh();
+        }
+    } else {
+        raw = await fetchFresh();
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.code && parsed.message && parsed.ok === undefined) {
+        throw new Error(parsed.message);
+    }
+    return parsed;
+}
+
+// ---- Supabase Realtime WebSocket (Sincronização Instantânea APK <-> PC) ----
+let realtimeWs = null;
+let realtimeConnected = false;
+let realtimeHeartbeatTimer = null;
+let realtimeReconnectTimer = null;
+let realtimeRefSeq = 1;
+let realtimeBackoffMs = 3000;
+
+function stopSupabaseRealtime() {
+    clearInterval(realtimeHeartbeatTimer); realtimeHeartbeatTimer = null;
+    clearTimeout(realtimeReconnectTimer); realtimeReconnectTimer = null;
+    realtimeConnected = false;
+    if (realtimeWs) {
+        try { realtimeWs.onclose = null; realtimeWs.close(); } catch {}
+        realtimeWs = null;
+    }
+}
+
+function startSupabaseRealtime() {
+    const cfg = window.VOITH_CONFIG || {};
+    if (getBackendMode() !== 'supabase' || !cfg.REALTIME || !navigator.onLine) return;
+    if (typeof WebSocket === 'undefined') return;
+    if (realtimeWs && (realtimeWs.readyState === WebSocket.OPEN || realtimeWs.readyState === WebSocket.CONNECTING)) return;
+
+    const base = getCloudUrl();
+    const key = String(cfg.SUPABASE_KEY || '').trim();
+    if (!base || !key) return;
+
+    const wsUrl = base.replace(/^http/i, 'ws') + `/realtime/v1/websocket?apikey=${encodeURIComponent(key)}&vsn=1.0.0`;
+    try {
+        const ws = new WebSocket(wsUrl);
+        realtimeWs = ws;
+
+        ws.onopen = () => {
+            realtimeConnected = true;
+            realtimeBackoffMs = 3000;
+            const joinRef = String(realtimeRefSeq++);
+            ws.send(JSON.stringify({
+                topic: 'realtime:public:system_meta',
+                event: 'phx_join',
+                payload: {
+                    config: {
+                        broadcast: { self: false },
+                        presence: { key: '' },
+                        postgres_changes: [
+                            { event: '*', schema: 'public', table: 'system_meta' }
+                        ]
+                    }
+                },
+                ref: joinRef
+            }));
+            clearInterval(realtimeHeartbeatTimer);
+            realtimeHeartbeatTimer = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(realtimeRefSeq++) }));
+                }
+            }, 25000);
+            if (isCloudReady && !isSyncing && !hasConflict && !offlineDirty) {
+                setCloudUI('online', getBackendLabel());
+            }
+        };
+
+        ws.onmessage = (ev) => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg && msg.event === 'postgres_changes') {
+                    const rec = msg.payload && msg.payload.data && msg.payload.data.record;
+                    if (!rec || (rec.key && rec.key !== 'updatedAt')) return;
+                    const srvVal = String(rec.value || '').trim();
+                    if (srvVal && srvVal === lastServerUpdatedAt) return;
+                    if (isSyncing || syncTimer || hasConflict || offlineDirty) return;
+                    loadFromCloud(false, false, true);
+                }
+            } catch {}
+        };
+
+        ws.onerror = () => {
+            // Falha silenciosa caso firewall corporativo bloqueie WebSocket
+        };
+
+        ws.onclose = () => {
+            clearInterval(realtimeHeartbeatTimer); realtimeHeartbeatTimer = null;
+            realtimeConnected = false;
+            if (realtimeWs === ws) realtimeWs = null;
+            if (isCloudReady && !isSyncing && !hasConflict && !offlineDirty && navigator.onLine) {
+                setCloudUI('online', getBackendLabel());
+            }
+            if (navigator.onLine && document.visibilityState === 'visible') {
+                clearTimeout(realtimeReconnectTimer);
+                realtimeReconnectTimer = setTimeout(() => {
+                    realtimeBackoffMs = Math.min(30000, realtimeBackoffMs * 2);
+                    startSupabaseRealtime();
+                }, realtimeBackoffMs);
+            }
+        };
+    } catch {}
+}
+
+// ---- Autenticação Segura (Session Token v12 + bcrypt no PostgreSQL) ----
 function isEditor() {
     return Boolean(currentAuth && currentAuth.username && (currentAuth.token || currentAuth.password));
 }
@@ -23,7 +271,6 @@ function requireEditor(openIfLocked = true) {
     return false;
 }
 function saveAuth(auth, remember) {
-    // Nunca salva senha em texto plano se já temos token de sessão v11!
     const clean = {
         username: auth.username,
         displayName: auth.displayName || auth.username,
@@ -101,12 +348,7 @@ async function submitLogin(e) {
     errEl.classList.add('hidden');
     btn.disabled = true; btn.textContent = 'Verificando...';
     try {
-        const res = await fetch(getCloudUrl(), {
-            method: 'POST', redirect: 'follow', cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action:'login', baseUpdatedAt:'__AUTH_CHECK__', username, password, remember })
-        });
-        const data = JSON.parse(await res.text());
+        const data = await cloudRpc({ action: 'login', baseUpdatedAt: '__AUTH_CHECK__', username, password, remember });
         if (!data.ok || !data.authenticated) {
             errEl.textContent = data.error || 'Usuário ou senha incorretos.';
             errEl.classList.remove('hidden');
@@ -124,7 +366,6 @@ async function submitLogin(e) {
             currentAuth.expiresAt = data.expiresAt || '';
             serverSupportsToken = true;
         } else {
-            // Compatibilidade enquanto Apps Script antigo estiver no ar
             currentAuth.password = password;
         }
         saveAuth(currentAuth, remember);
@@ -132,7 +373,7 @@ async function submitLogin(e) {
         applyAuthUI();
         showToast(`Bem-vindo(a), ${currentAuth.displayName}! Modo Editor ativo.`, 'success');
     } catch (err) {
-        errEl.textContent = 'Falha ao autenticar no Google Sheets.';
+        errEl.textContent = err.message || 'Falha ao autenticar no servidor.';
         errEl.classList.remove('hidden');
     } finally {
         btn.disabled = false; btn.textContent = 'Entrar';
@@ -140,17 +381,12 @@ async function submitLogin(e) {
 }
 
 async function validateSessionQuietly() {
-    if (!isEditor() || !getCloudUrl()) return;
+    if (!isEditor() || !isCloudConfigured()) return;
     try {
         const body = currentAuth.token
             ? { action: 'validate_token', auth: getAuthPayload() }
             : { action: 'login', baseUpdatedAt: '__AUTH_CHECK__', username: currentAuth.username, password: currentAuth.password };
-        const res = await fetch(getCloudUrl(), {
-            method: 'POST', redirect: 'follow', cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(body)
-        });
-        const data = JSON.parse(await res.text());
+        const data = await cloudRpc(body);
         if (data.authEndpoint && !data.authenticated) {
             logoutEditor(true);
             showToast('Sessão expirada ou senha alterada. Faça login novamente.', 'error');
@@ -159,12 +395,8 @@ async function validateSessionQuietly() {
 }
 
 function logoutEditor(silent = false) {
-    if (currentAuth && currentAuth.token && getCloudUrl()) {
-        fetch(getCloudUrl(), {
-            method: 'POST', redirect: 'follow', cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'logout', token: currentAuth.token })
-        }).catch(() => {});
+    if (currentAuth && currentAuth.token && isCloudConfigured()) {
+        cloudRpc({ action: 'logout', token: currentAuth.token }).catch(() => {});
     }
     currentAuth = null; undoStack = [];
     sessDel(KEYS.auth); safeDel(KEYS.auth);
@@ -192,12 +424,12 @@ async function submitChangePass(e) {
     if (nw !== cf) { err.textContent = 'As novas senhas não coincidem.'; err.classList.remove('hidden'); return; }
     btn.disabled = true; btn.textContent = 'Salvando...';
     try {
-        const res = await fetch(getCloudUrl(), {
-            method:'POST', redirect:'follow', cache:'no-store',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify({ action:'change_password', auth:{ username:currentAuth.username, password:cur, token:currentAuth.token || '' }, currentPassword:cur, newPassword:nw })
+        const d = await cloudRpc({
+            action: 'change_password',
+            auth: { username: currentAuth.username, password: cur, token: currentAuth.token || '' },
+            currentPassword: cur,
+            newPassword: nw
         });
-        const d = JSON.parse(await res.text());
         if (!d.ok) { err.textContent = d.error || 'Senha atual incorreta.'; err.classList.remove('hidden'); return; }
         if (d.token) {
             currentAuth.token = d.token;
@@ -209,8 +441,8 @@ async function submitChangePass(e) {
         saveAuth(currentAuth, currentAuth.remember);
         closeChangePassModal();
         showToast('Senha alterada com sucesso!', 'success');
-    } catch {
-        err.textContent = 'Erro de conexão.'; err.classList.remove('hidden');
+    } catch (ex) {
+        err.textContent = ex.message || 'Erro de conexão.'; err.classList.remove('hidden');
     } finally { btn.disabled = false; btn.textContent = 'Salvar Senha'; }
 }
 
@@ -240,12 +472,7 @@ async function loadAdminUsers() {
     const tb = document.getElementById('auTbody');
     tb.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Carregando...</td></tr>';
     try {
-        const res = await fetch(getCloudUrl(), {
-            method:'POST', redirect:'follow', cache:'no-store',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify({ action:'list_users', auth: getAuthPayload() })
-        });
-        const d = JSON.parse(await res.text());
+        const d = await cloudRpc({ action: 'list_users', auth: getAuthPayload() });
         if (!d.ok) throw new Error(d.error);
         renderAdminUsers(d.users || []);
     } catch (e) {
@@ -278,17 +505,12 @@ async function submitCreateUser(e) {
     const err = document.getElementById('auErr');
     err.classList.add('hidden');
     try {
-        const res = await fetch(getCloudUrl(), {
-            method:'POST', redirect:'follow', cache:'no-store',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify({ action:'create_user', auth: getAuthPayload(), newUser:{username:login, displayName:name, password:pass} })
-        });
-        const d = JSON.parse(await res.text());
+        const d = await cloudRpc({ action: 'create_user', auth: getAuthPayload(), newUser: { username: login, displayName: name, password: pass } });
         if (!d.ok) { err.textContent = d.error || 'Erro ao criar.'; err.classList.remove('hidden'); return; }
         ['auLogin','auName','auPass'].forEach(id => document.getElementById(id).value = '');
         renderAdminUsers(d.users || []);
         showToast(`Usuário "${login}" criado!`, 'success');
-    } catch { err.textContent = 'Falha na comunicação.'; err.classList.remove('hidden'); }
+    } catch (ex) { err.textContent = ex.message || 'Falha na comunicação.'; err.classList.remove('hidden'); }
 }
 function openResetPassModal(u, name) {
     document.getElementById('rpUser').value = u;
@@ -304,26 +526,16 @@ async function submitResetUserPass(e) {
     const pass = document.getElementById('rpPass').value.trim();
     const err = document.getElementById('rpErr');
     try {
-        const res = await fetch(getCloudUrl(), {
-            method:'POST', redirect:'follow', cache:'no-store',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify({ action:'reset_password', auth: getAuthPayload(), targetUsername:target, newPassword:pass })
-        });
-        const d = JSON.parse(await res.text());
+        const d = await cloudRpc({ action: 'reset_password', auth: getAuthPayload(), targetUsername: target, newPassword: pass });
         if (!d.ok) { err.textContent = d.error || 'Erro'; err.classList.remove('hidden'); return; }
         closeResetPassModal();
         showToast(`Senha de "${target}" redefinida!`, 'success');
-    } catch { err.textContent = 'Erro de conexão.'; err.classList.remove('hidden'); }
+    } catch (ex) { err.textContent = ex.message || 'Erro de conexão.'; err.classList.remove('hidden'); }
 }
 function askDeleteUser(u, name) {
     openConfirmModal('Remover Login', `Remover acesso de editor de "${name}" (${u})?`, async () => {
         try {
-            const res = await fetch(getCloudUrl(), {
-                method:'POST', redirect:'follow', cache:'no-store',
-                headers:{'Content-Type':'text/plain;charset=utf-8'},
-                body: JSON.stringify({ action:'delete_user', auth: getAuthPayload(), targetUsername:u })
-            });
-            const d = JSON.parse(await res.text());
+            const d = await cloudRpc({ action: 'delete_user', auth: getAuthPayload(), targetUsername: u });
             if (!d.ok) { showToast(d.error || 'Erro ao remover', 'error'); return; }
             renderAdminUsers(d.users || []);
             showToast(`Login "${u}" removido.`, 'info');
@@ -371,13 +583,9 @@ async function saveControlledListsForm() {
     VoithDB.set('controlledLists', controlledLists);
     populateFilterDropdowns();
     renderControlledListsForm();
-    if (getCloudUrl()) {
+    if (isCloudConfigured()) {
         try {
-            await fetch(getCloudUrl(), {
-                method:'POST', redirect:'follow', cache:'no-store',
-                headers:{'Content-Type':'text/plain;charset=utf-8'},
-                body: JSON.stringify({ action:'save_lists', auth: getAuthPayload(), controlledLists })
-            });
+            await cloudRpc({ action: 'save_lists', auth: getAuthPayload(), controlledLists });
         } catch {}
     }
     showToast('Listas controladas salvas!', 'success');
@@ -457,15 +665,10 @@ function closeAuditVaultModal() {
 async function loadAuditVault(forceNet = false) {
     if (!isAdmin()) return;
     const meta = document.getElementById('auditVaultMeta');
-    if (meta) meta.textContent = 'Consultando trilha no Google Sheets...';
-    if (getCloudUrl() && (forceNet || cachedAuditEvents.length === 0)) {
+    if (meta) meta.textContent = 'Consultando trilha no banco SQL...';
+    if (isCloudConfigured() && (forceNet || cachedAuditEvents.length === 0)) {
         try {
-            const res = await fetch(getCloudUrl(), {
-                method:'POST', redirect:'follow', cache:'no-store',
-                headers:{'Content-Type':'text/plain;charset=utf-8'},
-                body: JSON.stringify({ action:'list_audit', auth: getAuthPayload(), limit: 300 })
-            });
-            const d = JSON.parse(await res.text());
+            const d = await cloudRpc({ action: 'list_audit', auth: getAuthPayload(), limit: 300 });
             if (d.ok && Array.isArray(d.events)) {
                 cachedAuditEvents = d.events;
             }
@@ -481,7 +684,7 @@ function renderAuditVaultTable() {
     const list = cachedAuditEvents.filter(ev => !q || normSearch(`${ev.displayName} ${ev.username} ${ev.module} ${ev.action} ${ev.target} ${ev.field} ${ev.before} ${ev.after} ${ev.details}`).includes(q));
     if (meta) meta.textContent = `${list.length} evento(s) exibido(s)`;
     if (list.length === 0) {
-        tb.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">Nenhum evento de auditoria encontrado (verifique se o Apps Script v11 está implantado).</td></tr>';
+        tb.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">Nenhum evento de auditoria registrado ainda.</td></tr>';
         return;
     }
     tb.innerHTML = list.slice(0, 250).map(ev => {
@@ -511,7 +714,7 @@ async function toggleInspectorItemAudit() {
     }
     box.classList.remove('hidden');
     listEl.innerHTML = '<div class="text-slate-400">Carregando histórico...</div>';
-    if (cachedAuditEvents.length === 0 && getCloudUrl()) {
+    if (cachedAuditEvents.length === 0 && isCloudConfigured()) {
         await loadAuditVault(true);
     }
     const hits = cachedAuditEvents.filter(ev => normSearch(`${ev.target} ${ev.details}`).includes(normSearch(code))).slice(0, 12);
@@ -529,8 +732,7 @@ async function toggleInspectorItemAudit() {
     }).join('');
 }
 
-// ---- Motor Cloud Sync v11.3 (Delta Sync + Trava `rev` por Item + Banner Fila Offline) ----
-function getCloudUrl() { return DEFAULT_SHEETS_API_URL.trim(); }
+// ---- Motor Cloud Sync v12 (Supabase SQL + Realtime + Trava `rev` + Fila Offline) ----
 function setCloudUI(state, text) {
     const pill = document.getElementById('cloudPillBtn');
     const dot = document.getElementById('cloudDot');
@@ -546,7 +748,7 @@ function setCloudUI(state, text) {
         error: ['bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-400/30', 'bg-rose-500']
     }[state] || ['bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-white/15', 'bg-slate-400'];
     pill.className = `inline-flex items-center justify-center w-9 h-9 rounded-lg border cursor-pointer transition shrink-0 ${styles[0]}`;
-    pill.title = `Google Sheets Cloud: ${text} (clique para detalhes)`;
+    pill.title = `Banco SQL Cloud: ${text} (clique para detalhes)`;
     dot.className = `w-2.5 h-2.5 rounded-full ${styles[1]}`;
 }
 
@@ -568,7 +770,7 @@ function updateOfflineQueueBanner() {
     if (!navigator.onLine) {
         txt.textContent = `${label} de envio — serão sincronizadas ao reconectar.`;
     } else if (isSyncing) {
-        txt.textContent = `Reenviando ${label} para o Google Sheets...`;
+        txt.textContent = `Reenviando ${label} para o banco SQL...`;
     } else {
         txt.textContent = `${label} de envio — clique em "Reenviar agora" para sincronizar.`;
     }
@@ -605,7 +807,7 @@ function applyRevUpdates(revUpdates) {
 let lastConflictScope = 'full';
 
 function scheduleCloudSync() {
-    if (!isEditor() || !getCloudUrl() || !isCloudReady || isApplyingCloud) return;
+    if (!isEditor() || !isCloudConfigured() || !isCloudReady || isApplyingCloud) return;
     if (hasConflict) { setCloudUI('warning', 'Conflito'); return; }
     if (!navigator.onLine) {
         offlineDirty = true;
@@ -617,44 +819,21 @@ function scheduleCloudSync() {
     if (isSyncing) { pendingSync = true; return; }
     clearTimeout(syncTimer);
     setCloudUI('syncing', 'Salvando...');
-    syncTimer = setTimeout(() => { syncTimer = null; pushCloud(false, false); }, 180);
+    syncTimer = setTimeout(() => { syncTimer = null; pushCloud(false, false); }, 150);
 }
 
 async function loadFromCloud(feedback = false, usePrefetch = false, silent = false) {
-    const url = getCloudUrl();
-    if (!url) { setCloudUI('off', 'Offline'); return false; }
+    if (!isCloudConfigured()) { setCloudUI('off', 'Offline'); return false; }
     if (silent && (isSyncing || syncTimer || hasConflict || offlineDirty)) return false;
     if (!silent) {
         const eb = document.getElementById('cloudModalErr');
         if (eb) eb.classList.add('hidden');
         setCloudUI('syncing', 'Sincronizando...');
     }
-    const fetchFreshWithTimeout = async () => {
-        const sep = url.includes('?') ? '&' : '?';
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const tid = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
-        try {
-            const res = await fetch(`${url}${sep}t=${Date.now()}`, {
-                method:'GET', redirect:'follow', cache:'no-store',
-                signal: ctrl ? ctrl.signal : undefined
-            });
-            return await res.text();
-        } finally { if (tid) clearTimeout(tid); }
-    };
     try {
-        let raw;
-        if (usePrefetch && window.__VOITH_CLOUD_PREFETCH__ && window.__VOITH_CLOUD_PREFETCH__.url === url) {
-            const p = window.__VOITH_CLOUD_PREFETCH__.promise;
-            window.__VOITH_CLOUD_PREFETCH__ = null;
-            try {
-                raw = await Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Prefetch timeout')), 12000))]);
-            } catch { raw = await fetchFreshWithTimeout(); }
-        } else {
-            raw = await fetchFreshWithTimeout();
-        }
+        const data = await cloudLoadState(usePrefetch);
         lastCloudCheckMs = Date.now();
-        const data = JSON.parse(raw);
-        if (data.ok === false) throw new Error(data.error || 'Erro Apps Script');
+        if (data.ok === false) throw new Error(data.error || 'Erro ao consultar banco SQL');
 
         serverSupportsDelta = Boolean(data.supportsDelta || Number(data.apiVersion) >= 11);
         serverSupportsToken = Boolean(data.supportsToken || Number(data.apiVersion) >= 11);
@@ -668,11 +847,11 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
         const srvTime = String(data.updatedAt || data.savedAt || '').trim();
         if (silent && srvTime && srvTime === lastServerUpdatedAt) return true;
 
-        // Se há fila offline pendente de um carregamento anterior, não sobrescreve as edições locais silenciosamente
         if (offlineDirty && DeltaTracker.pendingCount() > 0 && !feedback) {
             isCloudReady = true;
             document.body.classList.remove('vp-loading');
             updateOfflineQueueBanner();
+            startSupabaseRealtime();
             if (isEditor() && navigator.onLine) {
                 setTimeout(() => pushCloud(false, false), 250);
             }
@@ -701,16 +880,18 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
             document.body.classList.remove('vp-loading');
             renderAll();
             updateOfflineQueueBanner();
+            startSupabaseRealtime();
             const dt = srvTime ? new Date(srvTime) : new Date();
             document.getElementById('cloudLastSync').textContent = isNaN(dt.getTime()) ? new Date().toLocaleString('pt-BR') : dt.toLocaleString('pt-BR');
-            setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.5)' : 'Nuvem Online');
+            setCloudUI('online', getBackendLabel());
             if (feedback) showToast(`Sincronizado (${instrumentsData.length} instrumentos).`, 'success');
-            else if (silent) showToast('Atualizações da nuvem carregadas.', 'info');
+            else if (silent) showToast('Atualização recebida em tempo real.', 'info');
             return true;
         } else {
             isCloudReady = true; hasConflict = false;
             document.body.classList.remove('vp-loading');
-            setCloudUI('warning', 'Planilha Vazia');
+            startSupabaseRealtime();
+            setCloudUI('warning', 'Banco Vazio (Pronto p/ Restaurar Backup)');
             return false;
         }
     } catch (err) {
@@ -726,8 +907,7 @@ async function loadFromCloud(feedback = false, usePrefetch = false, silent = fal
 }
 
 async function pushCloud(feedback = false, force = false) {
-    const url = getCloudUrl();
-    if (!url || !isEditor()) return;
+    if (!isCloudConfigured() || !isEditor()) return;
     if (hasConflict && !force) return;
     if (!navigator.onLine) {
         offlineDirty = true;
@@ -744,19 +924,10 @@ async function pushCloud(feedback = false, force = false) {
     const useDelta = serverSupportsDelta && DeltaTracker.hasDelta();
     const deltaSnap = useDelta ? DeltaTracker.snapshotDelta() : null;
 
-    const sendPayload = async (payload) => {
-        const res = await fetch(url, {
-            method:'POST', redirect:'follow', cache:'no-store',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify(payload)
-        });
-        return JSON.parse(await res.text());
-    };
-
     try {
         let d;
         if (useDelta) {
-            d = await sendPayload({
+            d = await cloudRpc({
                 action: 'save_delta',
                 auth: getAuthPayload(),
                 updatedAt: new Date().toISOString(),
@@ -771,7 +942,7 @@ async function pushCloud(feedback = false, force = false) {
             }
         }
         if (!d) {
-            d = await sendPayload({
+            d = await cloudRpc({
                 action: 'save',
                 auth: getAuthPayload(),
                 updatedAt: new Date().toISOString(),
@@ -779,7 +950,7 @@ async function pushCloud(feedback = false, force = false) {
                 force: Boolean(force),
                 auditEvents: auditBatch,
                 instrumentsData, calibrationHistory, lostInstrumentsData
-            });
+            }, 30000);
         }
         if (d.unauthorized) {
             logoutEditor(true); setCloudUI('error', 'Acesso Negado'); openLoginModal(); return;
@@ -805,7 +976,7 @@ async function pushCloud(feedback = false, force = false) {
                     itemsBox.classList.remove('hidden'); itemsBox.hidden = false; itemsBox.style.display = 'flex';
                 }
             } else {
-                if (scopeEl) scopeEl.innerHTML = `Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">${escapeHtml(timeStr)}</strong>). Escolha como prosseguir:`;
+                if (scopeEl) scopeEl.innerHTML = `Outra aba ou usuário salvou alterações mais recentes no servidor (<strong id="conflictTime">${escapeHtml(timeStr)}</strong>). Escolha como prosseguir:`;
                 if (itemsBox) { itemsBox.innerHTML = ''; itemsBox.classList.add('hidden'); itemsBox.hidden = true; itemsBox.style.display = 'none'; }
             }
             document.getElementById('conflictModal').classList.remove('hidden');
@@ -822,9 +993,9 @@ async function pushCloud(feedback = false, force = false) {
         lastCloudCheckMs = Date.now();
         VoithDB.saveSnapshot(instrumentsData, calibrationHistory, lostInstrumentsData, controlledLists, lastServerUpdatedAt);
         document.getElementById('cloudLastSync').textContent = new Date().toLocaleString('pt-BR');
-        if (!pendingSync) setCloudUI('online', serverSupportsDelta ? 'Nuvem Online (Delta v11.5)' : 'Nuvem Online');
+        if (!pendingSync) setCloudUI('online', getBackendLabel());
         updateOfflineQueueBanner();
-        if (feedback) showToast(useDelta ? 'Alterações salvas via Delta Sync!' : 'Base salva na nuvem com sucesso!', 'success');
+        if (feedback) showToast(useDelta ? 'Salvo no Supabase SQL!' : 'Base completa salva no Supabase SQL!', 'success');
     } catch (err) {
         offlineDirty = true;
         VoithDB.set('pendingDelta', DeltaTracker.serialize());
@@ -832,7 +1003,7 @@ async function pushCloud(feedback = false, force = false) {
         const eb = document.getElementById('cloudModalErr');
         if (eb) { eb.textContent = String(err.message || err); eb.classList.remove('hidden'); }
         updateOfflineQueueBanner();
-        if (feedback) showToast('Erro ao salvar na nuvem — alteração mantida na fila local.', 'error');
+        if (feedback) showToast('Erro ao salvar — alteração mantida na fila local.', 'error');
     } finally {
         isSyncing = false;
         updateOfflineQueueBanner();
@@ -863,6 +1034,7 @@ function forcePushCloud() {
 }
 
 window.addEventListener('offline', () => {
+    stopSupabaseRealtime();
     if (isEditor()) {
         setCloudUI('warning', 'Sem Conexão');
         updateOfflineQueueBanner();
@@ -870,6 +1042,7 @@ window.addEventListener('offline', () => {
 });
 window.addEventListener('online', () => {
     updateOfflineQueueBanner();
+    startSupabaseRealtime();
     if (offlineDirty && isEditor()) {
         showToast('Conexão restabelecida — reenviando alterações pendentes...', 'info');
         pushCloud(true, false);
@@ -881,8 +1054,11 @@ document.addEventListener('visibilitychange', () => {
         if (syncTimer && !hasConflict) {
             clearTimeout(syncTimer); syncTimer = null; pushCloud(false, false);
         }
-    } else if (document.visibilityState === 'visible' && Date.now() - lastCloudCheckMs > 5000) {
-        loadFromCloud(false, false, true);
+    } else if (document.visibilityState === 'visible') {
+        startSupabaseRealtime();
+        if (Date.now() - lastCloudCheckMs > 5000) {
+            loadFromCloud(false, false, true);
+        }
     }
 });
 window.addEventListener('pagehide', flushLocalPersistNow);

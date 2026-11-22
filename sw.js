@@ -1,21 +1,23 @@
-// VOITH TURBO — Precision Metrology OS • Service Worker v11.5 (Network-First + Offline Cache)
-const CACHE_APP = 'voith-metrologia-app-v11-5';
-const CACHE_CDN = 'voith-metrologia-cdn-v11-5';
+// VOITH TURBO — Precision Metrology OS • Service Worker v12.0 (Network-First + Offline Cache)
+const CACHE_APP = 'voith-metrologia-app-v12-0';
+const CACHE_CDN = 'voith-metrologia-cdn-v12-0';
 const APP_SHELL = [
     './',
     './index.html',
     './manifest.json',
-    './css/tailwind.css?v=11.5',
-    './css/cockpit.css?v=11.5',
-    './js/utils.js?v=11.5',
-    './js/db.js?v=11.5',
-    './js/cloud.js?v=11.5',
-    './js/views.js?v=11.5',
-    './js/app.js?v=11.5',
+    './icons/icon-192.png',
+    './icons/icon-512.png',
+    './css/tailwind.css?v=12.0',
+    './css/cockpit.css?v=12.0',
+    './js/utils.js?v=12.0',
+    './js/db.js?v=12.0',
+    './js/cloud.js?v=12.0',
+    './js/views.js?v=12.0',
+    './js/app.js?v=12.0',
     './data/seed.tsv'
 ];
 
-const BYPASS_HOSTS = ['script.google.com', 'script.googleusercontent.com'];
+const BYPASS_HOSTS = ['supabase.co', 'script.google.com', 'script.googleusercontent.com'];
 const CACHE_FIRST_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.sheetjs.com'];
 
 self.addEventListener('install', (event) => {
@@ -43,10 +45,8 @@ self.addEventListener('fetch', (event) => {
     let url;
     try { url = new URL(req.url); } catch { return; }
 
-    // 1. Google Sheets / Apps Script: sempre direto na rede
     if (BYPASS_HOSTS.some((h) => url.hostname.endsWith(h))) return;
 
-    // 2. Fontes e SheetJS: Cache-First
     if (CACHE_FIRST_HOSTS.some((h) => url.hostname.endsWith(h))) {
         event.respondWith(
             caches.open(CACHE_CDN).then((cache) =>
@@ -62,7 +62,6 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3. Arquivos do app (HTML/CSS/JS/TSV): Network-First com fallback automático para cache offline
     if (url.origin === self.location.origin) {
         event.respondWith(
             caches.open(CACHE_APP).then((cache) =>

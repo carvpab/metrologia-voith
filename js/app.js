@@ -887,7 +887,6 @@
             closePrintModal();
 
             const w = window.open('', '_blank');
-            if (!w) { showToast('Permita pop-ups para gerar o PDF.', 'error'); return; }
 
             const mNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
             const monthLabel = month ? `${mNames[Number(month.split('-')[1])-1]}/${month.split('-')[0]}` : '';
@@ -918,7 +917,7 @@
                 </tr>`;
             }).join('');
 
-            w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+            const docHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
             <style>
                 body{font-family:Arial,sans-serif;color:#0F172A;margin:24px;font-size:11px}
                 .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #004C97;padding-bottom:12px;margin-bottom:14px}
@@ -939,8 +938,22 @@
                 <table><thead><tr>${withCheck?'<th style="text-align:center;width:24px">OK</th>':''}<th>Código</th><th>Instrumento / Faixa</th><th>Local</th><th>Responsável</th><th>Validade</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <div class="ftr"><span>Voith Turbo — Controle Metrológico</span><span>Conferido por: ___________________________ Data: ___/___/_____</span></div>
                 <script>window.onload=function(){window.print();}<\/script>
-            </body></html>`);
-            w.document.close();
+            </body></html>`;
+            if (w && w.document) {
+                w.document.write(docHtml);
+                w.document.close();
+            } else {
+                const ifr = document.createElement('iframe');
+                ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+                document.body.appendChild(ifr);
+                ifr.contentDocument.open();
+                ifr.contentDocument.write(docHtml.replace('<script>window.onload=function(){window.print();}<\\/script>', ''));
+                ifr.contentDocument.close();
+                setTimeout(() => {
+                    try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch { showToast('Impressão indisponível neste aparelho.', 'error'); }
+                    setTimeout(() => ifr.remove(), 3000);
+                }, 250);
+            }
         }
 
         // ---- Export CSV, Backup JSON, Offline HTML ----
@@ -959,6 +972,20 @@
             downloadBlob(data, `backup_voith_metrologia_${getTodayISO()}.json`, 'application/json');
             showToast('Backup JSON baixado!', 'success');
         }
+        function ensureUniqueIds(arr, normalizeFn) {
+            const seen = new Set();
+            let nextId = 1;
+            return arr.map((raw, idx) => {
+                const item = normalizeFn ? normalizeFn(raw, idx + 1) : { ...raw, id: Number(raw && raw.id) || (idx + 1) };
+                while (!Number.isFinite(item.id) || item.id <= 0 || seen.has(item.id)) {
+                    item.id = nextId++;
+                }
+                seen.add(item.id);
+                if (item.id >= nextId) nextId = item.id + 1;
+                item.rev = Math.max(1, Number(item.rev) || 1);
+                return item;
+            });
+        }
         function restoreJsonBackup(ev) {
             const f = ev.target.files[0]; if (!f) return;
             const r = new FileReader();
@@ -967,11 +994,20 @@
                     const d = JSON.parse(e.target.result);
                     if (!Array.isArray(d.instrumentsData)) throw new Error();
                     pushUndo('Restauração de Backup JSON');
-                    instrumentsData = d.instrumentsData;
-                    if (Array.isArray(d.calibrationHistory)) calibrationHistory = d.calibrationHistory;
-                    if (Array.isArray(d.lostInstrumentsData)) lostInstrumentsData = d.lostInstrumentsData;
-                    persistAll({ full: true }); renderAll(); closeBackupModal();
-                    showToast(`Backup restaurado (${instrumentsData.length} itens)!`, 'success', { canUndo:true });
+                    instrumentsData = ensureUniqueIds(d.instrumentsData, normalizeInstrument);
+                    if (Array.isArray(d.calibrationHistory)) {
+                        calibrationHistory = ensureUniqueIds(d.calibrationHistory, null);
+                    }
+                    if (Array.isArray(d.lostInstrumentsData)) {
+                        lostInstrumentsData = ensureUniqueIds(d.lostInstrumentsData, null);
+                    }
+                    isCloudReady = true;
+                    hasConflict = false;
+                    clearTimeout(syncTimer); syncTimer = null;
+                    persistAll({ full: true });
+                    pushCloud(true, true);
+                    renderAll(); closeBackupModal();
+                    showToast(`Backup restaurado (${instrumentsData.length} itens) — enviando ao banco SQL...`, 'success', { canUndo:true });
                 } catch { showToast('Arquivo de backup inválido.', 'error'); }
                 ev.target.value = '';
             };
@@ -1285,6 +1321,7 @@ async function initApp() {
 }
 
 function registerBackgroundWorker() {
+    if (window.VOITH_NATIVE || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
     navigator.serviceWorker.register('./sw.js').then(reg => {

@@ -1,7 +1,8 @@
 // ============================================================================
 // VOITH TURBO — PRECISION METROLOGY OS v11 • UTILS, STATE & CANONICALIZER
 // ============================================================================
-const DEFAULT_SHEETS_API_URL = (window.VOITH_CONFIG && window.VOITH_CONFIG.SHEETS_API_URL) || "";
+const VOITH_CFG = window.VOITH_CONFIG || {};
+const DEFAULT_SHEETS_API_URL = VOITH_CFG.SHEETS_API_URL || "";
 const KEYS = {
     inst: 'voith_instruments_official_v313',
     hist: 'voith_history_official_v313',

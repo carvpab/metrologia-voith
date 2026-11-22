@@ -11,24 +11,31 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23001833'/%3E%3Cpath d='M13 18h10l9 22 9-22h10L36 48h-8z' fill='%2300A8E8'/%3E%3C/svg%3E">
     <!-- Anti-FOUC: aplica Dark Mode antes da primeira pintura (0ms flash) -->
     <script>try{if(localStorage.getItem('voith_dark_mode_v312')==='true')document.documentElement.classList.add('dark');}catch(e){}</script>
-    <!-- Pré-conexão e pré-carregamento paralelo do Google Sheets -->
-    <link rel="preconnect" href="https://script.google.com" crossorigin>
-    <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
-    <!-- Configuração Centralizada Voith (Única fonte da URL do Apps Script) -->
+    <!-- Pré-conexão e pré-carregamento paralelo do Supabase (PostgreSQL) -->
+    <link rel="preconnect" href="https://sowiybqammlsiyyqtvyt.supabase.co" crossorigin>
+    <!-- Configuração Centralizada Voith v12 (Pronta p/ Supabase ou futura API Corporativa do TI) -->
     <script>
         window.VOITH_CONFIG = Object.freeze({
-            SHEETS_API_URL: "https://script.google.com/macros/s/AKfycbzvF-QtaDJNXFtwLnLlsRociAmIt2FLgXiVW4EIDFSJsqlx23cbstEQCrg51i9i5vF0mw/exec",
-            APP_VERSION: "11.5"
+            BACKEND: "supabase",
+            SUPABASE_URL: "https://sowiybqammlsiyyqtvyt.supabase.co",
+            SUPABASE_KEY: "sb_publishable_Qy0V_Dl-GrAYOPVNHUp1zw_CLuekyz-",
+            REALTIME: true,
+            SHEETS_API_URL: "",
+            CORPORATE_API_URL: "",
+            APP_VERSION: "12.0"
         });
         (function() {
-            var url = window.VOITH_CONFIG.SHEETS_API_URL;
-            if (url) {
-                var sep = url.indexOf("?") >= 0 ? "&" : "?";
+            var cfg = window.VOITH_CONFIG;
+            if (cfg.BACKEND === "supabase" && cfg.SUPABASE_URL && cfg.SUPABASE_KEY) {
+                var ep = cfg.SUPABASE_URL.replace(/\/+$/, "") + "/rest/v1/rpc/voith_load_state";
+                var hdrs = { "Content-Type": "application/json", "apikey": cfg.SUPABASE_KEY };
+                if (cfg.SUPABASE_KEY.indexOf("eyJ") === 0) hdrs["Authorization"] = "Bearer " + cfg.SUPABASE_KEY;
                 window.__VOITH_CLOUD_PREFETCH__ = {
-                    url: url,
-                    promise: fetch(url + sep + "t=" + Date.now(), {
-                        method: "GET",
-                        redirect: "follow",
+                    url: ep,
+                    promise: fetch(ep, {
+                        method: "POST",
+                        headers: hdrs,
+                        body: "{}",
                         cache: "no-store"
                     }).then(function(r) { return r.text(); })
                 };
@@ -43,8 +50,8 @@
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     </noscript>
     <!-- Arquitetura CSS Modular (Cache independente via Service Worker v11) -->
-    <link rel="stylesheet" href="./css/tailwind.css?v=11.5">
-    <link rel="stylesheet" href="./css/cockpit.css?v=11.5">
+    <link rel="stylesheet" href="./css/tailwind.css?v=12.0">
+    <link rel="stylesheet" href="./css/cockpit.css?v=12.0">
 </head>
 <body class="min-h-screen vp-readonly antialiased selection:bg-[#004C97] selection:text-white">
     <svg id="vp-svg-sprite" xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><symbol id="i-angles-left" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></symbol><symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol><symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol><symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol><symbol id="i-broom" viewBox="0 0 24 24"><path d="m19 3-8 8"/><path d="M9.5 11.5 3 18l3 3 6.5-6.5"/><path d="m11 10 3 3"/></symbol><symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol><symbol id="i-check-double" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></symbol><symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol><symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol><symbol id="i-circle-exclamation" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol><symbol id="i-circle-half-stroke" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" stroke="none"/></symbol><symbol id="i-circle-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol><symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol><symbol id="i-clock-rotate-left" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></symbol><symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol><symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol><symbol id="i-code-branch" viewBox="0 0 24 24"><circle cx="18" cy="6" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol><symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol><symbol id="i-ellipsis-vertical" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></symbol><symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="i-file-arrow-up" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></symbol><symbol id="i-file-circle-question" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9.5 13a2.5 2.5 0 0 1 5 .5c0 1.5-2 1.8-2 3"/><path d="M12 19.5h.01"/></symbol><symbol id="i-file-csv" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></symbol><symbol id="i-file-excel" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="m9 12 6 6M15 12l-6 6"/></symbol><symbol id="i-file-pdf" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 17v-5h2a1.5 1.5 0 0 1 0 3H9"/></symbol><symbol id="i-flask-vial" viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v6.5L4.5 19a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 9.5V3"/><path d="M8.5 15h7"/></symbol><symbol id="i-gauge-high" viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-grip" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol><symbol id="i-handshake" viewBox="0 0 24 24"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></symbol><symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol><symbol id="i-hourglass-end" viewBox="0 0 24 24"><path d="M5 22h14M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol><symbol id="i-hourglass-half" viewBox="0 0 24 24"><path d="M5 22h14M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></symbol><symbol id="i-layer-group" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><path d="m2 12 10 5 10-5"/><path d="m2 17 10 5 10-5"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></symbol><symbol id="i-list-check" viewBox="0 0 24 24"><path d="M11 6h10M11 12h10M11 18h10"/><path d="m3 6 2 2 4-4"/><path d="m3 12 2 2 4-4"/><path d="m3 18 2 2 4-4"/></symbol><symbol id="i-location-crosshairs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2"/></symbol><symbol id="i-location-dot" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-magnifying-glass" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol><symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol><symbol id="i-paste" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol><symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol><symbol id="i-rotate-left" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol><symbol id="i-ruler-combined" viewBox="0 0 24 24"><path d="M3 3h18v5H8v13H3V3Z"/><path d="M8 3v2M12 3v3M16 3v2M3 12h2M3 16h3"/></symbol><symbol id="i-screwdriver-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol><symbol id="i-shield-halved" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 2v20"/></symbol><symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol><symbol id="i-sort" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></symbol><symbol id="i-sort-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol><symbol id="i-sort-up" viewBox="0 0 24 24"><path d="m7 14 5-5 5 5"/></symbol><symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol><symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol><symbol id="i-temperature-half" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol><symbol id="i-toolbox" viewBox="0 0 24 24"><path d="M2 11h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8Z"/><path d="M16 11V7a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v4"/><path d="M8 15h2M14 15h2"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol><symbol id="i-trash-can" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol><symbol id="i-triangle-exclamation" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></symbol><symbol id="i-truck-fast" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></symbol><symbol id="i-truck-ramp-box" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></symbol><symbol id="i-user-lock" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h5"/><rect x="14" y="15" width="8" height="6" rx="1"/><path d="M16 15v-2a2 2 0 0 1 4 0v2"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol><symbol id="i-users-gear" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="11" r="2.5"/><path d="M19 7v1.5M19 13.5V15M15.5 11H17M21 11h1.5"/></symbol><symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol><symbol id="i-xmark" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol></svg>
@@ -109,9 +116,9 @@
                         <svg class="vp-ico w-5 text-center text-emerald-400 shrink-0" aria-hidden="true"><use href="#i-copy"/></svg>
                         <span class="ck-sb-label truncate">Copiar Vencidos</span>
                     </button>
-                    <button type="button" onclick="closeMobileSidebar(); openCloudModal();" class="ck-sb-tool" title="Status Nuvem Google Sheets">
+                    <button type="button" onclick="closeMobileSidebar(); openCloudModal();" class="ck-sb-tool" title="Status Banco SQL (Supabase)">
                         <svg class="vp-ico w-5 text-center text-sky-400 shrink-0" aria-hidden="true"><use href="#i-cloud"/></svg>
-                        <span class="ck-sb-label truncate">Nuvem Google Sheets</span>
+                        <span class="ck-sb-label truncate">Banco SQL (Nuvem)</span>
                     </button>
                     <button type="button" onclick="toggleTheme()" class="ck-sb-tool" title="Alternar Tema Claro / Escuro">
                         <svg id="sbThemeIcon" class="vp-ico w-5 text-center text-amber-300 shrink-0" aria-hidden="true"><use href="#i-moon"/></svg>
@@ -194,8 +201,8 @@
                         <span id="undoCountLabel" class="ck-undo-dot">0</span>
                     </button>
 
-                    <!-- Status Nuvem Google Sheets (apenas bolinha clean no PC e no celular) -->
-                    <button id="cloudPillBtn" type="button" onclick="openCloudModal()" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 cursor-pointer transition shrink-0" title="Nuvem Google Sheets: Sincronizando..." aria-label="Status da nuvem Google Sheets">
+                    <!-- Status Banco SQL (Supabase) (apenas bolinha clean no PC e no celular) -->
+                    <button id="cloudPillBtn" type="button" onclick="openCloudModal()" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 cursor-pointer transition shrink-0" title="Banco SQL (Nuvem): Sincronizando..." aria-label="Status do banco SQL em nuvem">
                         <span id="cloudDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                         <span id="cloudText" class="sr-only">Sincronizando...</span>
                     </button>
@@ -248,7 +255,7 @@
 
                             <div class="border-t border-[#DCE4EE] dark:border-[#172E4E] my-1.5"></div>
                             <button type="button" onclick="closeSystemMenu(); openCloudModal();" class="w-full px-3.5 py-2 text-left hover:bg-[#F3F6FA] dark:hover:bg-[#132846] flex items-center gap-2.5 font-bold text-[#004C97] dark:text-[#00A8E8] cursor-pointer">
-                                <svg class="vp-ico w-4 text-center" aria-hidden="true"><use href="#i-cloud"/></svg> Nuvem Google Sheets
+                                <svg class="vp-ico w-4 text-center" aria-hidden="true"><use href="#i-cloud"/></svg> Banco SQL (Nuvem)
                             </button>
                             <button type="button" onclick="closeSystemMenu(); toggleTheme();" class="sm:hidden w-full px-3.5 py-2 text-left hover:bg-[#F3F6FA] dark:hover:bg-[#132846] flex items-center gap-2.5 font-semibold cursor-pointer">
                                 <svg class="vp-ico text-amber-500 w-4 text-center" aria-hidden="true"><use href="#i-circle-half-stroke"/></svg> Alternar Tema Claro / Escuro
@@ -1005,7 +1012,7 @@
                     <div class="flex flex-wrap items-center gap-4">
                         <button type="button" onclick="openCommandPalette()" class="hover:text-[#004C97] dark:hover:text-[#00A8E8] cursor-pointer">Busca Global (Ctrl+K)</button>
                         <button type="button" onclick="openPrintModal('CABINET')" class="hover:text-[#004C97] dark:hover:text-[#00A8E8] cursor-pointer">Folha Armário</button>
-                        <button type="button" onclick="openCloudModal()" class="hover:text-[#004C97] dark:hover:text-[#00A8E8] cursor-pointer">Google Sheets Cloud</button>
+                        <button type="button" onclick="openCloudModal()" class="hover:text-[#004C97] dark:hover:text-[#00A8E8] cursor-pointer">Banco SQL (Supabase)</button>
                     </div>
                 </div>
             </footer>
@@ -1635,11 +1642,11 @@
         </div>
     </div>
 
-    <!-- ==================== MODAL: GOOGLE SHEETS CLOUD ==================== -->
+    <!-- ==================== MODAL: BANCO SQL CLOUD (SUPABASE) ==================== -->
     <div id="cloudModal" onclick="if(event.target===this) closeCloudModal()" class="fixed inset-0 bg-[#001229]/65 vp-modal-overlay z-[75] hidden flex items-center justify-center p-4">
         <div class="bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div class="bg-[#001833] text-white px-6 py-4 flex items-center justify-between">
-                <h3 class="font-display font-bold text-base flex items-center gap-2"><svg class="vp-ico text-[#00A8E8]" aria-hidden="true"><use href="#i-cloud"/></svg> Google Sheets Cloud Sync</h3>
+                <h3 class="font-display font-bold text-base flex items-center gap-2"><svg class="vp-ico text-[#00A8E8]" aria-hidden="true"><use href="#i-cloud"/></svg> Supabase PostgreSQL Sync</h3>
                 <button type="button" onclick="closeCloudModal()" class="text-white/75 hover:text-white text-lg font-bold cursor-pointer">&times;</button>
             </div>
             <div class="p-6 space-y-4">
@@ -1650,7 +1657,7 @@
                 </div>
                 <div class="space-y-2.5">
                     <button type="button" onclick="loadFromCloud(true, false, false)" class="w-full py-2.5 rounded-lg bg-[#00A8E8] hover:bg-[#0094CC] text-[#001429] font-extrabold text-xs cursor-pointer">Baixar da Nuvem</button>
-                    <button type="button" onclick="forcePushCloud()" class="editor-only w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">Enviar Base Atual para o Sheets Agora</button>
+                    <button type="button" onclick="forcePushCloud()" class="editor-only w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">Enviar Base Atual para o Banco SQL Agora</button>
                 </div>
             </div>
         </div>
@@ -1663,7 +1670,7 @@
                 <svg class="vp-ico" aria-hidden="true"><use href="#i-code-branch"/></svg> Conflito de Edição Detectado
             </div>
             <div class="p-6 space-y-4 text-xs">
-                <p id="conflictScopeMsg">Outra aba ou usuário salvou alterações mais recentes no Google Sheets (<strong id="conflictTime">-</strong>). Escolha como prosseguir:</p>
+                <p id="conflictScopeMsg">Outra aba ou usuário salvou alterações mais recentes no servidor (<strong id="conflictTime">-</strong>). Escolha como prosseguir:</p>
                 <div id="conflictItemsBox" class="hidden ck-conflict-list" style="display:none" hidden></div>
                 <div class="space-y-2">
                     <button type="button" onclick="resolveConflict('reload')" class="w-full py-2.5 rounded-lg bg-[#004C97] text-white font-bold cursor-pointer">Recarregar Versão Mais Recente (Recomendado)</button>
@@ -1951,10 +1958,10 @@
     </div>
 
     <!-- Arquitetura JS Modular (Zero dependência de build tools, 100% compatível com GitHub Pages) -->
-    <script defer src="./js/utils.js?v=11.5"></script>
-    <script defer src="./js/db.js?v=11.5"></script>
-    <script defer src="./js/cloud.js?v=11.5"></script>
-    <script defer src="./js/views.js?v=11.5"></script>
-    <script defer src="./js/app.js?v=11.5"></script>
+    <script defer src="./js/utils.js?v=12.0"></script>
+    <script defer src="./js/db.js?v=12.0"></script>
+    <script defer src="./js/cloud.js?v=12.0"></script>
+    <script defer src="./js/views.js?v=12.0"></script>
+    <script defer src="./js/app.js?v=12.0"></script>
 </body>
 </html>
