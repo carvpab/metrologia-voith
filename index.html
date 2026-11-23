@@ -23,7 +23,7 @@
             REALTIME: true,
             SHEETS_API_URL: "",
             CORPORATE_API_URL: "",
-            APP_VERSION: "16.20.0",
+            APP_VERSION: "16.21.0",
             LIVE_APP_URL: "https://carvpab.github.io/metrologia-voith/"
         });
         (function() {
@@ -51,7 +51,7 @@
     <noscript>
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     </noscript>
-    <!-- CSS Inline Unificado v16.20 (zero dessincronização entre index.html e pastas) -->
+    <!-- CSS Inline Unificado v16.21 (zero dessincronização entre index.html e pastas) -->
     <style id="voith-tailwind-css">
 /* VOITH TURBO — PRECISION METROLOGY OS v16.7 • Local Tailwind Utility Bundle (100% Offline) */
 *, ::before, ::after { box-sizing: border-box; border-width: 0; border-style: solid; border-color: #DCE4EE; }
@@ -628,7 +628,7 @@ a { color: inherit; text-decoration: inherit; }
 .w-24 { width: 6rem; }
 .z-\[88\] { z-index: 88; }
 
-/* v16.20 Missing utility classes audit fix */
+/* v16.21 Missing utility classes audit fix */
 .bg-\[\#001630\]\/90 { background-color: rgba(0, 22, 48, 0.92); }
 .bg-amber-50\/90 { background-color: rgba(255, 251, 235, 0.92); }
 .bg-slate-200 { background-color: #e2e8f0; }
@@ -651,7 +651,7 @@ a { color: inherit; text-decoration: inherit; }
     </style>
     <style id="voith-cockpit-css">
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.20 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.21 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -1226,7 +1226,7 @@ body.vp-factory-mode #heroManualDateOkBtn {
     color: #000000 !important;
 }
 
-/* === CORREÇÕES v16.20: Strip Mobile, Input Data Manual e Modo Fábrica === */
+/* === CORREÇÕES v16.21: Strip Mobile, Input Data Manual e Modo Fábrica === */
 @media (min-width: 1024px) {
     .ck-mob-strip { display: none !important; }
 }
@@ -1270,7 +1270,7 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     color: #FFFFFF !important;
 }
 
-/* === CORREÇÕES v16.20: Modal Detalhes Cautela, Busca Hero e Data Manual === */
+/* === CORREÇÕES v16.21: Modal Detalhes Cautela, Busca Hero e Data Manual === */
 #custodyDetailModal {
     z-index: 125 !important;
 }
@@ -3121,8 +3121,8 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
                     <div class="font-extrabold text-emerald-700 dark:text-emerald-300">Publicar Nova Versão &amp; Aviso "O que mudou"</div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
-                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Versão (ex: 16.20.0) *</label>
-                            <input type="text" id="otaPubVersion" required value="16.20.0" placeholder="16.20.0" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-xs font-bold">
+                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Versão (ex: 16.21.0) *</label>
+                            <input type="text" id="otaPubVersion" required value="16.21.0" placeholder="16.21.0" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-xs font-bold">
                         </div>
                         <div>
                             <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Canal</label>
@@ -3439,11 +3439,11 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     <!-- Toast Notification Container -->
     <div id="vpToastContainer" class="fixed bottom-5 right-5 z-[95] flex flex-col gap-2 pointer-events-none"></div>
 
-    <!-- JS Unificado v16.20 (embutido no index.html para atualização instantânea sem cache antigo) -->
+    <!-- JS Unificado v16.21 (embutido no index.html para atualização instantânea sem cache antigo) -->
     <script>
 /* === utils.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.20 • utils.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.21 • utils.js
  * Utilitários puros: datas BR, classificação metrológica, máscaras, toast, CSV
  * ============================================================================ */
 
@@ -3931,7 +3931,7 @@ window.VoithDB = (function () {
 
 /* === cloud.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.20 • cloud.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.21 • cloud.js
  * Integração Supabase PostgreSQL com envelope PostgREST { payload: ... }
  * ============================================================================ */
 
@@ -4217,7 +4217,7 @@ window.VoithCloud = (function () {
 
 /* === views.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.20 • views.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.21 • views.js
  * Renderização fiel ao Cockpit v12 (4 Workspaces + SVG Gauge + Donut + Radar)
  * ============================================================================ */
 
@@ -5101,7 +5101,7 @@ function renderAllViews() {
 
 /* === app.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.20 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.21 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -6959,7 +6959,7 @@ function closeBackupModal() { document.getElementById('backupModal').classList.a
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.20',
+        appVersion: '16.21',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -7418,7 +7418,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.20</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.21</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -7434,16 +7434,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.20',
+        detail: 'Teste manual de telemetria via Painel Admin v16.21',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.20.0',
+        appVersion: '16.21.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.20.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.21.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -7792,7 +7792,7 @@ function bootApp() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.20) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.21) =====================
 var _lastOtaVersionShown = '';
 var _otaCheckDone = false;
 
@@ -7829,7 +7829,7 @@ function evaluateReleaseDisplay(latest, curVer) {
 }
 
 async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
     var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
     if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
     VoithDB.state.releaseChannel = ota;
@@ -7852,7 +7852,7 @@ async function checkOtaUpdatesOnBoot() {
         await pollLiveOtaRelease();
         return;
     }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
 
     // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
     try {
@@ -7924,7 +7924,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -7942,1078 +7942,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
-    }
-}
-
-async function submitPublishRelease(ev) {
-    if (ev) ev.preventDefault();
-    if (!VoithDB.isAdmin()) { showToast('Exclusivo para Administrador.', 'warn'); return; }
-    var ver = (document.getElementById('otaPubVersion').value || '').trim();
-    var ch = document.getElementById('otaPubChannel').value || 'stable';
-    var chg = (document.getElementById('otaPubChangelog').value || '').trim();
-    var btn = document.getElementById('otaPubBtn');
-    if (!ver || !chg) { showToast('Preencha a versão e o texto do que mudou.', 'err'); return; }
-
-    if (btn) { btn.disabled = true; btn.textContent = 'Publicando...'; }
-    var r = await VoithCloud.callRpc({
-        action: 'publish_release',
-        version: ver,
-        channel: ch,
-        changelog: chg,
-        downloadUrl: (window.VOITH_CONFIG && window.VOITH_CONFIG.LIVE_APP_URL) || 'https://carvpab.github.io/metrologia-voith/'
-    }, false);
-    if (btn) { btn.disabled = false; btn.textContent = 'Publicar & Notificar Usuários'; }
-
-    if (r && r.ok) {
-        document.getElementById('admPublishReleaseForm').classList.add('hidden');
-        document.getElementById('otaPubChangelog').value = '';
-        showToast('Release v' + ver + ' publicada! Todos verão as novidades ao abrir o app.', 'ok');
-        loadAdminOtaTelemetry(false);
-    } else {
-        showToast((r && r.error) || 'Erro ao publicar release.', 'err');
-    }
-}
-
-    </script>
-</body></html>');
-    w.document.close();
-}
-
-function copySummaryReport(mode) {
-    var ref = VoithDB.getRefDate();
-    var list = [];
-    var header = '';
-    if (mode === 'OVERDUE') {
-        list = VoithDB.state.instruments.filter(function (i) { return getEffectiveStatus(i, ref) === 'VENCIDA'; });
-        header = '*VOITH TURBO — INSTRUMENTOS VENCIDOS (' + list.length + ')*';
-    } else if (mode === 'CUSTODY') {
-        list = VoithDB.state.instruments.filter(function (i) { return Boolean(String(i.custodyHolder || '').trim()); });
-        header = '*VOITH TURBO — INSTRUMENTOS EM CAUTELA (' + list.length + ')*';
-    } else {
-        list = getFilteredInventory();
-        header = '*VOITH TURBO — LISTA FILTRADA (' + list.length + ')*';
-    }
-    if (!list.length) { showToast('Nenhum item encontrado para copiar.', 'warn'); return; }
-    var lines = list.map(function (i) {
-        return '• ' + i.code + ' — ' + i.desc + ' | ' + (i.local || 'S/Local') + ' | Val: ' + (toBRDateStr(i.proxCal) || '-') + (i.custodyHolder ? ' | Posse: ' + i.custodyHolder : '');
-    });
-    copyTextToClipboard(header + '\n' + lines.join('\n'), list.length + ' item(ns) copiado(s)!');
-}
-
-function copyTechReport(resp) {
-    var ref = VoithDB.getRefDate();
-    var exp = VoithDB.state.instruments.filter(function (i) { return String(i.resp || '').trim() === resp && getEffectiveStatus(i, ref) === 'VENCIDA'; });
-    var list = exp.length ? exp : VoithDB.state.instruments.filter(function (i) { return String(i.resp || '').trim() === resp; });
-    var lines = list.map(function (i) { return '• ' + i.code + ' — ' + i.desc + ' (' + (i.local || 'S/Local') + ') | Val: ' + (toBRDateStr(i.proxCal) || '-'); });
-    copyTextToClipboard('*Responsável: ' + resp + '* (' + list.length + ' itens)\n' + lines.join('\n'), 'Lista de ' + resp + ' copiada!');
-}
-
-function exportCSV() {
-    var ref = VoithDB.getRefDate();
-    var hdr = ['Codigo', 'Descricao', 'CC', 'Setor', 'Local', 'Responsavel', 'Min', 'Max', 'ProxCal', 'Status', 'Cautela', 'Obs'].map(csvCell).join(';');
-    var rows = VoithDB.state.instruments.map(function (i) {
-        return [i.code, i.desc, i.cc, i.setor, i.local, i.resp, i.min, i.max, toBRDateStr(i.proxCal), getEffectiveStatus(i, ref), i.custodyHolder, i.obs].map(csvCell).join(';');
-    });
-    var blob = new Blob(['\uFEFF' + hdr + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'voith-metrologia-' + formatDateISO(new Date()) + '.csv';
-    a.click();
-    showToast('Base CSV exportada!', 'ok');
-}
-
-// ===================== BACKUP, CLOUD, CONFLITOS, UNDO =====================
-function openBackupModal() { document.getElementById('backupModal').classList.remove('hidden'); }
-function closeBackupModal() { document.getElementById('backupModal').classList.add('hidden'); }
-
-function downloadJsonBackup() {
-    var payload = {
-        exportedAt: new Date().toISOString(),
-        appVersion: '16.20',
-        instrumentsData: VoithDB.state.instruments,
-        calibrationHistory: VoithDB.state.history,
-        lostInstrumentsData: VoithDB.state.lost,
-        controlledLists: VoithDB.state.controlledLists
-    };
-    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'voith-backup-' + formatDateISO(new Date()) + '.json';
-    a.click();
-    showToast('Backup JSON baixado!', 'ok');
-}
-
-function restoreJsonBackup(ev) {
-    var file = ev.target && ev.target.files && ev.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = async function (e) {
-        try {
-            var data = JSON.parse(e.target.result);
-            if (!Array.isArray(data.instrumentsData)) throw new Error('JSON inválido.');
-            VoithDB.pushUndo('Restaurar Backup JSON');
-            VoithDB.state.instruments = data.instrumentsData;
-            VoithDB.state.history = data.calibrationHistory || [];
-            VoithDB.state.lost = data.lostInstrumentsData || [];
-            closeBackupModal();
-            renderAllViews();
-            await VoithCloud.saveFull([{ module: 'Backup', action: 'Restauração', target: 'Base Completa', field: 'JSON', before: '-', after: VoithDB.state.instruments.length + ' itens', details: 'Restaurou backup JSON' }], true);
-            showToast('Backup restaurado com sucesso!', 'ok');
-        } catch (err) { showToast('Arquivo JSON inválido: ' + err.message, 'err'); }
-    };
-    reader.readAsText(file);
-}
-
-function downloadOfflineHtml() {
-    var blob = new Blob([document.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'voith-metrologia-offline.html';
-    a.click();
-}
-
-function openCloudModal() {
-    VoithCloud.setCloudPill(VoithDB.state.cloudStatus, VoithDB.state.cloudError ? 'err' : 'ok', VoithDB.state.cloudError);
-    document.getElementById('cloudModal').classList.remove('hidden');
-}
-function closeCloudModal() { document.getElementById('cloudModal').classList.add('hidden'); }
-function loadFromCloud(manual, silent) { VoithCloud.loadState(manual, silent); }
-async function forcePushCloud() {
-    if (!VoithDB.isEditor()) { openLoginModal(); return; }
-    var res = await VoithCloud.saveFull([{ module: 'Cloud', action: 'Push Forçado', target: 'Base', field: 'Full', before: '-', after: VoithDB.state.instruments.length + ' itens', details: 'Envio completo forçado' }], true);
-    if (res && res.ok) { closeCloudModal(); showToast('Base sincronizada com sucesso!', 'ok'); }
-    else showToast((res && res.error) || 'Erro ao enviar.', 'err');
-}
-
-function retryOfflineSyncNow() { VoithCloud.flushOutbox(false); }
-
-function openConflictModal(data, originalPayload) {
-    VoithDB.state.pendingConflict = { data: data, payload: originalPayload };
-    document.getElementById('conflictTime').textContent = data.serverUpdatedAt || 'agora';
-    var box = document.getElementById('conflictItemsBox');
-    if (box && Array.isArray(data.conflicts) && data.conflicts.length) {
-        box.classList.remove('hidden');
-        box.removeAttribute('hidden');
-        box.style.display = 'block';
-        box.innerHTML = data.conflicts.map(function (c) {
-            return '<div class="py-1 border-b border-amber-200/40"><strong>' + escHtml(c.code) + '</strong> (' + escHtml(c.kind) + '): sua rev ' + c.clientRev + ' vs servidor rev ' + c.serverRev + '</div>';
-        }).join('');
-    }
-    document.getElementById('conflictModal').classList.remove('hidden');
-}
-
-async function resolveConflict(choice) {
-    document.getElementById('conflictModal').classList.add('hidden');
-    var pc = VoithDB.state.pendingConflict;
-    VoithDB.state.pendingConflict = null;
-    if (choice === 'reload') {
-        await VoithCloud.loadState(true, false);
-    } else if (choice === 'force' && pc && pc.payload) {
-        var p = Object.assign({}, pc.payload, { force: true });
-        var r = await VoithCloud.callRpc(p, false);
-        if (r && r.ok) showToast('Sua versão foi salva com sucesso!', 'ok');
-    }
-}
-
-async function undoLastAction() {
-    if (!VoithDB.state.undoStack.length) return;
-    var snap = VoithDB.state.undoStack.pop();
-    VoithDB.state.instruments = snap.instruments;
-    VoithDB.state.history = snap.history;
-    VoithDB.state.lost = snap.lost;
-    renderAllViews();
-    await VoithCloud.saveFull([{ module: 'Sistema', action: 'Desfazer', target: snap.label, field: 'Undo', before: '-', after: 'Restaurado', details: 'Desfez: ' + snap.label }], true);
-    showToast('Desfeito: ' + snap.label, 'ok');
-}
-
-// ===================== IMPORTAÇÃO EXCEL / CSV COM PRÉVIA =====================
-function openPasteImportModal() {
-    VoithDB.state.pendingImportRows = null;
-    document.getElementById('importPasteArea').value = '';
-    document.getElementById('importDiffBox').classList.add('hidden');
-    document.getElementById('btnConfirmImport').disabled = true;
-    document.getElementById('importModal').classList.remove('hidden');
-}
-function closeImportModal() { document.getElementById('importModal').classList.add('hidden'); }
-
-function parseDelimitedRows(text) {
-    var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
-    var out = [];
-    lines.forEach(function (line, idx) {
-        var sep = line.indexOf('\t') !== -1 ? '\t' : ';';
-        var cols = line.split(sep).map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
-        if (idx === 0 && /codigo|code|identific/i.test(cols[0])) return;
-        if (!cols[0]) return;
-        out.push({
-            code: cols[0].toUpperCase(),
-            desc: cols[1] || 'Instrumento',
-            proxCal: cols[2] || '',
-            status: cols[3] || 'AUTO',
-            setor: cols[4] || 'Voith Turbo (Industrial)',
-            local: cols[5] || '',
-            resp: cols[6] || ''
-        });
-    });
-    return out;
-}
-
-function analyzePastePreview() {
-    var rows = parseDelimitedRows(document.getElementById('importPasteArea').value);
-    VoithDB.state.pendingImportRows = rows;
-    if (!rows.length) {
-        document.getElementById('importDiffBox').classList.add('hidden');
-        document.getElementById('btnConfirmImport').disabled = true;
-        return;
-    }
-    var curMap = new Set(VoithDB.state.instruments.map(function (x) { return String(x.code || '').toUpperCase(); }));
-    var newMap = new Set(rows.map(function (x) { return x.code; }));
-    var newCnt = 0, updCnt = 0, missCnt = 0;
-    rows.forEach(function (r) { if (curMap.has(r.code)) updCnt++; else newCnt++; });
-    curMap.forEach(function (c) { if (!newMap.has(c)) missCnt++; });
-
-    document.getElementById('diffNewCount').textContent = newCnt;
-    document.getElementById('diffUpdCount').textContent = updCnt;
-    document.getElementById('diffMissingCount').textContent = missCnt;
-    document.getElementById('importDiffBox').classList.remove('hidden');
-    document.getElementById('btnConfirmImport').disabled = false;
-}
-
-function handleImportFileSelect(ev) {
-    var file = ev.target && ev.target.files && ev.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function (e) {
-        openPasteImportModal();
-        document.getElementById('importPasteArea').value = e.target.result;
-        analyzePastePreview();
-    };
-    reader.readAsText(file);
-    ev.target.value = '';
-}
-
-async function confirmPendingImport() {
-    var rows = VoithDB.state.pendingImportRows || [];
-    if (!rows.length) return;
-    var replaceAll = document.getElementById('importReplaceAllChk').checked;
-    VoithDB.pushUndo('Importação Planilha');
-    if (replaceAll) VoithDB.state.instruments = [];
-
-    var byCode = {};
-    VoithDB.state.instruments.forEach(function (x) { byCode[String(x.code || '').toUpperCase()] = x; });
-    rows.forEach(function (r, idx) {
-        var ex = byCode[r.code];
-        if (ex) {
-            if (r.desc) ex.desc = r.desc;
-            if (r.proxCal) ex.proxCal = r.proxCal;
-            if (r.status) ex.status = r.status;
-            if (r.setor) ex.setor = r.setor;
-            if (r.local) ex.local = r.local;
-            if (r.resp) ex.resp = r.resp;
-        } else {
-            VoithDB.state.instruments.push({
-                id: Date.now() + idx, code: r.code, desc: r.desc, cc: '', setor: r.setor,
-                local: r.local, resp: r.resp, min: '', max: '', proxCal: r.proxCal,
-                status: r.status, obs: '', custodyHolder: '', custodyReturnTo: '',
-                custodyDate: '', custodyReason: '', cycleMonths: 12, rev: 1
-            });
-        }
-    });
-    closeImportModal();
-    renderAllViews();
-    await VoithCloud.saveFull([{ module: 'Importação', action: 'Planilha', target: rows.length + ' linhas', field: 'Base', before: '-', after: VoithDB.state.instruments.length + ' itens', details: 'Importou planilha' }], true);
-    showToast('Importação concluída (' + rows.length + ' linhas)!', 'ok');
-}
-
-// ===================== LACUNAS SEM LOCAL & PREENCHIMENTO RÁPIDO =====================
-function openUnmappedModal() {
-    var unmapped = VoithDB.state.instruments.filter(function (i) { return !String(i.local || '').trim(); });
-    document.getElementById('unmappedModalSub').textContent = unmapped.length + ' instrumento(s) sem armário/bancada';
-    var bySec = {};
-    unmapped.forEach(function (i) {
-        var s = i.setor || 'Sem Setor';
-        bySec[s] = (bySec[s] || 0) + 1;
-    });
-    var listEl = document.getElementById('unmappedBreakdownList');
-    listEl.innerHTML = Object.entries(bySec).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
-        return '<button type="button" onclick="closeUnmappedModal(); jumpToInventoryFilter({setor:' + JSON.stringify(e[0]).replace(/"/g, '&quot;') + ',local:\'__NONE__\'})" class="w-full p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#0D1D34] border border-[#DCE4EE] dark:border-[#172E4E] hover:border-[#004C97] flex items-center justify-between text-xs cursor-pointer"><span class="font-bold">' + escHtml(e[0]) + '</span><span class="font-mono font-extrabold text-orange-600">' + e[1] + ' s/ local</span></button>';
-    }).join('') || '<div class="text-xs text-emerald-600 font-bold text-center py-6">100% da frota possui localização cadastrada!</div>';
-    document.getElementById('unmappedModal').classList.remove('hidden');
-}
-function closeUnmappedModal() { document.getElementById('unmappedModal').classList.add('hidden'); }
-
-function openRapidLocalModal() {
-    if (!VoithDB.isEditor()) { openLoginModal(); return; }
-    _rapidQueue = VoithDB.state.instruments.filter(function (i) { return !String(i.local || '').trim(); });
-    _rapidIndex = 0;
-    if (!_rapidQueue.length) { showToast('Todos os instrumentos já possuem localização!', 'ok'); return; }
-    renderRapidLocalStep();
-    document.getElementById('rapidLocalModal').classList.remove('hidden');
-}
-function closeRapidLocalModal() { document.getElementById('rapidLocalModal').classList.add('hidden'); }
-
-function renderRapidLocalStep() {
-    if (_rapidIndex >= _rapidQueue.length) { closeRapidLocalModal(); showToast('Preenchimento de locais concluído!', 'ok'); return; }
-    var it = _rapidQueue[_rapidIndex];
-    document.getElementById('rlProgressLbl').textContent = (_rapidQueue.length - _rapidIndex) + ' restantes';
-    document.getElementById('rlCode').textContent = it.code;
-    document.getElementById('rlSetor').textContent = it.setor || '-';
-    document.getElementById('rlDesc').textContent = it.desc;
-    document.getElementById('rlResp').textContent = 'Resp.: ' + (it.resp || '-');
-    var inp = document.getElementById('rlInput');
-    inp.value = '';
-    setTimeout(function () { inp.focus(); }, 40);
-
-    var freq = {};
-    VoithDB.state.instruments.forEach(function (x) { if (x.local) freq[x.local] = (freq[x.local] || 0) + 1; });
-    var topLocs = Object.entries(freq).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8).map(function (e) { return e[0]; });
-    document.getElementById('rlQuickChips').innerHTML = topLocs.map(function (l) {
-        return '<button type="button" onclick="document.getElementById(\'rlInput\').value=' + JSON.stringify(l).replace(/"/g, '&quot;') + '; saveRapidLocal()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[11px] font-bold cursor-pointer transition">' + escHtml(l) + '</button>';
-    }).join('');
-}
-
-async function saveRapidLocal() {
-    var it = _rapidQueue[_rapidIndex];
-    var loc = VoithDB.normalizeControlled(document.getElementById('rlInput').value, 'local');
-    if (!it || !loc) return;
-    it._baseRev = it.rev || 1;
-    it._baseSnapshot = VoithDB.makeItemSnapshot(it);
-    it.local = loc;
-    _rapidIndex++;
-    renderAllViews();
-    renderRapidLocalStep();
-    await VoithCloud.saveDelta({ instUpsert: [it] }, [{ module: 'Localização', action: 'Mapeamento Rápido', target: it.code, field: 'Local', before: '-', after: loc, details: 'Definiu local ' + loc }]);
-}
-
-function skipRapidLocal() { _rapidIndex++; renderRapidLocalStep(); }
-
-// ===================== PAINEL ADMINISTRATIVO (USUÁRIOS, LISTAS, RISCO, OTA) =====================
-function openAdminUsersModal() {
-    if (!VoithDB.isAdmin()) { showToast('Acesso restrito ao Administrador.', 'warn'); return; }
-    setAdminTab('users');
-    document.getElementById('adminUsersModal').classList.remove('hidden');
-}
-function closeAdminUsersModal() { document.getElementById('adminUsersModal').classList.add('hidden'); }
-
-function setAdminTab(tab) {
-    ['users', 'lists', 'risk', 'ota'].forEach(function (k) {
-        var btn = document.getElementById('admTab' + k.charAt(0).toUpperCase() + k.slice(1));
-        var pane = document.getElementById('admPane' + k.charAt(0).toUpperCase() + k.slice(1));
-        if (pane) pane.classList.toggle('hidden', k !== tab);
-        if (btn) {
-            btn.className = k === tab
-                ? 'px-3.5 py-2 rounded-t-lg font-extrabold bg-white dark:bg-[#091527] text-[#004C97] dark:text-[#00A8E8] border-t border-l border-r border-[#DCE4EE] dark:border-[#172E4E] cursor-pointer'
-                : 'px-3.5 py-2 rounded-t-lg font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer';
-        }
-    });
-    if (tab === 'users') loadAdminUsersList();
-    else if (tab === 'lists') populateControlledListsForm();
-    else if (tab === 'risk') loadAdminAnalytics();
-    else if (tab === 'ota') loadAdminOtaTelemetry();
-}
-
-async function loadAdminUsersList() {
-    var tb = document.getElementById('auTbody');
-    if (tb) tb.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Carregando usuários...</td></tr>';
-    var r = await VoithCloud.callRpc({ action: 'list_users' }, false);
-    if (!r || !r.ok) { if (tb) tb.innerHTML = '<tr><td colspan="4" class="p-4 text-rose-600">' + escHtml((r && r.error) || 'Erro') + '</td></tr>'; return; }
-    tb.innerHTML = (r.users || []).map(function (u) {
-        var roleCls = u.role === 'ADMIN' ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300' : 'bg-[#EAF0F6] dark:bg-[#132846] text-[#004C97] dark:text-[#00A8E8]';
-        return '<tr><td class="p-3 font-mono font-bold text-[#004C97] dark:text-[#00A8E8]">' + escHtml(u.username) + '</td><td class="p-3 font-semibold">' + escHtml(u.displayName) + '</td><td class="p-3"><span class="px-2 py-0.5 rounded font-extrabold text-[10px] ' + roleCls + '">' + escHtml(u.role) + '</span></td><td class="p-3 text-center">' +
-            (u.username !== 'pablo'
-                ? '<button type="button" onclick="openResetPassModal(' + JSON.stringify(u.username).replace(/"/g, '&quot;') + ')" class="px-2 py-1 rounded bg-amber-100 text-amber-800 font-bold mr-1 cursor-pointer">Senha</button><button type="button" onclick="deleteAdminUser(' + JSON.stringify(u.username).replace(/"/g, '&quot;') + ')" class="px-2 py-1 rounded bg-rose-100 text-rose-700 font-bold cursor-pointer">Excluir</button>'
-                : '<span class="text-slate-400">Protegido</span>') +
-        '</td></tr>';
-    }).join('');
-}
-
-async function submitCreateUser(ev) {
-    if (ev) ev.preventDefault();
-    var err = document.getElementById('auErr');
-    if (err) err.classList.add('hidden');
-    var r = await VoithCloud.callRpc({
-        action: 'create_user',
-        newUser: {
-            username: document.getElementById('auLogin').value.trim(),
-            displayName: document.getElementById('auName').value.trim(),
-            password: document.getElementById('auPass').value.trim()
-        }
-    }, false);
-    if (r && r.ok) {
-        ['auLogin', 'auName', 'auPass'].forEach(function (k) { document.getElementById(k).value = ''; });
-        showToast('Usuário criado!', 'ok');
-        loadAdminUsersList();
-    } else if (err) {
-        err.textContent = (r && r.error) || 'Erro ao criar login.';
-        err.classList.remove('hidden');
-    }
-}
-
-function openResetPassModal(username) {
-    document.getElementById('rpUser').value = username;
-    document.getElementById('rpLabel').textContent = username;
-    document.getElementById('rpPass').value = '';
-    document.getElementById('rpErr').classList.add('hidden');
-    document.getElementById('resetPassModal').classList.remove('hidden');
-}
-function closeResetPassModal() { document.getElementById('resetPassModal').classList.add('hidden'); }
-
-async function submitResetUserPass(ev) {
-    if (ev) ev.preventDefault();
-    var r = await VoithCloud.callRpc({
-        action: 'reset_password',
-        targetUsername: document.getElementById('rpUser').value,
-        newPassword: document.getElementById('rpPass').value
-    }, false);
-    if (r && r.ok) { closeResetPassModal(); showToast('Senha redefinida!', 'ok'); }
-    else {
-        var e = document.getElementById('rpErr');
-        e.textContent = (r && r.error) || 'Erro.';
-        e.classList.remove('hidden');
-    }
-}
-
-function deleteAdminUser(username) {
-    openConfirmModal('Excluir Usuário', 'Deseja excluir o acesso de "' + username + '"?', async function () {
-        var r = await VoithCloud.callRpc({ action: 'delete_user', targetUsername: username }, false);
-        if (r && r.ok) { showToast('Usuário excluído.', 'ok'); loadAdminUsersList(); }
-    });
-}
-
-function populateControlledListsForm() {
-    var cl = VoithDB.state.controlledLists || { locals: [], sectors: [], aliases: {} };
-    document.getElementById('clLocalsArea').value = (cl.locals || []).join('\n');
-    document.getElementById('clSectorsArea').value = (cl.sectors || []).join('\n');
-    document.getElementById('clAliasesArea').value = Object.entries(cl.aliases || {}).map(function (e) { return e[0] + ' = ' + e[1]; }).join('\n');
-}
-
-function autoSeedControlledLists() {
-    var locs = Array.from(new Set(VoithDB.state.instruments.map(function (i) { return String(i.local || '').trim(); }).filter(Boolean))).sort();
-    var secs = Array.from(new Set(VoithDB.state.instruments.map(function (i) { return String(i.setor || '').trim(); }).filter(Boolean))).sort();
-    document.getElementById('clLocalsArea').value = locs.join('\n');
-    document.getElementById('clSectorsArea').value = secs.join('\n');
-    showToast('Listas preenchidas a partir da base atual.', 'ok');
-}
-
-async function saveControlledListsForm() {
-    var locals = document.getElementById('clLocalsArea').value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
-    var sectors = document.getElementById('clSectorsArea').value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
-    var aliases = {};
-    document.getElementById('clAliasesArea').value.split(/\r?\n/).forEach(function (line) {
-        var idx = line.indexOf('=');
-        if (idx > 0) {
-            var k = normStr(line.slice(0, idx));
-            var v = line.slice(idx + 1).trim();
-            if (k && v) aliases[k] = v;
-        }
-    });
-    var cl = { locals: locals, sectors: sectors, aliases: aliases };
-    VoithDB.state.controlledLists = cl;
-    var r = await VoithCloud.callRpc({ action: 'save_lists', controlledLists: cl }, false);
-    if (r && r.ok) { populateGlobalDatalistsAndFilters(); showToast('Listas oficiais salvas!', 'ok'); }
-    else showToast((r && r.error) || 'Erro ao salvar listas.', 'err');
-}
-
-async function runBaseHygiene() {
-    VoithDB.pushUndo('Higienização Base');
-    var changed = [];
-    VoithDB.state.instruments.forEach(function (it) {
-        var nl = VoithDB.normalizeControlled(it.local, 'local');
-        var ns = VoithDB.normalizeControlled(it.setor, 'sector');
-        if (nl !== (it.local || '') || ns !== (it.setor || '')) {
-            it._baseRev = it.rev || 1;
-            it._baseSnapshot = VoithDB.makeItemSnapshot(it);
-            it.local = nl;
-            it.setor = ns;
-            changed.push(it);
-        }
-    });
-    if (!changed.length) { showToast('Base já está higienizada!', 'ok'); return; }
-    renderAllViews();
-    await VoithCloud.saveDelta({ instUpsert: changed }, [{ module: 'Admin', action: 'Higienização', target: changed.length + ' itens', field: 'Local/Setor', before: '-', after: 'Padronizado', details: 'Padronizou ' + changed.length + ' itens' }]);
-    showToast(changed.length + ' instrumento(s) padronizado(s)!', 'ok');
-}
-
-async function loadAdminAnalytics(fromClick) {
-    var el = document.getElementById('admRiskContent');
-    if (!el) return;
-    el.innerHTML = '<div class="p-4 text-xs text-slate-400 font-semibold">Consultando métricas e SLA no PostgreSQL...</div>';
-    var r = await VoithCloud.callRpc({ action: 'get_metrology_analytics' }, false);
-    if (!r || !r.ok) {
-        el.innerHTML = '<div class="p-3 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 text-xs font-bold">' + escHtml((r && r.error) || 'Erro ao consultar servidor.') + '</div>';
-        return;
-    }
-    var rec = r.labRecurrence || [];
-    var nowTime = new Date().toLocaleTimeString('pt-BR');
-    var ref = VoithDB.getRefDate();
-    var criticalInst = VoithDB.state.instruments.filter(function (i) { return getEffectiveStatus(i, ref) === 'VENCIDA'; }).slice(0, 10);
-
-    var tableBodyHtml = rec.length
-        ? rec.map(function (x) {
-            return '<tr><td class="p-2.5 font-mono font-bold text-[#004C97] dark:text-[#00A8E8]">' + escHtml(x.code) + '</td><td class="p-2.5">' + escHtml(x.desc) + '</td><td class="p-2.5 font-mono font-bold">' + x.labCount + '</td><td class="p-2.5 font-mono">' + x.openCount + '</td><td class="p-2.5">' + escHtml(x.lastLab || '-') + '</td></tr>';
-        }).join('')
-        : '<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhum envio de calibração externa registrado no histórico de laboratório ainda.</td></tr>';
-
-    el.innerHTML = '<div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">✓ Sincronizado com o servidor às ' + nowTime + '</div>' +
-        '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">' +
-            '<div class="p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E]"><div class="text-[10px] font-bold uppercase text-slate-400">Certificados RBC</div><div class="font-display text-xl font-bold">' + (r.totalCertificates || 0) + '</div></div>' +
-            '<div class="p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E]"><div class="text-[10px] font-bold uppercase text-slate-400">Comprovantes SHA-256</div><div class="font-display text-xl font-bold">' + (r.totalReceipts || 0) + '</div></div>' +
-            '<div class="p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E]"><div class="text-[10px] font-bold uppercase text-slate-400">Eventos Auditoria</div><div class="font-display text-xl font-bold">' + (r.totalAuditEvents || 0) + '</div></div>' +
-            '<div class="p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#061121] border border-[#DCE4EE] dark:border-[#172E4E]"><div class="text-[10px] font-bold uppercase text-slate-400">Outbox Idempotente</div><div class="font-display text-xl font-bold">' + (r.idempotentMutations || 0) + '</div></div>' +
-        '</div>' +
-        '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Recorrência de Envios a Laboratório Externo</div>' +
-        '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-xs"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2.5">Código</th><th class="p-2.5">Instrumento</th><th class="p-2.5">Envios Lab</th><th class="p-2.5">Em Aberto</th><th class="p-2.5">Último Lab</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' + tableBodyHtml + '</tbody></table></div></div>' +
-        (criticalInst.length ? '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">Top 10 Instrumentos Críticos (Vencidos)</div><div class="flex flex-wrap gap-1.5">' + criticalInst.map(function (c) { return '<button type="button" onclick="closeAdminUsersModal(); openInspectorModal(' + c.id + ')" class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 font-mono text-[11px] font-bold cursor-pointer">' + escHtml(c.code) + '</button>'; }).join('') + '</div></div>' : '');
-
-    if (fromClick) showToast('Risco & SLA Lab atualizado do PostgreSQL!', 'ok');
-}
-
-async function loadAdminOtaTelemetry(fromClick) {
-    var el = document.getElementById('admOtaContent');
-    if (!el) return;
-    el.innerHTML = '<div class="p-4 text-xs text-slate-400 font-semibold">Consultando Canal OTA, Telemetria e Eventos ERP...</div>';
-    var res = await Promise.all([
-        VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' }),
-        VoithCloud.callRpc({ action: 'list_telemetry', limit: 30 }, false),
-        VoithCloud.callRpc({ action: 'list_domain_events', limit: 20 }, false)
-    ]);
-    var ota = res[0], tel = res[1], dom = res[2];
-    var latest = ota && ota.ok && ota.latest;
-    var srvTel = (tel && tel.ok && Array.isArray(tel.telemetry) && tel.telemetry.length > 0) ? tel.telemetry : null;
-    var rows = srvTel || VoithDB.state.telemetry.slice(0, 25);
-    var telOrigin = srvTel ? 'Telemetria do Servidor (PostgreSQL)' : 'Telemetria Local desta Sessão (' + rows.length + ' eventos)';
-    var domEvents = (dom && dom.ok && Array.isArray(dom.events)) ? dom.events : [];
-    var nowTime = new Date().toLocaleTimeString('pt-BR');
-
-    el.innerHTML = '<div class="flex items-center justify-between gap-2 text-[11px]">' +
-            '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
-            '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
-        '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.20</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
-        '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
-        '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
-        (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
-        '</tbody></table></div></div>' +
-        '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Eventos de Domínio ERP/SAP (' + domEvents.length + ')</div>' +
-        (domEvents.length ? '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Evento</th><th class="p-2">Ativo</th><th class="p-2">Usuário</th><th class="p-2">Data</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' + domEvents.map(function (d) { return '<tr><td class="p-2 font-bold">' + escHtml(d.eventName) + '</td><td class="p-2 font-mono">' + escHtml(d.aggregateCode || '-') + '</td><td class="p-2">' + escHtml(d.actorUser || '-') + '</td><td class="p-2 font-mono">' + new Date(d.createdAt).toLocaleString('pt-BR') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="text-[11px] text-slate-400">Nenhum evento ERP emitido ainda (use "Gravar Ping no Servidor" acima para testar).</div>') + '</div>';
-
-    if (fromClick) showToast('Canal OTA e Telemetria atualizados!', 'ok');
-}
-
-async function sendTestTelemetryPing() {
-    var t0 = performance.now();
-    await VoithCloud.callRpc({
-        action: 'log_telemetry',
-        eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.20',
-        latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.20.0',
-        username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
-    }, false);
-    await VoithCloud.callRpc({
-        action: 'emit_domain_event',
-        eventName: 'METROLOGY_HEALTH_CHECK',
-        aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.20.0', instruments: VoithDB.state.instruments.length }
-    }, false);
-    showToast('Ping gravado no PostgreSQL!', 'ok');
-    loadAdminOtaTelemetry(false);
-}
-
-async function downloadSignedServerSnapshot() {
-    if (!VoithDB.isAdmin()) { showToast('Exclusivo para Administrador.', 'warn'); return; }
-    var r = await VoithCloud.callRpc({ action: 'export_full_snapshot' }, false);
-    if (!r || !r.ok) { showToast((r && r.error) || 'Erro ao gerar snapshot.', 'err'); return; }
-    var blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'voith-snapshot-sha256-' + formatDateISO(new Date()) + '.json';
-    a.click();
-    showToast('Snapshot SHA-256 baixado! Hash: ' + String(r.snapshotSha256 || '').slice(0, 12), 'ok');
-}
-
-// ===================== COFRE OCULTO DE AUDITORIA (5 CLIQUES NO LOGO VOITH) =====================
-function onSecretAuditTap(ev) {
-    if (ev) ev.stopPropagation();
-    _secretAuditTaps++;
-    clearTimeout(_secretAuditTimer);
-    _secretAuditTimer = setTimeout(function () { _secretAuditTaps = 0; }, 1600);
-    if (_secretAuditTaps >= 5) {
-        _secretAuditTaps = 0;
-        if (!VoithDB.isAdmin()) { showToast('Trilha de Auditoria restrita ao Administrador.', 'warn'); return; }
-        document.getElementById('auditVaultModal').classList.remove('hidden');
-        loadAuditVault(true);
-    }
-}
-
-function closeAuditVaultModal() { document.getElementById('auditVaultModal').classList.add('hidden'); }
-
-async function loadAuditVault() {
-    document.getElementById('auditVaultMeta').textContent = 'Consultando PostgreSQL Append-Only...';
-    var r = await VoithCloud.callRpc({ action: 'list_audit', limit: 250 }, false);
-    if (r && r.ok) {
-        VoithDB.state.auditLogs = r.events || [];
-        document.getElementById('auditVaultMeta').textContent = VoithDB.state.auditLogs.length + ' evento(s) imutável(is) carregado(s)';
-        renderAuditVaultTable();
-    } else {
-        document.getElementById('auditVaultMeta').textContent = (r && r.error) || 'Erro ao carregar auditoria.';
-    }
-}
-
-function renderAuditVaultTable() {
-    var q = normStr(document.getElementById('auditSearchInp') ? document.getElementById('auditSearchInp').value : '');
-    var rows = (VoithDB.state.auditLogs || []).filter(function (ev) {
-        if (!q) return true;
-        return normStr([ev.displayName, ev.username, ev.module, ev.action, ev.target, ev.details, ev.before, ev.after].join(' ')).indexOf(q) !== -1;
-    });
-    document.getElementById('auditVaultTbody').innerHTML = rows.map(function (ev) {
-        return '<tr><td class="p-3 font-mono whitespace-nowrap">' + new Date(ev.timestamp).toLocaleString('pt-BR') + '</td>' +
-            '<td class="p-3 font-bold">' + escHtml(ev.displayName || ev.username) + ' <span class="text-[10px] text-slate-400">(' + escHtml(ev.clientPlatform || 'WEB') + ')</span></td>' +
-            '<td class="p-3">' + escHtml(ev.module) + ' / <strong>' + escHtml(ev.action) + '</strong></td>' +
-            '<td class="p-3 font-mono font-bold text-[#004C97] dark:text-[#00A8E8]">' + escHtml(ev.target) + '</td>' +
-            '<td class="p-3 text-slate-500">' + escHtml(ev.before) + ' → ' + escHtml(ev.after) + '</td>' +
-            '<td class="p-3 text-slate-500">' + escHtml(ev.details) + '</td></tr>';
-    }).join('') || '<tr><td colspan="6" class="p-6 text-center text-slate-400">Nenhum evento encontrado.</td></tr>';
-}
-
-// ===================== SPOTLIGHT COMMAND PALETTE (CTRL+K) =====================
-function openCommandPalette() {
-    var m = document.getElementById('cmdPaletteModal');
-    if (!m) return;
-    pushVoithBackGuard('cmd-palette');
-    m.classList.remove('hidden');
-    var inp = document.getElementById('cmdSearchInput');
-    if (inp) { inp.value = ''; setTimeout(function () { inp.focus(); }, 40); }
-    _cmdSelectedIdx = 0;
-    renderCommandPalette();
-}
-
-function closeCommandPalette() {
-    var m = document.getElementById('cmdPaletteModal');
-    if (m) m.classList.add('hidden');
-}
-
-function renderCommandPalette() {
-    var q = normStr(document.getElementById('cmdSearchInput') ? document.getElementById('cmdSearchInput').value : '');
-    var ref = VoithDB.getRefDate();
-    var items = [];
-
-    // 1. Instrumentos (top 4 quando vazio, top 10 quando digitando)
-    var maxInst = q ? 10 : 4;
-    VoithDB.state.instruments.forEach(function (it) {
-        if (items.length >= maxInst) return;
-        var hay = normStr([it.code, it.desc, it.local, it.setor, it.resp, it.custodyHolder].join(' '));
-        if (!q || hay.indexOf(q) !== -1) {
-            var eff = getEffectiveStatus(it, ref);
-            items.push({
-                tag: 'INSTRUMENTOS',
-                icon: 'i-gauge-high',
-                title: it.code + ' — ' + it.desc,
-                sub: eff + ' • ' + (it.local || 'Sem local'),
-                run: function () { openInspectorModal(it.id); }
-            });
-        }
-    });
-
-    // 2. Armários & Bancadas (top 4 mais frequentes)
-    var locFreq = {};
-    VoithDB.state.instruments.forEach(function (it) {
-        var l = String(it.local || '').trim();
-        if (l) locFreq[l] = (locFreq[l] || 0) + 1;
-    });
-    var topLocs = Object.entries(locFreq).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) { return e[0]; });
-    var addedLocs = 0;
-    topLocs.forEach(function (loc) {
-        if (addedLocs >= 4) return;
-        if (!q || normStr(loc).indexOf(q) !== -1) {
-            addedLocs++;
-            items.push({
-                tag: 'ARMÁRIOS & BANCADAS',
-                icon: 'i-location-dot',
-                title: loc,
-                sub: 'Filtrar inventário por ' + loc,
-                run: function () { jumpToInventoryFilter({ local: loc }); }
-            });
-        }
-    });
-
-    // 3. Ações rápidas
-    var actions = [
-        { tag: 'AÇÕES', icon: 'i-plus', title: 'Cadastrar Novo Instrumento', sub: 'Abrir ficha em branco', run: function () { openInspectorModal(-1); } },
-        { tag: 'AÇÕES', icon: 'i-print', title: 'Imprimir Folha Porta de Armário', sub: 'Gerar folha pronta para plastificar', run: function () { openPrintModal('CABINET'); } },
-        { tag: 'AÇÕES', icon: 'i-handshake', title: 'Abrir Quadro Público de Cautelas', sub: 'Ver instrumentos em posse no campo', run: function () { navigateTo('custody'); } }
-    ];
-    actions.forEach(function (ac) {
-        if (!q || normStr(ac.title + ' ' + ac.sub).indexOf(q) !== -1) items.push(ac);
-    });
-
-    _cmdItems = items;
-    if (_cmdSelectedIdx >= items.length) _cmdSelectedIdx = 0;
-    var listEl = document.getElementById('cmdResultsList');
-    if (listEl) {
-        listEl.innerHTML = items.map(function (it, idx) {
-            var active = idx === _cmdSelectedIdx;
-            return '<button type="button" onclick="executeCmdItem(' + idx + ')" class="w-full text-left px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 cursor-pointer ' + (active ? 'bg-[#004C97] text-white shadow' : 'hover:bg-[#F3F6FA] dark:hover:bg-[#132846]') + '">' +
-                '<div class="flex items-center gap-3 min-w-0">' +
-                    '<svg class="vp-ico text-base shrink-0 ' + (active ? 'text-sky-200' : 'text-[#004C97] dark:text-[#00A8E8]') + '" aria-hidden="true"><use href="#' + it.icon + '"/></svg>' +
-                    '<div class="min-w-0"><div class="text-xs font-bold truncate">' + escHtml(it.title) + '</div><div class="text-[11px] truncate ' + (active ? 'text-sky-200' : 'text-slate-400') + '">' + escHtml(it.sub) + '</div></div>' +
-                '</div>' +
-                '<span class="text-[10px] font-extrabold uppercase tracking-wider shrink-0 ' + (active ? 'text-sky-100' : 'text-slate-400') + '">' + escHtml(it.tag) + '</span></button>';
-        }).join('') || '<div class="p-6 text-center text-xs text-slate-400">Nenhum resultado para "' + escHtml(q) + '".</div>';
-    }
-}
-
-function executeCmdItem(idx) {
-    var it = _cmdItems[idx];
-    closeCommandPalette();
-    if (it && typeof it.run === 'function') it.run();
-}
-
-function handleCmdKeydown(ev) {
-    if (ev.key === 'Escape') { closeCommandPalette(); return; }
-    if (ev.key === 'ArrowDown') { ev.preventDefault(); _cmdSelectedIdx = Math.min(_cmdItems.length - 1, _cmdSelectedIdx + 1); renderCommandPalette(); }
-    else if (ev.key === 'ArrowUp') { ev.preventDefault(); _cmdSelectedIdx = Math.max(0, _cmdSelectedIdx - 1); renderCommandPalette(); }
-    else if (ev.key === 'Enter') { ev.preventDefault(); executeCmdItem(_cmdSelectedIdx); }
-}
-
-// ===================== MODAL DE CONFIRMAÇÃO GENÉRICA =====================
-function openConfirmModal(title, msg, onConfirm) {
-    _confirmCallback = onConfirm;
-    document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = msg;
-    var btn = document.getElementById('confirmProceedBtn');
-    btn.onclick = function () {
-        closeConfirmModal();
-        if (typeof _confirmCallback === 'function') _confirmCallback();
-    };
-    document.getElementById('confirmModal').classList.remove('hidden');
-}
-
-function closeConfirmModal() { document.getElementById('confirmModal').classList.add('hidden'); }
-
-// ===================== INICIALIZAÇÃO GLOBAL =====================
-function bootApp() {
-    try {
-        if (localStorage.getItem(VoithDB.KEYS.SIDEBAR_KEY) === '1') document.body.classList.add('ck-sb-collapsed');
-        if (localStorage.getItem(VoithDB.KEYS.FACTORY_KEY) === '1') document.body.classList.add('vp-factory-mode');
-    } catch (e) {}
-
-    syncThemeIcons();
-    applyAuthBodyClasses();
-    renderAllViews();
-
-    document.addEventListener('click', function (e) {
-        if (!e.target.closest('#systemMenuWrap')) closeSystemMenu();
-        if (!e.target.closest('#heroQuickSearchInput') && !e.target.closest('#heroQuickSearchResults')) { var hqs = document.getElementById('heroQuickSearchResults'); if (hqs) { hqs.classList.add('hidden'); hqs.style.display = 'none'; } }
-    });
-
-    window.addEventListener('keydown', function (e) {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-            e.preventDefault();
-            openCommandPalette();
-            return;
-        }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && VoithDB.isEditor()) {
-            var tag = (e.target && e.target.tagName) || '';
-            if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-                e.preventDefault();
-                undoLastAction();
-            }
-            return;
-        }
-        if (e.key === 'Escape') {
-            closeCommandPalette();
-            closeSystemMenu();
-            closeInspectorModal();
-            closeCustodyModal();
-            closeExternalModal();
-            closeReturnLabModal();
-            closeBatchReturnLabModal();
-            closeLostModal();
-            closeImportModal();
-            closePrintModal();
-            closeBackupModal();
-            closeCloudModal();
-            closeLoginModal();
-            closeChangePassModal();
-            closeAdminUsersModal();
-            closeResetPassModal();
-            closeUnmappedModal();
-            closeRapidLocalModal();
-            closeAuditVaultModal();
-            closeReceiptShareModal();
-            closeConfirmModal();
-            closeWhatsNewModal();
-        }
-    });
-
-    var _rszT = null; window.addEventListener('resize', function () { clearTimeout(_rszT); _rszT = setTimeout(function () { if (VoithDB.state.view === 'inventory') renderInventoryView(); }, 180); });
-    setTimeout(function () { checkOtaUpdatesOnBoot(); }, 1200);
-    VoithCloud.loadState(false, false).then(function () {
-        checkOtaUpdatesOnBoot();
-        sendBootTelemetryOnce();
-    });
-
-    setInterval(function () {
-        if (!document.hidden && !VoithDB.state.pendingConflict) {
-            VoithCloud.loadState(false, true);
-            pollLiveOtaRelease();
-        }
-    }, 25000);
-
-    document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) {
-            pollLiveOtaRelease();
-        }
-    });
-
-    // Intercepta botão Voltar do celular (Android APK Capacitor + Chrome Mobile)
-    // Arma o histórico no primeiro toque real (Chrome/WebView ignora pushState antes de gesto do usuário)
-    var armBackGuardOnGesture = function () {
-        if (!_voithGuardArmed) {
-            pushVoithBackGuard('home');
-        }
-    };
-    document.addEventListener('pointerdown', armBackGuardOnGesture, { passive: true });
-    document.addEventListener('touchstart', armBackGuardOnGesture, { passive: true });
-
-    var handleMobileBackAction = function () {
-        var sb = document.getElementById('vpSidebar');
-        if (sb && sb.classList.contains('is-open')) {
-            closeMobileSidebar();
-            pushVoithBackGuard('stay');
-            return true;
-        }
-        var insp = document.getElementById('inspectorOverlay');
-        if (insp && !insp.classList.contains('hidden')) {
-            closeInspectorModal();
-            pushVoithBackGuard('stay');
-            return true;
-        }
-        var openModals = [
-            ['cmdPaletteModal', closeCommandPalette],
-            ['custodyDetailModal', closeCustodyItemDetail],
-            ['custodyModal', closeCustodyModal],
-            ['externalModal', closeExternalModal],
-            ['returnLabModal', closeReturnLabModal],
-            ['batchReturnLabModal', closeBatchReturnLabModal],
-            ['lostModal', closeLostModal],
-            ['importModal', closeImportModal],
-            ['printModal', closePrintModal],
-            ['backupModal', closeBackupModal],
-            ['cloudModal', closeCloudModal],
-            ['loginModal', closeLoginModal],
-            ['changePassModal', closeChangePassModal],
-            ['adminUsersModal', closeAdminUsersModal],
-            ['resetPassModal', closeResetPassModal],
-            ['unmappedModal', closeUnmappedModal],
-            ['rapidLocalModal', closeRapidLocalModal],
-            ['auditVaultModal', closeAuditVaultModal],
-            ['receiptShareModal', closeReceiptShareModal],
-            ['confirmModal', closeConfirmModal],
-            ['whatsNewModal', closeWhatsNewModal]
-        ];
-        for (var i = 0; i < openModals.length; i++) {
-            var mEl = document.getElementById(openModals[i][0]);
-            if (mEl && !mEl.classList.contains('hidden')) {
-                openModals[i][1]();
-                pushVoithBackGuard('stay');
-                return true;
-            }
-        }
-        if (VoithDB.state.view && VoithDB.state.view !== 'command') {
-            navigateTo('command', true);
-            pushVoithBackGuard('home');
-            return true;
-        }
-        // Na tela inicial: exige 2 toques rápidos em Voltar para sair (evita fechar o app sem querer)
-        var nowMs = Date.now();
-        if (nowMs - _voithLastBackPress > 2000) {
-            _voithLastBackPress = nowMs;
-            pushVoithBackGuard('exit-guard');
-            showToast('Pressione Voltar novamente para sair', 'warn');
-            return true;
-        }
-        return false;
-    };
-
-    window.addEventListener('popstate', function () {
-        handleMobileBackAction();
-    });
-
-    document.addEventListener('backbutton', function (ev) {
-        if (handleMobileBackAction() && ev && typeof ev.preventDefault === 'function') {
-            ev.preventDefault();
-        }
-    }, false);
-
-    try {
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App && typeof window.Capacitor.Plugins.App.addListener === 'function') {
-            window.Capacitor.Plugins.App.addListener('backButton', function () {
-                if (!handleMobileBackAction()) {
-                    if (typeof window.Capacitor.Plugins.App.exitApp === 'function') {
-                        window.Capacitor.Plugins.App.exitApp();
-                    }
-                }
-            });
-        }
-    } catch (e) {}
-}
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
-else bootApp();
-
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.20) =====================
-var _lastOtaVersionShown = '';
-var _otaCheckDone = false;
-
-function compareVersions(a, b) {
-    var pa = String(a || '0').replace(/^v/i, '').split('.').map(function (n) { return parseInt(n, 10) || 0; });
-    var pb = String(b || '0').replace(/^v/i, '').split('.').map(function (n) { return parseInt(n, 10) || 0; });
-    for (var i = 0; i < Math.max(pa.length, pb.length, 3); i++) {
-        var na = pa[i] || 0, nb = pb[i] || 0;
-        if (na > nb) return 1;
-        if (na < nb) return -1;
-    }
-    return 0;
-}
-
-function evaluateReleaseDisplay(latest, curVer) {
-    if (!latest || !latest.version) return;
-    var lastSeen = '';
-    var prevVer = '';
-    try {
-        lastSeen = localStorage.getItem('voith_last_seen_release_v16') || '';
-        prevVer = localStorage.getItem('voith_prev_running_ver_v16') || '';
-    } catch (e) {}
-
-    var cmp = compareVersions(latest.version, curVer);
-    var justUpdatedToThis = (prevVer && prevVer !== curVer && cmp === 0);
-
-    if (cmp > 0) {
-        openWhatsNewModal(latest, true, curVer);
-    } else if ((cmp === 0 && lastSeen !== latest.version) || justUpdatedToThis) {
-        openWhatsNewModal(latest, false, curVer);
-    }
-
-    try { localStorage.setItem('voith_prev_running_ver_v16', curVer); } catch (e) {}
-}
-
-async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
-    var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
-    if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
-    VoithDB.state.releaseChannel = ota;
-    try { localStorage.setItem('voith_cached_release_v16', JSON.stringify(ota.latest)); } catch (e) {}
-
-    var latest = ota.latest;
-    var lastSeen = '';
-    try { lastSeen = localStorage.getItem('voith_last_seen_release_v16') || ''; } catch (e) {}
-
-    var modal = document.getElementById('whatsNewModal');
-    var modalVisible = modal && !modal.classList.contains('hidden');
-    if (!modalVisible && lastSeen !== latest.version) {
-        var cmp = compareVersions(latest.version, curVer);
-        openWhatsNewModal(latest, cmp > 0, curVer);
-    }
-}
-
-async function checkOtaUpdatesOnBoot() {
-    if (_otaCheckDone) {
-        await pollLiveOtaRelease();
-        return;
-    }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
-
-    // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
-    try {
-        var cachedRel = JSON.parse(localStorage.getItem('voith_cached_release_v16') || 'null');
-        if (cachedRel && cachedRel.version) {
-            setTimeout(function () { evaluateReleaseDisplay(cachedRel, curVer); }, 350);
-        }
-    } catch (e) {}
-
-    // 2. Consulta canal OTA atualizado no servidor
-    var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
-    if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
-    _otaCheckDone = true;
-    VoithDB.state.releaseChannel = ota;
-    try { localStorage.setItem('voith_cached_release_v16', JSON.stringify(ota.latest)); } catch (e) {}
-
-    setTimeout(function () { evaluateReleaseDisplay(ota.latest, curVer); }, 450);
-}
-
-function openWhatsNewModal(releaseObj, needsReload, curVer) {
-    var modal = document.getElementById('whatsNewModal');
-    if (!modal) return;
-    _lastOtaVersionShown = releaseObj.version || '';
-    var badge = document.getElementById('wnBadge');
-    var title = document.getElementById('wnTitle');
-    var meta = document.getElementById('wnMeta');
-    var chg = document.getElementById('wnChangelog');
-    var reloadBtn = document.getElementById('wnReloadBtn');
-
-    if (badge) badge.textContent = needsReload ? 'Nova Atualização Disponível' : 'Sistema Atualizado Automaticamente';
-    if (title) title.textContent = needsReload ? ('Nova Versão v' + releaseObj.version + ' Disponível') : ('Novidades da Versão v' + releaseObj.version);
-    if (meta) {
-        meta.textContent = needsReload
-            ? ('Você está na v' + curVer + '. Clique em "Atualizar Agora" para carregar a v' + releaseObj.version + ' sem precisar reinstalar.')
-            : ('Você abriu a versão v' + curVer + '. Veja abaixo o que mudou:');
-    }
-    if (chg) chg.textContent = releaseObj.changelog || '- Melhorias gerais de desempenho e estabilidade.';
-    if (reloadBtn) reloadBtn.classList.toggle('hidden', !needsReload);
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-}
-
-function closeWhatsNewModal() {
-    var modal = document.getElementById('whatsNewModal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.style.display = '';
-    }
-    if (_lastOtaVersionShown) {
-        try { localStorage.setItem('voith_last_seen_release_v16', _lastOtaVersionShown); } catch (e) {}
-    }
-}
-
-function applyOtaReloadNow() {
-    if (_lastOtaVersionShown) {
-        try { localStorage.setItem('voith_last_seen_release_v16', _lastOtaVersionShown); } catch (e) {}
-    }
-    var liveUrl = (window.VOITH_CONFIG && window.VOITH_CONFIG.LIVE_APP_URL) || '';
-    if (location.protocol === 'file:' && liveUrl) {
-        window.location.href = liveUrl + '?v=' + Date.now();
-        return;
-    }
-    var base = window.location.href.split('?')[0];
-    window.location.href = base + '?v=' + Date.now();
-}
-
-function sendBootTelemetryOnce() {
-    try {
-        if (sessionStorage.getItem('voith_boot_ping_sent')) return;
-        sessionStorage.setItem('voith_boot_ping_sent', '1');
-    } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
-    var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
-    VoithCloud.callRpc({
-        action: 'log_telemetry',
-        eventType: 'APP_BOOT',
-        detail: 'Acesso ativo em ' + (window.VOITH_PLATFORM || 'WEB') + ' (v' + curVer + ')',
-        latencyMs: 0,
-        appVersion: curVer,
-        username: user
-    }, false);
-}
-
-function togglePublishReleaseForm() {
-    var f = document.getElementById('admPublishReleaseForm');
-    if (!f) return;
-    f.classList.toggle('hidden');
-    if (!f.classList.contains('hidden')) {
-        var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.20.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
     }
 }
 
