@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.18 • cloud.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.19 • cloud.js
  * Integração Supabase PostgreSQL com envelope PostgREST { payload: ... }
  * ============================================================================ */
 

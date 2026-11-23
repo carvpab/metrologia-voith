@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.18 • utils.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.19 • utils.js
  * Utilitários puros: datas BR, classificação metrológica, máscaras, toast, CSV
  * ============================================================================ */
 
@@ -29,19 +29,39 @@ function normStr(v) {
 function parseDateBR(str) {
     var s = String(str == null ? '' : str).trim();
     if (!s || s === '-' || s.toUpperCase() === 'N/A' || s.toUpperCase() === 'S/D') return null;
-    var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
     if (m) {
         var yr = Number(m[3]);
         if (yr < 100) yr += 2000;
-        var d = new Date(yr, Number(m[2]) - 1, Number(m[1]), 12, 0, 0);
-        return isNaN(d.getTime()) ? null : d;
+        var mon = Number(m[2]);
+        var day = Number(m[1]);
+        if (mon < 1 || mon > 12 || day < 1 || day > 31) return null;
+        var d = new Date(yr, mon - 1, day, 12, 0, 0);
+        if (isNaN(d.getTime()) || d.getDate() !== day || d.getMonth() !== mon - 1) return null;
+        return d;
     }
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (m) {
-        var d2 = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
-        return isNaN(d2.getTime()) ? null : d2;
+        var yr2 = Number(m[1]), mon2 = Number(m[2]), day2 = Number(m[3]);
+        var d2 = new Date(yr2, mon2 - 1, day2, 12, 0, 0);
+        if (isNaN(d2.getTime()) || d2.getDate() !== day2 || d2.getMonth() !== mon2 - 1) return null;
+        return d2;
+    }
+    m = s.match(/^(\d{2})(\d{2})(\d{4})$/);
+    if (m) {
+        var day3 = Number(m[1]), mon3 = Number(m[2]), yr3 = Number(m[3]);
+        if (mon3 < 1 || mon3 > 12 || day3 < 1 || day3 > 31) return null;
+        var d3 = new Date(yr3, mon3 - 1, day3, 12, 0, 0);
+        if (isNaN(d3.getTime()) || d3.getDate() !== day3 || d3.getMonth() !== mon3 - 1) return null;
+        return d3;
     }
     return null;
+}
+
+function extractBRTimeStr(val) {
+    var s = String(val == null ? '' : val).trim();
+    var m = s.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+    return m ? m[1] : '';
 }
 
 function formatDateBR(d) {

@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.18 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.19 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -574,7 +574,7 @@ body.vp-factory-mode #heroManualDateOkBtn {
     color: #000000 !important;
 }
 
-/* === CORREÇÕES v16.18: Strip Mobile, Input Data Manual e Modo Fábrica === */
+/* === CORREÇÕES v16.19: Strip Mobile, Input Data Manual e Modo Fábrica === */
 @media (min-width: 1024px) {
     .ck-mob-strip { display: none !important; }
 }
@@ -616,4 +616,20 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     background: #004C97 !important;
     background-color: #004C97 !important;
     color: #FFFFFF !important;
+}
+
+/* === CORREÇÕES v16.19: Modal Detalhes Cautela, Busca Hero e Data Manual === */
+#custodyDetailModal {
+    z-index: 125 !important;
+}
+#heroQuickSearchResults {
+    max-height: 280px;
+    overflow-y: auto;
+    background: #001229;
+    border: 1px solid rgba(0, 168, 232, 0.55);
+}
+#heroCustomDateBR {
+    width: 102px !important;
+    min-width: 96px;
+    letter-spacing: 0.03em;
 }

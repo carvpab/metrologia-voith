@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.18 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.19 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -20,8 +20,25 @@ var _cmdSelectedIdx = 0;
 var _cmdItems = [];
 
 // ===================== NAVEGAÇÃO & TEMA =====================
-function navigateTo(view) {
+var _voithHistorySeq = 0;
+var _voithGuardArmed = false;
+var _voithLastBackPress = 0;
+
+function pushVoithBackGuard(reason) {
+    try {
+        _voithHistorySeq++;
+        var tag = (reason || 'nav') + '-' + _voithHistorySeq;
+        window.history.pushState({ voithApp: true, seq: _voithHistorySeq, reason: reason || 'nav' }, '', '#' + tag);
+        _voithGuardArmed = true;
+    } catch (e) {}
+}
+
+function navigateTo(view, fromPopState) {
+    var prevView = VoithDB.state.view;
     VoithDB.state.view = view;
+    if (!fromPopState && view && view !== 'command' && view !== prevView) {
+        pushVoithBackGuard('view-' + view);
+    }
     ['command', 'inventory', 'custody', 'lab'].forEach(function (v) {
         var sec = document.getElementById('view-' + v);
         if (sec) sec.setAttribute('data-hidden', v === view ? 'false' : 'true');
@@ -231,38 +248,19 @@ function setHorizonDays(days) {
 
 function setRefDateISO(iso) {
     var raw = String(iso || '').trim();
-    var d = null;
-    var mBr = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    var mIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (mBr) {
-        var yr = Number(mBr[3]);
-        if (yr < 100) yr += 2000;
-        var mon = Number(mBr[2]);
-        var day = Number(mBr[1]);
-        if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
-            d = new Date(yr, mon - 1, day, 12, 0, 0);
-        }
-    } else if (mIso) {
-        d = new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]), 12, 0, 0);
-    } else if (typeof parseDateBR === 'function') {
-        d = parseDateBR(raw);
-    }
+    var d = parseDateBR(raw);
     if (!d || isNaN(d.getTime())) {
-        showToast('Data inválida. Digite no formato DD/MM/AAAA (ex: 21/01/2027).', 'warn');
+        showToast('Data inválida. Digite DD/MM/AAAA (ex: 21/01/2027).', 'warn');
         return;
     }
-    var brStr = String(d.getDate()).padStart(2, '0') + '/' +
-                String(d.getMonth() + 1).padStart(2, '0') + '/' +
-                d.getFullYear();
-    var isoStr = d.getFullYear() + '-' +
-                 String(d.getMonth() + 1).padStart(2, '0') + '-' +
-                 String(d.getDate()).padStart(2, '0');
+    var brStr = formatDateBR(d);
+    var isoStr = formatDateISO(d);
 
     VoithDB.state.refDateISO = isoStr;
     VoithDB.state.horizonOffsetDays = 0;
 
     var brInp = document.getElementById('heroCustomDateBR');
-    if (brInp) brInp.value = brStr;
+    if (brInp) { brInp.value = brStr; brInp._prevValLen = brStr.length; }
     var pkInp = document.getElementById('heroCustomDatePicker');
     if (pkInp) pkInp.value = isoStr;
     var box = document.getElementById('heroManualDateBox');
@@ -282,7 +280,7 @@ function resetRefDate() {
     var inp = document.getElementById('heroCustomDatePicker');
     if (inp) inp.value = '';
     var brInp = document.getElementById('heroCustomDateBR');
-    if (brInp) brInp.value = '';
+    if (brInp) { brInp.value = ''; brInp._prevValLen = 0; }
     var box = document.getElementById('heroManualDateBox');
     if (box) {
         box.classList.add('hidden');
@@ -300,8 +298,9 @@ function toggleManualSimDateBox() {
         box.classList.remove('hidden');
         box.style.display = 'inline-flex';
         if (inp) {
-            inp.value = formatDateBR(VoithDB.getRefDate());
-            setTimeout(function () { inp.focus(); inp.select(); }, 30);
+            inp.value = '';
+            inp._prevValLen = 0;
+            setTimeout(function () { inp.focus(); }, 40);
         }
     } else {
         box.classList.add('hidden');
@@ -311,24 +310,32 @@ function toggleManualSimDateBox() {
 
 function onManualSimDateTyping(el, ev) {
     if (!el) return;
-    var isBackspace = ev && ev.inputType === 'deleteContentBackward';
-    var digits = String(el.value || '').replace(/\D/g, '').slice(0, 8);
+    var raw = String(el.value || '');
+    var prevLen = Number(el._prevValLen || 0);
+    var isDeleting = (ev && ev.inputType && ev.inputType.indexOf('delete') === 0) || raw.length < prevLen;
+    var digits = raw.replace(/\D/g, '').slice(0, 8);
     var out = '';
+
     if (digits.length > 4) {
         out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
-    } else if (digits.length === 4 && !isBackspace) {
-        out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/';
+    } else if (digits.length === 4) {
+        out = isDeleting ? (digits.slice(0, 2) + '/' + digits.slice(2, 4)) : (digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/');
     } else if (digits.length > 2) {
         out = digits.slice(0, 2) + '/' + digits.slice(2);
-    } else if (digits.length === 2 && !isBackspace) {
-        out = digits + '/';
+    } else if (digits.length === 2) {
+        out = isDeleting ? digits : (digits + '/');
     } else {
         out = digits;
     }
-    el.value = out;
-    var d = parseDateBR(out);
-    var pk = document.getElementById('heroCustomDatePicker');
-    if (d && pk) pk.value = formatDateISO(d);
+
+    if (el.value !== out) el.value = out;
+    el._prevValLen = out.length;
+
+    if (digits.length === 8) {
+        var d = parseDateBR(out);
+        var pk = document.getElementById('heroCustomDatePicker');
+        if (d && pk) pk.value = formatDateISO(d);
+    }
 }
 
 // ===================== BUSCA RÁPIDA NO HERO BANNER =====================
@@ -341,19 +348,21 @@ function renderHeroQuickSearch() {
     if (clr) clr.classList.toggle('hidden', !raw);
     if (!raw) {
         box.classList.add('hidden');
+        box.style.display = 'none';
         box.innerHTML = '';
         return;
     }
     var q = normStr(raw);
     var ref = VoithDB.getRefDate();
-    var matches = VoithDB.state.instruments.filter(function (it) {
-        var hay = normStr([it.code, it.desc, it.local, it.setor, it.resp, it.custodyHolder].join(' '));
+    var matches = (VoithDB.state.instruments || []).filter(function (it) {
+        var hay = normStr([it.code, it.desc, it.local, it.setor, it.resp, it.custodyHolder, it.cc].join(' '));
         return hay.indexOf(q) !== -1;
     });
     var top = matches.slice(0, 6);
     if (!top.length) {
-        box.innerHTML = '<div class="px-4 py-3 text-xs text-slate-400">Nenhum instrumento encontrado para "' + escHtml(raw) + '".</div>';
+        box.innerHTML = '<div class="px-4 py-3 text-xs text-slate-300">Nenhum instrumento encontrado para "' + escHtml(raw) + '".</div>';
         box.classList.remove('hidden');
+        box.style.display = 'block';
         return;
     }
     var rowsHtml = top.map(function (it) {
@@ -373,6 +382,7 @@ function renderHeroQuickSearch() {
     rowsHtml += '<button type="button" onclick="submitHeroQuickSearch()" class="w-full px-4 py-2 text-center text-[11px] font-extrabold text-[#00A8E8] hover:bg-white/10 cursor-pointer">Ver todos os ' + matches.length + ' resultado(s) no Inventário &rarr;</button>';
     box.innerHTML = rowsHtml;
     box.classList.remove('hidden');
+    box.style.display = 'block';
 }
 
 function clearHeroQuickSearch() {
@@ -381,7 +391,7 @@ function clearHeroQuickSearch() {
     var clr = document.getElementById('heroQuickSearchClear');
     if (inp) inp.value = '';
     if (clr) clr.classList.add('hidden');
-    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+    if (box) { box.classList.add('hidden'); box.style.display = 'none'; box.innerHTML = ''; }
 }
 
 function submitHeroQuickSearch() {
@@ -675,6 +685,7 @@ function openInspectorModal(id) {
         inp.disabled = ro;
     });
 
+    pushVoithBackGuard('inspector');
     overlay.classList.remove('hidden');
 }
 
@@ -981,6 +992,7 @@ function openCustodyModalInternal(showPicker) {
     clearCustodySignature();
     bindSignaturePadOnce();
     refreshCustodyModalTargetUI();
+    pushVoithBackGuard('custody-modal');
     m.classList.remove('hidden');
 }
 
@@ -1161,10 +1173,12 @@ async function saveCustodyModal() {
         var snap = VoithDB.makeItemSnapshot(it);
         it._baseRev = it.rev || 1;
         it._baseSnapshot = snap;
+        var nowHm = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        var dateOnly = toBRDateStr(cDate) || todayBR();
         it.custodyHolder = holder;
         it.custodyReturnTo = retTo || it.local || '';
-        it.custodyDate = cDate;
-        it.custodyTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        it.custodyDate = dateOnly + ' ' + nowHm;
+        it.custodyTime = nowHm;
         it.custodyReason = reason;
         if (stSel && stSel !== '__KEEP__') it.status = stSel;
         upserts.push(it);
@@ -1290,9 +1304,10 @@ async function openCustodyItemDetail(id) {
         }
     };
 
+    var savedTime = extractBRTimeStr(it.custodyDate) || it.custodyTime || '';
     var localRec = findMatchingReceipt(VoithDB.state.receipts);
-    if (it.custodyTime) {
-        document.getElementById('cdTime').textContent = it.custodyTime;
+    if (savedTime) {
+        document.getElementById('cdTime').textContent = savedTime;
     } else if (localRec) {
         document.getElementById('cdTime').textContent = '-';
     } else {
@@ -1300,6 +1315,7 @@ async function openCustodyItemDetail(id) {
     }
     if (localRec) applyReceiptData(localRec);
 
+    pushVoithBackGuard('custody-detail');
     modal.classList.remove('hidden');
 
     if (VoithDB.isEditor()) {
@@ -1308,10 +1324,10 @@ async function openCustodyItemDetail(id) {
             var srvRec = findMatchingReceipt(res.receipts);
             if (srvRec) {
                 applyReceiptData(srvRec);
-            } else if (!it.custodyTime && !localRec) {
+            } else if (!savedTime && !localRec) {
                 document.getElementById('cdTime').textContent = 'Não registrado';
             }
-        } else if (!it.custodyTime && !localRec) {
+        } else if (!savedTime && !localRec) {
             document.getElementById('cdTime').textContent = 'Não registrado';
         }
     }
@@ -1840,7 +1856,7 @@ function closeBackupModal() { document.getElementById('backupModal').classList.a
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.18',
+        appVersion: '16.19',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -2299,7 +2315,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.18</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.19</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -2315,16 +2331,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.18',
+        detail: 'Teste manual de telemetria via Painel Admin v16.19',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.18.0',
+        appVersion: '16.19.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.18.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.19.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -2390,6 +2406,7 @@ function renderAuditVaultTable() {
 function openCommandPalette() {
     var m = document.getElementById('cmdPaletteModal');
     if (!m) return;
+    pushVoithBackGuard('cmd-palette');
     m.classList.remove('hidden');
     var inp = document.getElementById('cmdSearchInput');
     if (inp) { inp.value = ''; setTimeout(function () { inp.focus(); }, 40); }
@@ -2513,7 +2530,7 @@ function bootApp() {
 
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#systemMenuWrap')) closeSystemMenu();
-        if (!e.target.closest('#heroQuickSearchInput') && !e.target.closest('#heroQuickSearchResults')) { var hqs = document.getElementById('heroQuickSearchResults'); if (hqs) hqs.classList.add('hidden'); }
+        if (!e.target.closest('#heroQuickSearchInput') && !e.target.closest('#heroQuickSearchResults')) { var hqs = document.getElementById('heroQuickSearchResults'); if (hqs) { hqs.classList.add('hidden'); hqs.style.display = 'none'; } }
     });
 
     window.addEventListener('keydown', function (e) {
@@ -2576,18 +2593,28 @@ function bootApp() {
         }
     });
 
-    // Intercepta botão Voltar do celular / navegador para não fechar o app ao ver detalhes ou subabas
-    try {
-        window.history.pushState({ voithApp: true }, '');
-    } catch (e) {}
+    // Intercepta botão Voltar do celular (Android APK Capacitor + Chrome Mobile)
+    // Arma o histórico no primeiro toque real (Chrome/WebView ignora pushState antes de gesto do usuário)
+    var armBackGuardOnGesture = function () {
+        if (!_voithGuardArmed) {
+            pushVoithBackGuard('home');
+        }
+    };
+    document.addEventListener('pointerdown', armBackGuardOnGesture, { passive: true });
+    document.addEventListener('touchstart', armBackGuardOnGesture, { passive: true });
 
-    window.addEventListener('popstate', function () {
-        try { window.history.pushState({ voithApp: true }, ''); } catch (e) {}
-
+    var handleMobileBackAction = function () {
+        var sb = document.getElementById('vpSidebar');
+        if (sb && sb.classList.contains('is-open')) {
+            closeMobileSidebar();
+            pushVoithBackGuard('stay');
+            return true;
+        }
         var insp = document.getElementById('inspectorOverlay');
         if (insp && !insp.classList.contains('hidden')) {
             closeInspectorModal();
-            return;
+            pushVoithBackGuard('stay');
+            return true;
         }
         var openModals = [
             ['cmdPaletteModal', closeCommandPalette],
@@ -2616,27 +2643,53 @@ function bootApp() {
             var mEl = document.getElementById(openModals[i][0]);
             if (mEl && !mEl.classList.contains('hidden')) {
                 openModals[i][1]();
-                return;
+                pushVoithBackGuard('stay');
+                return true;
             }
         }
         if (VoithDB.state.view && VoithDB.state.view !== 'command') {
-            navigateTo('command');
+            navigateTo('command', true);
+            pushVoithBackGuard('home');
+            return true;
         }
+        // Na tela inicial: exige 2 toques rápidos em Voltar para sair (evita fechar o app sem querer)
+        var nowMs = Date.now();
+        if (nowMs - _voithLastBackPress > 2000) {
+            _voithLastBackPress = nowMs;
+            pushVoithBackGuard('exit-guard');
+            showToast('Pressione Voltar novamente para sair', 'warn');
+            return true;
+        }
+        return false;
+    };
+
+    window.addEventListener('popstate', function () {
+        handleMobileBackAction();
     });
 
-    // Garante clique direto no botão OK da data manual mesmo se algum listener interferir
-    var okBtn = document.getElementById('heroManualDateOkBtn');
-    if (okBtn) {
-        okBtn.addEventListener('click', function (ev) {
-            applyManualSimDateBR(ev);
-        });
-    }
+    document.addEventListener('backbutton', function (ev) {
+        if (handleMobileBackAction() && ev && typeof ev.preventDefault === 'function') {
+            ev.preventDefault();
+        }
+    }, false);
+
+    try {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App && typeof window.Capacitor.Plugins.App.addListener === 'function') {
+            window.Capacitor.Plugins.App.addListener('backButton', function () {
+                if (!handleMobileBackAction()) {
+                    if (typeof window.Capacitor.Plugins.App.exitApp === 'function') {
+                        window.Capacitor.Plugins.App.exitApp();
+                    }
+                }
+            });
+        }
+    } catch (e) {}
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.18) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.19) =====================
 var _lastOtaVersionShown = '';
 var _otaCheckDone = false;
 
@@ -2673,7 +2726,7 @@ function evaluateReleaseDisplay(latest, curVer) {
 }
 
 async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.19.0';
     var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
     if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
     VoithDB.state.releaseChannel = ota;
@@ -2696,7 +2749,7 @@ async function checkOtaUpdatesOnBoot() {
         await pollLiveOtaRelease();
         return;
     }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.19.0';
 
     // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
     try {
@@ -2768,7 +2821,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.19.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -2786,7 +2839,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.19.0';
     }
 }
 
