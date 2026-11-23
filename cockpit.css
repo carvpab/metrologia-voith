@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.12 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.14 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -428,9 +428,25 @@ body.vp-factory-mode .vp-table-wrap thead {
     background-color: #121212 !important;
     color: #FFFFFF !important;
 }
+#systemMenuDropdown,
+#systemMenuDropdown * {
+    color: inherit;
+}
+#systemMenuDropdown button,
+#systemMenuDropdown a {
+    color: #0F172A;
+}
+.dark #systemMenuDropdown button,
+.dark #systemMenuDropdown a {
+    color: #F1F5F9;
+}
+body.vp-factory-mode #systemMenuDropdown,
+body.vp-factory-mode #systemMenuDropdown * {
+    color: #FFFFFF !important;
+}
 body.vp-factory-mode #systemMenuDropdown button,
 body.vp-factory-mode #systemMenuDropdown a {
-    background: transparent !important;
+    background: #0A0A0A !important;
     color: #FFFFFF !important;
     border-color: transparent !important;
 }
@@ -541,4 +557,19 @@ html.ck-theme-switching *::after {
 .ck-val-fill {
     height: 100%;
     border-radius: 999px;
+}
+
+#heroManualDateBox {
+    background: #001024;
+}
+body.vp-factory-mode #heroManualDateBox,
+body.vp-factory-mode #heroManualDateBox input,
+body.vp-factory-mode #heroManualDateToggleBtn {
+    background: #141414 !important;
+    color: #FFFFFF !important;
+    border-color: #FACC15 !important;
+}
+body.vp-factory-mode #heroManualDateOkBtn {
+    background: #FACC15 !important;
+    color: #000000 !important;
 }
