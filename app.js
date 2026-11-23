@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.15 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.16 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -230,19 +230,43 @@ function setHorizonDays(days) {
 }
 
 function setRefDateISO(iso) {
-    var cleanIso = String(iso || '').trim();
-    var d = parseDateBR(cleanIso);
-    if (!d) return;
-    VoithDB.state.refDateISO = formatDateISO(d);
+    var raw = String(iso || '').trim();
+    var d = null;
+    var mBr = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    var mIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (mBr) {
+        var yr = Number(mBr[3]);
+        if (yr < 100) yr += 2000;
+        d = new Date(yr, Number(mBr[2]) - 1, Number(mBr[1]), 12, 0, 0);
+    } else if (mIso) {
+        d = new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]), 12, 0, 0);
+    } else if (typeof parseDateBR === 'function') {
+        d = parseDateBR(raw);
+    }
+    if (!d || isNaN(d.getTime())) {
+        showToast('Data inválida. Use DD/MM/AAAA.', 'warn');
+        return;
+    }
+    var brStr = String(d.getDate()).padStart(2, '0') + '/' +
+                String(d.getMonth() + 1).padStart(2, '0') + '/' +
+                d.getFullYear();
+    var isoStr = d.getFullYear() + '-' +
+                 String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                 String(d.getDate()).padStart(2, '0');
+
+    VoithDB.state.refDateISO = isoStr;
     VoithDB.state.horizonOffsetDays = 0;
+
     var brInp = document.getElementById('heroCustomDateBR');
-    if (brInp) brInp.value = formatDateBR(d);
+    if (brInp) brInp.value = brStr;
     var pkInp = document.getElementById('heroCustomDatePicker');
-    if (pkInp) pkInp.value = formatDateISO(d);
+    if (pkInp) pkInp.value = isoStr;
     var box = document.getElementById('heroManualDateBox');
     if (box) box.classList.add('hidden');
-    renderAllViews();
-    showToast('Simulando horizonte para ' + formatDateBR(d), 'ok');
+
+    if (typeof renderAllViews === 'function') renderAllViews();
+    if (typeof renderCommandCenter === 'function') renderCommandCenter();
+    showToast('Simulando horizonte para ' + brStr, 'ok');
 }
 
 function resetRefDate() {
@@ -254,7 +278,7 @@ function resetRefDate() {
     if (brInp) brInp.value = '';
     var box = document.getElementById('heroManualDateBox');
     if (box) box.classList.add('hidden');
-    renderAllViews();
+    if (typeof renderAllViews === 'function') renderAllViews();
 }
 
 function toggleManualSimDateBox() {
@@ -278,15 +302,17 @@ function onManualSimDateTyping(el) {
 
 function applyManualSimDateBR(ev) {
     if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
     var inp = document.getElementById('heroCustomDateBR');
     var pk = document.getElementById('heroCustomDatePicker');
     var rawBr = inp ? String(inp.value || '').trim() : '';
-    var d = (rawBr.length >= 8 ? parseDateBR(rawBr) : null) || (pk && pk.value ? parseDateBR(pk.value) : null);
-    if (!d) {
-        showToast('Digite uma data válida no formato DD/MM/AAAA ou escolha no calendário.', 'warn');
+    var rawPk = pk ? String(pk.value || '').trim() : '';
+    var chosen = rawBr || rawPk;
+    if (!chosen) {
+        showToast('Digite uma data (DD/MM/AAAA) ou escolha no calendário.', 'warn');
         return;
     }
-    setRefDateISO(formatDateISO(d));
+    setRefDateISO(chosen);
 }
 
 // ===================== FILTROS & INVENTÁRIO =====================
@@ -1620,7 +1646,7 @@ function closeBackupModal() { document.getElementById('backupModal').classList.a
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.15',
+        appVersion: '16.16',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -2079,7 +2105,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.15</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.16</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -2095,16 +2121,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.15',
+        detail: 'Teste manual de telemetria via Painel Admin v16.16',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.15.0',
+        appVersion: '16.16.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.15.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.16.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -2359,7 +2385,7 @@ function bootApp() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.15) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.16) =====================
 var _lastOtaVersionShown = '';
 var _otaCheckDone = false;
 
@@ -2396,7 +2422,7 @@ function evaluateReleaseDisplay(latest, curVer) {
 }
 
 async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.15.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.16.0';
     var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
     if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
     VoithDB.state.releaseChannel = ota;
@@ -2419,7 +2445,7 @@ async function checkOtaUpdatesOnBoot() {
         await pollLiveOtaRelease();
         return;
     }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.15.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.16.0';
 
     // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
     try {
@@ -2491,7 +2517,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.15.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.16.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -2509,7 +2535,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.15.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.16.0';
     }
 }
 

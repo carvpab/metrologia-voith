@@ -1,4 +1,4 @@
-// Voith Metrology OS v16.15 — Limpa caches antigos do Service Worker para garantir OTA instantâneo
+// Voith Metrology OS v16.16 — Limpa caches antigos do Service Worker para garantir OTA instantâneo
 self.addEventListener('install', function (e) { self.skipWaiting(); });
 self.addEventListener('activate', function (e) {
     e.waitUntil(
