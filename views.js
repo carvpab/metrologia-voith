@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.10 • views.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.12 • views.js
  * Renderização fiel ao Cockpit v12 (4 Workspaces + SVG Gauge + Donut + Radar)
  * ============================================================================ */
 

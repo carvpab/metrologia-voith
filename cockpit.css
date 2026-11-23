@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.10 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.12 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -394,7 +394,7 @@ body.ck-sb-collapsed .ck-sb-user { justify-content: center; }
     z-index: 120 !important;
 }
 
-/* Modo Fábrica (Alto Contraste Amarelo/Preto — 100% legível em menus, modais, inputs e tabelas) */
+/* Modo Fábrica (Alto Contraste Amarelo/Preto — Blindado contra classes utilitárias) */
 body.vp-factory-mode,
 html.dark body.vp-factory-mode {
     background: #000000 !important;
@@ -405,53 +405,73 @@ body.vp-factory-mode .ck-topbar,
 body.vp-factory-mode .ck-sidebar,
 body.vp-factory-mode #systemMenuDropdown,
 body.vp-factory-mode #inspectorPanel,
+body.vp-factory-mode #cmdPaletteModal > div,
 body.vp-factory-mode .vp-modal-overlay > div,
 body.vp-factory-mode footer {
     background: #0A0A0A !important;
+    background-color: #0A0A0A !important;
     border-color: #FACC15 !important;
     color: #FFFFFF !important;
-}
-body.vp-factory-mode .ck-topbar button:not(.bg-\[\#004C97\]),
-body.vp-factory-mode #systemMenuDropdown button,
-body.vp-factory-mode input:not([type="checkbox"]),
-body.vp-factory-mode select,
-body.vp-factory-mode textarea {
-    background-color: #111111 !important;
-    color: #FFFFFF !important;
-    border-color: #FACC15 !important;
-}
-body.vp-factory-mode #systemMenuDropdown button {
-    border-color: transparent !important;
-}
-body.vp-factory-mode #systemMenuDropdown button:hover {
-    background-color: #262200 !important;
-    color: #FDE047 !important;
 }
 body.vp-factory-mode .bg-white,
 body.vp-factory-mode .bg-\[\#F3F6FA\],
 body.vp-factory-mode .bg-\[\#F7F9FC\],
 body.vp-factory-mode .bg-\[\#EAF0F6\],
+body.vp-factory-mode .bg-amber-50,
+body.vp-factory-mode .bg-sky-50,
+body.vp-factory-mode .bg-emerald-50,
+body.vp-factory-mode .bg-rose-50,
+body.vp-factory-mode .bg-indigo-50,
+body.vp-factory-mode .bg-purple-100,
 body.vp-factory-mode .vp-table-wrap thead {
+    background: #121212 !important;
     background-color: #121212 !important;
     color: #FFFFFF !important;
+}
+body.vp-factory-mode #systemMenuDropdown button,
+body.vp-factory-mode #systemMenuDropdown a {
+    background: transparent !important;
+    color: #FFFFFF !important;
+    border-color: transparent !important;
+}
+body.vp-factory-mode #systemMenuDropdown button:hover {
+    background: #2A2400 !important;
+    color: #FDE047 !important;
+}
+body.vp-factory-mode .ck-topbar button:not(.bg-\[\#004C97\]),
+body.vp-factory-mode input:not([type="checkbox"]),
+body.vp-factory-mode select,
+body.vp-factory-mode textarea {
+    background: #141414 !important;
+    background-color: #141414 !important;
+    color: #FFFFFF !important;
+    border-color: #FACC15 !important;
 }
 body.vp-factory-mode .ck-kpi-ico-rose,
 body.vp-factory-mode .ck-kpi-ico-amber,
 body.vp-factory-mode .ck-kpi-ico-cyan,
 body.vp-factory-mode .ck-kpi-ico-blue,
 body.vp-factory-mode .ck-chip-sec,
-body.vp-factory-mode .ck-chip-loc {
-    background: #1A1A1A !important;
+body.vp-factory-mode .ck-chip-loc,
+body.vp-factory-mode kbd {
+    background: #1E1E1E !important;
     color: #FDE047 !important;
-    border: 1px solid rgba(250, 204, 21, 0.45) !important;
+    border: 1px solid #FACC15 !important;
 }
+body.vp-factory-mode .text-slate-950,
 body.vp-factory-mode .text-slate-700,
 body.vp-factory-mode .text-slate-600,
 body.vp-factory-mode .text-slate-500,
-body.vp-factory-mode .text-slate-400 {
+body.vp-factory-mode .text-slate-400,
+body.vp-factory-mode .text-amber-800,
+body.vp-factory-mode .text-sky-800,
+body.vp-factory-mode .text-emerald-800,
+body.vp-factory-mode .text-rose-800 {
     color: #FDE047 !important;
 }
-body.vp-factory-mode .text-\[\#004C97\] {
+body.vp-factory-mode .text-\[\#004C97\],
+body.vp-factory-mode .text-sky-700,
+body.vp-factory-mode .text-sky-600 {
     color: #38BDF8 !important;
 }
 

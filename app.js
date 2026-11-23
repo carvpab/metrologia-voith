@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.10 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.12 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -265,7 +265,8 @@ function toggleManualSimDateBox() {
     }
 }
 
-function applyManualSimDateBR() {
+function applyManualSimDateBR(ev) {
+    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
     var inp = document.getElementById('heroCustomDateBR');
     if (!inp) return;
     var d = parseDateBR(inp.value);
@@ -1612,7 +1613,7 @@ function closeBackupModal() { document.getElementById('backupModal').classList.a
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.10',
+        appVersion: '16.12',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -2071,7 +2072,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.10</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.12</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -2087,16 +2088,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.10',
+        detail: 'Teste manual de telemetria via Painel Admin v16.12',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.10.0',
+        appVersion: '16.12.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.10.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.12.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -2328,6 +2329,7 @@ function bootApp() {
     });
 
     var _rszT = null; window.addEventListener('resize', function () { clearTimeout(_rszT); _rszT = setTimeout(function () { if (VoithDB.state.view === 'inventory') renderInventoryView(); }, 180); });
+    setTimeout(function () { checkOtaUpdatesOnBoot(); }, 1200);
     VoithCloud.loadState(false, false).then(function () {
         checkOtaUpdatesOnBoot();
         sendBootTelemetryOnce();
@@ -2343,8 +2345,9 @@ function bootApp() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.10) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.12) =====================
 var _lastOtaVersionShown = '';
+var _otaCheckDone = false;
 
 function compareVersions(a, b) {
     var pa = String(a || '0').replace(/^v/i, '').split('.').map(function (n) { return parseInt(n, 10) || 0; });
@@ -2357,27 +2360,52 @@ function compareVersions(a, b) {
     return 0;
 }
 
-async function checkOtaUpdatesOnBoot() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.10.0';
-    var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
-    if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
-    VoithDB.state.releaseChannel = ota;
-
-    var latest = ota.latest;
+function evaluateReleaseDisplay(latest, curVer) {
+    if (!latest || !latest.version) return;
     var lastSeen = '';
-    try { lastSeen = localStorage.getItem('voith_last_seen_release_v16') || ''; } catch (e) {}
+    var prevVer = '';
+    try {
+        lastSeen = localStorage.getItem('voith_last_seen_release_v16') || '';
+        prevVer = localStorage.getItem('voith_prev_running_ver_v16') || '';
+    } catch (e) {}
 
     var cmp = compareVersions(latest.version, curVer);
+    var justUpdatedToThis = (prevVer && prevVer !== curVer && cmp === 0);
+
     if (cmp > 0) {
-        // Servidor tem versão mais nova do que a atualmente aberta
         openWhatsNewModal(latest, true, curVer);
-    } else if (cmp === 0 && lastSeen !== latest.version) {
-        // Usuário acabou de abrir exatamente a nova release publicada no servidor
+    } else if ((cmp === 0 && lastSeen !== latest.version) || justUpdatedToThis) {
         openWhatsNewModal(latest, false, curVer);
     }
+
+    try { localStorage.setItem('voith_prev_running_ver_v16', curVer); } catch (e) {}
+}
+
+async function checkOtaUpdatesOnBoot() {
+    if (_otaCheckDone) return;
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.12.0';
+
+    // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
+    try {
+        var cachedRel = JSON.parse(localStorage.getItem('voith_cached_release_v16') || 'null');
+        if (cachedRel && cachedRel.version) {
+            setTimeout(function () { evaluateReleaseDisplay(cachedRel, curVer); }, 350);
+        }
+    } catch (e) {}
+
+    // 2. Consulta canal OTA atualizado no servidor
+    var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
+    if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
+    _otaCheckDone = true;
+    VoithDB.state.releaseChannel = ota;
+    try { localStorage.setItem('voith_cached_release_v16', JSON.stringify(ota.latest)); } catch (e) {}
+
+    setTimeout(function () { evaluateReleaseDisplay(ota.latest, curVer); }, 450);
 }
 
 function openWhatsNewModal(releaseObj, needsReload, curVer) {
+    var modal = document.getElementById('whatsNewModal');
+    if (!modal) return;
     _lastOtaVersionShown = releaseObj.version || '';
     var badge = document.getElementById('wnBadge');
     var title = document.getElementById('wnTitle');
@@ -2390,15 +2418,20 @@ function openWhatsNewModal(releaseObj, needsReload, curVer) {
     if (meta) {
         meta.textContent = needsReload
             ? ('Você está na v' + curVer + '. Clique em "Atualizar Agora" para carregar a v' + releaseObj.version + ' sem precisar reinstalar.')
-            : ('Você já está usando a versão mais recente (v' + curVer + ') via atualização automática OTA.');
+            : ('Você abriu a versão v' + curVer + '. Veja abaixo o que mudou:');
     }
     if (chg) chg.textContent = releaseObj.changelog || '- Melhorias gerais de desempenho e estabilidade.';
     if (reloadBtn) reloadBtn.classList.toggle('hidden', !needsReload);
-    document.getElementById('whatsNewModal').classList.remove('hidden');
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
 }
 
 function closeWhatsNewModal() {
-    document.getElementById('whatsNewModal').classList.add('hidden');
+    var modal = document.getElementById('whatsNewModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = '';
+    }
     if (_lastOtaVersionShown) {
         try { localStorage.setItem('voith_last_seen_release_v16', _lastOtaVersionShown); } catch (e) {}
     }
@@ -2422,7 +2455,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.10.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.12.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -2440,7 +2473,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.10.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.12.0';
     }
 }
 
