@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.17 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.18 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -237,14 +237,18 @@ function setRefDateISO(iso) {
     if (mBr) {
         var yr = Number(mBr[3]);
         if (yr < 100) yr += 2000;
-        d = new Date(yr, Number(mBr[2]) - 1, Number(mBr[1]), 12, 0, 0);
+        var mon = Number(mBr[2]);
+        var day = Number(mBr[1]);
+        if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+            d = new Date(yr, mon - 1, day, 12, 0, 0);
+        }
     } else if (mIso) {
         d = new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]), 12, 0, 0);
     } else if (typeof parseDateBR === 'function') {
         d = parseDateBR(raw);
     }
     if (!d || isNaN(d.getTime())) {
-        showToast('Data inválida. Use DD/MM/AAAA.', 'warn');
+        showToast('Data inválida. Digite no formato DD/MM/AAAA (ex: 21/01/2027).', 'warn');
         return;
     }
     var brStr = String(d.getDate()).padStart(2, '0') + '/' +
@@ -262,7 +266,10 @@ function setRefDateISO(iso) {
     var pkInp = document.getElementById('heroCustomDatePicker');
     if (pkInp) pkInp.value = isoStr;
     var box = document.getElementById('heroManualDateBox');
-    if (box) box.classList.add('hidden');
+    if (box) {
+        box.classList.add('hidden');
+        box.style.display = 'none';
+    }
 
     if (typeof renderAllViews === 'function') renderAllViews();
     if (typeof renderCommandCenter === 'function') renderCommandCenter();
@@ -277,7 +284,10 @@ function resetRefDate() {
     var brInp = document.getElementById('heroCustomDateBR');
     if (brInp) brInp.value = '';
     var box = document.getElementById('heroManualDateBox');
-    if (box) box.classList.add('hidden');
+    if (box) {
+        box.classList.add('hidden');
+        box.style.display = 'none';
+    }
     if (typeof renderAllViews === 'function') renderAllViews();
 }
 
@@ -285,22 +295,33 @@ function toggleManualSimDateBox() {
     var box = document.getElementById('heroManualDateBox');
     var inp = document.getElementById('heroCustomDateBR');
     if (!box) return;
-    var opening = box.classList.contains('hidden');
-    box.classList.toggle('hidden', !opening);
-    if (opening && inp) {
-        inp.value = formatDateBR(VoithDB.getRefDate());
-        setTimeout(function () { inp.focus(); inp.select(); }, 30);
+    var isHidden = box.classList.contains('hidden') || box.style.display === 'none';
+    if (isHidden) {
+        box.classList.remove('hidden');
+        box.style.display = 'inline-flex';
+        if (inp) {
+            inp.value = formatDateBR(VoithDB.getRefDate());
+            setTimeout(function () { inp.focus(); inp.select(); }, 30);
+        }
+    } else {
+        box.classList.add('hidden');
+        box.style.display = 'none';
     }
 }
 
-function onManualSimDateTyping(el) {
+function onManualSimDateTyping(el, ev) {
     if (!el) return;
+    var isBackspace = ev && ev.inputType === 'deleteContentBackward';
     var digits = String(el.value || '').replace(/\D/g, '').slice(0, 8);
     var out = '';
     if (digits.length > 4) {
         out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+    } else if (digits.length === 4 && !isBackspace) {
+        out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/';
     } else if (digits.length > 2) {
         out = digits.slice(0, 2) + '/' + digits.slice(2);
+    } else if (digits.length === 2 && !isBackspace) {
+        out = digits + '/';
     } else {
         out = digits;
     }
@@ -308,6 +329,69 @@ function onManualSimDateTyping(el) {
     var d = parseDateBR(out);
     var pk = document.getElementById('heroCustomDatePicker');
     if (d && pk) pk.value = formatDateISO(d);
+}
+
+// ===================== BUSCA RÁPIDA NO HERO BANNER =====================
+function renderHeroQuickSearch() {
+    var inp = document.getElementById('heroQuickSearchInput');
+    var box = document.getElementById('heroQuickSearchResults');
+    var clr = document.getElementById('heroQuickSearchClear');
+    if (!inp || !box) return;
+    var raw = String(inp.value || '').trim();
+    if (clr) clr.classList.toggle('hidden', !raw);
+    if (!raw) {
+        box.classList.add('hidden');
+        box.innerHTML = '';
+        return;
+    }
+    var q = normStr(raw);
+    var ref = VoithDB.getRefDate();
+    var matches = VoithDB.state.instruments.filter(function (it) {
+        var hay = normStr([it.code, it.desc, it.local, it.setor, it.resp, it.custodyHolder].join(' '));
+        return hay.indexOf(q) !== -1;
+    });
+    var top = matches.slice(0, 6);
+    if (!top.length) {
+        box.innerHTML = '<div class="px-4 py-3 text-xs text-slate-400">Nenhum instrumento encontrado para "' + escHtml(raw) + '".</div>';
+        box.classList.remove('hidden');
+        return;
+    }
+    var rowsHtml = top.map(function (it) {
+        var eff = getEffectiveStatus(it, ref);
+        var hasCust = Boolean(String(it.custodyHolder || '').trim());
+        return '<button type="button" onclick="clearHeroQuickSearch(); ' + (hasCust ? ('openCustodyItemDetail(' + it.id + ')') : ('openInspectorModal(' + it.id + ')')) + '" class="w-full px-4 py-2.5 text-left hover:bg-white/10 flex items-center justify-between gap-3 cursor-pointer transition">' +
+            '<div class="min-w-0">' +
+                '<div class="flex items-center gap-2">' +
+                    '<span class="font-mono font-extrabold text-xs text-[#00A8E8]">' + escHtml(it.code) + '</span>' +
+                    '<span class="text-xs font-bold text-white truncate">' + escHtml(it.desc) + '</span>' +
+                '</div>' +
+                '<div class="text-[11px] text-slate-300 truncate mt-0.5">' + escHtml(it.local || 'Sem local') + ' • Val.: ' + escHtml(toBRDateStr(it.proxCal) || '-') + (hasCust ? (' • <span class="text-amber-300 font-bold">Em posse: ' + escHtml(it.custodyHolder) + '</span>') : '') + '</div>' +
+            '</div>' +
+            '<div class="shrink-0">' + getStatusBadgeHtml(eff) + '</div>' +
+        '</button>';
+    }).join('');
+    rowsHtml += '<button type="button" onclick="submitHeroQuickSearch()" class="w-full px-4 py-2 text-center text-[11px] font-extrabold text-[#00A8E8] hover:bg-white/10 cursor-pointer">Ver todos os ' + matches.length + ' resultado(s) no Inventário &rarr;</button>';
+    box.innerHTML = rowsHtml;
+    box.classList.remove('hidden');
+}
+
+function clearHeroQuickSearch() {
+    var inp = document.getElementById('heroQuickSearchInput');
+    var box = document.getElementById('heroQuickSearchResults');
+    var clr = document.getElementById('heroQuickSearchClear');
+    if (inp) inp.value = '';
+    if (clr) clr.classList.add('hidden');
+    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+}
+
+function submitHeroQuickSearch() {
+    var inp = document.getElementById('heroQuickSearchInput');
+    var q = inp ? String(inp.value || '').trim() : '';
+    clearHeroQuickSearch();
+    resetInventoryFilters(false);
+    VoithDB.state.filters.search = q;
+    syncFilterInputs();
+    navigateTo('inventory');
 }
 
 function applyManualSimDateBR(ev) {
@@ -1013,6 +1097,7 @@ async function confirmCustodyReturn() {
         it.custodyHolder = '';
         it.custodyReturnTo = '';
         it.custodyDate = '';
+        it.custodyTime = '';
         it.custodyReason = '';
         if (resetSt) it.status = 'AUTO';
         upserts.push(it);
@@ -1020,6 +1105,7 @@ async function confirmCustodyReturn() {
     });
 
     closeCustodyModal();
+            closeCustodyItemDetail();
     renderAllViews();
 
     var receipt = {
@@ -1078,6 +1164,7 @@ async function saveCustodyModal() {
         it.custodyHolder = holder;
         it.custodyReturnTo = retTo || it.local || '';
         it.custodyDate = cDate;
+        it.custodyTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         it.custodyReason = reason;
         if (stSel && stSel !== '__KEEP__') it.status = stSel;
         upserts.push(it);
@@ -1136,6 +1223,103 @@ function setCustodyGroupMode(mode) {
     } else {
         renderCustodyBoard();
     }
+}
+
+async function openCustodyItemDetail(id) {
+    var it = VoithDB.state.instruments.find(function (x) { return x.id === Number(id); });
+    if (!it) return;
+    var modal = document.getElementById('custodyDetailModal');
+    if (!modal) return;
+
+    var ref = VoithDB.getRefDate();
+    var eff = getEffectiveStatus(it, ref);
+    document.getElementById('cdTitle').textContent = it.code + ' — ' + it.desc;
+    document.getElementById('cdStatusBadge').innerHTML = getStatusBadgeHtml(eff);
+    document.getElementById('cdHolder').textContent = it.custodyHolder || '-';
+    document.getElementById('cdHolderMeta').textContent = '';
+    document.getElementById('cdDate').textContent = toBRDateStr(it.custodyDate) || '-';
+    document.getElementById('cdReturnTo').textContent = it.custodyReturnTo || it.local || '-';
+    document.getElementById('cdReason').textContent = it.custodyReason || '-';
+
+    document.getElementById('cdSetor').textContent = it.setor || '-';
+    document.getElementById('cdLocal').textContent = it.local || 'Sem local';
+    document.getElementById('cdResp').textContent = it.resp || '-';
+    document.getElementById('cdProxCal').textContent = toBRDateStr(it.proxCal) || '-';
+    var rangeStr = [it.min, it.max].filter(Boolean).join(' ~ ');
+    document.getElementById('cdRange').textContent = rangeStr || '-';
+    document.getElementById('cdCC').textContent = it.cc || '-';
+    document.getElementById('cdObs').textContent = it.obs || '-';
+
+    var inspBtn = document.getElementById('cdOpenInspectorBtn');
+    if (inspBtn) inspBtn.onclick = function () { closeCustodyItemDetail(); openInspectorModal(it.id); };
+    var retBtn = document.getElementById('cdReturnBtn');
+    if (retBtn) retBtn.onclick = function () { closeCustodyItemDetail(); openCustodyForItem(it.id); };
+
+    var recWrap = document.getElementById('cdReceiptWrap');
+    var sigWrap = document.getElementById('cdSigWrap');
+    recWrap.classList.add('hidden');
+    sigWrap.classList.add('hidden');
+
+    var findMatchingReceipt = function (list) {
+        var codeUp = String(it.code || '').toUpperCase();
+        return (list || []).find(function (r) {
+            return r.eventType === 'RETIRADA' && String(r.instrumentCode || '').toUpperCase().indexOf(codeUp) === 0;
+        });
+    };
+
+    var applyReceiptData = function (rec) {
+        if (!rec) return;
+        var dtObj = rec.createdAt ? new Date(rec.createdAt) : (rec.id ? new Date(Number(rec.id)) : null);
+        if (dtObj && !isNaN(dtObj.getTime())) {
+            document.getElementById('cdTime').textContent = dtObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            if (!it.custodyDate) {
+                document.getElementById('cdDate').textContent = formatDateBR(dtObj);
+            }
+        }
+        var metaParts = [];
+        if (rec.holderBadge) metaParts.push('Matr. ' + rec.holderBadge);
+        if (rec.holderSector) metaParts.push(rec.holderSector);
+        document.getElementById('cdHolderMeta').textContent = metaParts.join(' • ');
+
+        recWrap.classList.remove('hidden');
+        document.getElementById('cdReceiptProto').textContent = 'Protocolo: ' + (rec.receiptCode || '-');
+        document.getElementById('cdOperator').textContent = rec.operatorName ? ('Registrado por: ' + rec.operatorName) : '';
+        if (rec.signatureData) {
+            document.getElementById('cdSigImg').src = rec.signatureData;
+            sigWrap.classList.remove('hidden');
+        }
+    };
+
+    var localRec = findMatchingReceipt(VoithDB.state.receipts);
+    if (it.custodyTime) {
+        document.getElementById('cdTime').textContent = it.custodyTime;
+    } else if (localRec) {
+        document.getElementById('cdTime').textContent = '-';
+    } else {
+        document.getElementById('cdTime').textContent = VoithDB.isEditor() ? 'Consultando...' : 'Não registrado';
+    }
+    if (localRec) applyReceiptData(localRec);
+
+    modal.classList.remove('hidden');
+
+    if (VoithDB.isEditor()) {
+        var res = await VoithCloud.callRpc({ action: 'list_custody_receipts', instrumentCode: it.code, limit: 15 }, false);
+        if (res && res.ok && Array.isArray(res.receipts)) {
+            var srvRec = findMatchingReceipt(res.receipts);
+            if (srvRec) {
+                applyReceiptData(srvRec);
+            } else if (!it.custodyTime && !localRec) {
+                document.getElementById('cdTime').textContent = 'Não registrado';
+            }
+        } else if (!it.custodyTime && !localRec) {
+            document.getElementById('cdTime').textContent = 'Não registrado';
+        }
+    }
+}
+
+function closeCustodyItemDetail() {
+    var modal = document.getElementById('custodyDetailModal');
+    if (modal) modal.classList.add('hidden');
 }
 
 // ===================== AÇÕES EM LOTE NO INVENTÁRIO =====================
@@ -1656,7 +1840,7 @@ function closeBackupModal() { document.getElementById('backupModal').classList.a
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.17',
+        appVersion: '16.18',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -2115,7 +2299,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.17</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.18</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -2131,16 +2315,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.17',
+        detail: 'Teste manual de telemetria via Painel Admin v16.18',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.17.0',
+        appVersion: '16.18.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.17.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.18.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -2329,6 +2513,7 @@ function bootApp() {
 
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#systemMenuWrap')) closeSystemMenu();
+        if (!e.target.closest('#heroQuickSearchInput') && !e.target.closest('#heroQuickSearchResults')) { var hqs = document.getElementById('heroQuickSearchResults'); if (hqs) hqs.classList.add('hidden'); }
     });
 
     window.addEventListener('keydown', function (e) {
@@ -2406,6 +2591,7 @@ function bootApp() {
         }
         var openModals = [
             ['cmdPaletteModal', closeCommandPalette],
+            ['custodyDetailModal', closeCustodyItemDetail],
             ['custodyModal', closeCustodyModal],
             ['externalModal', closeExternalModal],
             ['returnLabModal', closeReturnLabModal],
@@ -2450,7 +2636,7 @@ function bootApp() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.17) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.18) =====================
 var _lastOtaVersionShown = '';
 var _otaCheckDone = false;
 
@@ -2487,7 +2673,7 @@ function evaluateReleaseDisplay(latest, curVer) {
 }
 
 async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.17.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
     var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
     if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
     VoithDB.state.releaseChannel = ota;
@@ -2510,7 +2696,7 @@ async function checkOtaUpdatesOnBoot() {
         await pollLiveOtaRelease();
         return;
     }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.17.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
 
     // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
     try {
@@ -2582,7 +2768,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.17.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -2600,7 +2786,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.17.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.18.0';
     }
 }
 
