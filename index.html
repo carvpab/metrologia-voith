@@ -23,7 +23,7 @@
             REALTIME: true,
             SHEETS_API_URL: "",
             CORPORATE_API_URL: "",
-            APP_VERSION: "16.21.0",
+            APP_VERSION: "16.22.0",
             LIVE_APP_URL: "https://carvpab.github.io/metrologia-voith/"
         });
         (function() {
@@ -51,7 +51,7 @@
     <noscript>
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     </noscript>
-    <!-- CSS Inline Unificado v16.21 (zero dessincronização entre index.html e pastas) -->
+    <!-- CSS Inline Unificado v16.22 (zero dessincronização entre index.html e pastas) -->
     <style id="voith-tailwind-css">
 /* VOITH TURBO — PRECISION METROLOGY OS v16.7 • Local Tailwind Utility Bundle (100% Offline) */
 *, ::before, ::after { box-sizing: border-box; border-width: 0; border-style: solid; border-color: #DCE4EE; }
@@ -628,7 +628,7 @@ a { color: inherit; text-decoration: inherit; }
 .w-24 { width: 6rem; }
 .z-\[88\] { z-index: 88; }
 
-/* v16.21 Missing utility classes audit fix */
+/* v16.22 Missing utility classes audit fix */
 .bg-\[\#001630\]\/90 { background-color: rgba(0, 22, 48, 0.92); }
 .bg-amber-50\/90 { background-color: rgba(255, 251, 235, 0.92); }
 .bg-slate-200 { background-color: #e2e8f0; }
@@ -651,7 +651,7 @@ a { color: inherit; text-decoration: inherit; }
     </style>
     <style id="voith-cockpit-css">
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.21 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.22 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -1226,7 +1226,7 @@ body.vp-factory-mode #heroManualDateOkBtn {
     color: #000000 !important;
 }
 
-/* === CORREÇÕES v16.21: Strip Mobile, Input Data Manual e Modo Fábrica === */
+/* === CORREÇÕES v16.22: Strip Mobile, Input Data Manual e Modo Fábrica === */
 @media (min-width: 1024px) {
     .ck-mob-strip { display: none !important; }
 }
@@ -1270,7 +1270,7 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     color: #FFFFFF !important;
 }
 
-/* === CORREÇÕES v16.21: Modal Detalhes Cautela, Busca Hero e Data Manual === */
+/* === CORREÇÕES v16.22: Modal Detalhes Cautela, Busca Hero e Data Manual === */
 #custodyDetailModal {
     z-index: 125 !important;
 }
@@ -1284,6 +1284,16 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     width: 102px !important;
     min-width: 96px;
     letter-spacing: 0.03em;
+}
+
+/* === CORREÇÕES v16.22: Toast acima da barra mobile === */
+@media (max-width: 1023px) {
+    #vpToastContainer {
+        bottom: 72px !important;
+        left: 12px !important;
+        right: 12px !important;
+        align-items: center;
+    }
 }
 
     </style>
@@ -3121,8 +3131,8 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
                     <div class="font-extrabold text-emerald-700 dark:text-emerald-300">Publicar Nova Versão &amp; Aviso "O que mudou"</div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
-                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Versão (ex: 16.21.0) *</label>
-                            <input type="text" id="otaPubVersion" required value="16.21.0" placeholder="16.21.0" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-xs font-bold">
+                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Versão (ex: 16.22.0) *</label>
+                            <input type="text" id="otaPubVersion" required value="16.22.0" placeholder="16.22.0" class="w-full px-3 py-2 bg-white dark:bg-[#091527] border border-[#DCE4EE] dark:border-[#23426B] rounded-lg font-mono text-xs font-bold">
                         </div>
                         <div>
                             <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Canal</label>
@@ -3439,11 +3449,11 @@ html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
     <!-- Toast Notification Container -->
     <div id="vpToastContainer" class="fixed bottom-5 right-5 z-[95] flex flex-col gap-2 pointer-events-none"></div>
 
-    <!-- JS Unificado v16.21 (embutido no index.html para atualização instantânea sem cache antigo) -->
+    <!-- JS Unificado v16.22 (embutido no index.html para atualização instantânea sem cache antigo) -->
     <script>
 /* === utils.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.21 • utils.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.22 • utils.js
  * Utilitários puros: datas BR, classificação metrológica, máscaras, toast, CSV
  * ============================================================================ */
 
@@ -3931,7 +3941,7 @@ window.VoithDB = (function () {
 
 /* === cloud.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.21 • cloud.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.22 • cloud.js
  * Integração Supabase PostgreSQL com envelope PostgREST { payload: ... }
  * ============================================================================ */
 
@@ -4217,7 +4227,7 @@ window.VoithCloud = (function () {
 
 /* === views.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.21 • views.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.22 • views.js
  * Renderização fiel ao Cockpit v12 (4 Workspaces + SVG Gauge + Donut + Radar)
  * ============================================================================ */
 
@@ -5101,7 +5111,7 @@ function renderAllViews() {
 
 /* === app.js === */
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.21 • app.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.22 • app.js
  * Controlador completo: Navegação, Modais, Inspector, Dossiê RBC, Cautela SHA-256,
  * Lab, Perdidos, Impressão PDF/Armário, Importação Diff, Admin, Auditoria, OTA
  * ============================================================================ */
@@ -5123,23 +5133,45 @@ var _cmdItems = [];
 
 // ===================== NAVEGAÇÃO & TEMA =====================
 var _voithHistorySeq = 0;
-var _voithGuardArmed = false;
+var _voithViewStack = ['command'];
+var _voithNeedsUserActivatedGuard = true;
+var _voithCapBackBound = false;
+var _voithBackLockUntil = 0;
 var _voithLastBackPress = 0;
 
-function pushVoithBackGuard(reason) {
+function getVoithBaseUrl() {
+    try { return window.location.pathname + window.location.search; } catch (e) { return ''; }
+}
+
+function pushVoithBackGuard(reason, isBaseGuard) {
+    if (_voithCapBackBound) return; // No APK nativo, Capacitor App.backButton intercepta sem poluir histórico
     try {
         _voithHistorySeq++;
         var tag = (reason || 'nav') + '-' + _voithHistorySeq;
-        window.history.pushState({ voithApp: true, seq: _voithHistorySeq, reason: reason || 'nav' }, '', '#' + tag);
-        _voithGuardArmed = true;
+        var stObj = {
+            voithApp: true,
+            voithGuard: Boolean(isBaseGuard),
+            voithLayer: !isBaseGuard,
+            seq: _voithHistorySeq,
+            reason: reason || 'nav'
+        };
+        window.history.pushState(stObj, '', getVoithBaseUrl() + '#' + tag);
     } catch (e) {}
 }
 
-function navigateTo(view, fromPopState) {
-    var prevView = VoithDB.state.view;
+function navigateTo(view, fromBack) {
+    var prevView = VoithDB.state.view || 'command';
     VoithDB.state.view = view;
-    if (!fromPopState && view && view !== 'command' && view !== prevView) {
-        pushVoithBackGuard('view-' + view);
+    if (!fromBack) {
+        if (view === 'command') {
+            _voithViewStack = ['command'];
+        } else if (view && view !== prevView) {
+            if (_voithViewStack[_voithViewStack.length - 1] !== view) {
+                _voithViewStack.push(view);
+                if (_voithViewStack.length > 10) _voithViewStack.shift();
+            }
+            pushVoithBackGuard('view-' + view, false);
+        }
     }
     ['command', 'inventory', 'custody', 'lab'].forEach(function (v) {
         var sec = document.getElementById('view-' + v);
@@ -5166,6 +5198,7 @@ function navigateTo(view, fromPopState) {
 }
 
 function openMobileSidebar() {
+    pushVoithBackGuard('sidebar', false);
     var sb = document.getElementById('vpSidebar');
     var bd = document.getElementById('sbBackdrop');
     if (sb) sb.classList.add('is-open');
@@ -5248,7 +5281,7 @@ function openLoginModal() {
     var m = document.getElementById('loginModal');
     var err = document.getElementById('loginErrBox');
     if (err) { err.textContent = ''; err.classList.add('hidden'); }
-    if (m) m.classList.remove('hidden');
+    if (m) { pushVoithBackGuard('login', false); m.classList.remove('hidden'); }
     var p = document.getElementById('loginPassInp');
     if (p) { p.value = ''; setTimeout(function () { p.focus(); }, 60); }
 }
@@ -5310,7 +5343,7 @@ function openChangePassModal() {
     var e = document.getElementById('cpErr');
     if (e) e.classList.add('hidden');
     ['cpOld', 'cpNew', 'cpConf'].forEach(function (id) { var x = document.getElementById(id); if (x) x.value = ''; });
-    if (m) m.classList.remove('hidden');
+    if (m) { pushVoithBackGuard('changepass', false); m.classList.remove('hidden'); }
 }
 
 function closeChangePassModal() {
@@ -6326,6 +6359,7 @@ function openReceiptShareModal(rec) {
     document.getElementById('receiptShareMeta').textContent = 'Protocolo ' + rec.receiptCode + ' • SHA-256: ' + String(rec.integrityHash || '').slice(0, 16);
     document.getElementById('receiptShareText').value = msg;
     document.getElementById('receiptShareWa').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
+    pushVoithBackGuard('receipt', false);
     document.getElementById('receiptShareModal').classList.remove('hidden');
 }
 
@@ -6509,6 +6543,7 @@ function openExternalModal(idx) {
     var prev = new Date(); prev.setDate(prev.getDate() + 15);
     document.getElementById('extDatePrev').value = formatDateBR(prev);
     document.getElementById('extObsInp').value = '';
+    pushVoithBackGuard('external', false);
     document.getElementById('externalModal').classList.remove('hidden');
 }
 
@@ -6528,6 +6563,7 @@ function openBatchExternalModal() {
     var prev = new Date(); prev.setDate(prev.getDate() + 15);
     document.getElementById('extDatePrev').value = formatDateBR(prev);
     document.getElementById('extObsInp').value = '';
+    pushVoithBackGuard('external', false);
     document.getElementById('externalModal').classList.remove('hidden');
 }
 
@@ -6602,6 +6638,7 @@ function openReturnLabModal(histId) {
     } else {
         cBox.classList.add('hidden');
     }
+    pushVoithBackGuard('returnlab', false);
     document.getElementById('returnLabModal').classList.remove('hidden');
 }
 
@@ -6675,6 +6712,7 @@ function openBatchReturnLabModal() {
     document.getElementById('brLabDate').value = todayBR();
     document.getElementById('brLabUseCycleChk').checked = true;
     toggleBatchReturnCycleMode();
+    pushVoithBackGuard('batchreturnlab', false);
     document.getElementById('batchReturnLabModal').classList.remove('hidden');
 }
 
@@ -6739,6 +6777,7 @@ function openLostModal(idx) {
     if (!VoithDB.isEditor()) { openLoginModal(); return; }
     document.getElementById('lostIdx').value = idx;
     ['lostCode', 'lostCC', 'lostDesc', 'lostSetor', 'lostLastCal', 'lostObs'].forEach(function (k) { document.getElementById(k).value = ''; });
+    pushVoithBackGuard('lost', false);
     document.getElementById('lostModal').classList.remove('hidden');
 }
 function closeLostModal() { document.getElementById('lostModal').classList.add('hidden'); }
@@ -6793,6 +6832,7 @@ function openPrintModal(tpl) {
     populateGlobalDatalistsAndFilters();
     var sel = document.getElementById('printTplSel');
     if (sel && tpl) sel.value = tpl;
+    pushVoithBackGuard('print', false);
     document.getElementById('printModal').classList.remove('hidden');
     updatePrintPreviewCount();
 }
@@ -6953,13 +6993,13 @@ function exportCSV() {
 }
 
 // ===================== BACKUP, CLOUD, CONFLITOS, UNDO =====================
-function openBackupModal() { document.getElementById('backupModal').classList.remove('hidden'); }
+function openBackupModal() { pushVoithBackGuard('backup', false); document.getElementById('backupModal').classList.remove('hidden'); }
 function closeBackupModal() { document.getElementById('backupModal').classList.add('hidden'); }
 
 function downloadJsonBackup() {
     var payload = {
         exportedAt: new Date().toISOString(),
-        appVersion: '16.21',
+        appVersion: '16.22',
         instrumentsData: VoithDB.state.instruments,
         calibrationHistory: VoithDB.state.history,
         lostInstrumentsData: VoithDB.state.lost,
@@ -7004,6 +7044,7 @@ function downloadOfflineHtml() {
 
 function openCloudModal() {
     VoithCloud.setCloudPill(VoithDB.state.cloudStatus, VoithDB.state.cloudError ? 'err' : 'ok', VoithDB.state.cloudError);
+    pushVoithBackGuard('cloud', false);
     document.getElementById('cloudModal').classList.remove('hidden');
 }
 function closeCloudModal() { document.getElementById('cloudModal').classList.add('hidden'); }
@@ -7062,6 +7103,7 @@ function openPasteImportModal() {
     document.getElementById('importPasteArea').value = '';
     document.getElementById('importDiffBox').classList.add('hidden');
     document.getElementById('btnConfirmImport').disabled = true;
+    pushVoithBackGuard('import', false);
     document.getElementById('importModal').classList.remove('hidden');
 }
 function closeImportModal() { document.getElementById('importModal').classList.add('hidden'); }
@@ -7167,6 +7209,7 @@ function openUnmappedModal() {
     listEl.innerHTML = Object.entries(bySec).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
         return '<button type="button" onclick="closeUnmappedModal(); jumpToInventoryFilter({setor:' + JSON.stringify(e[0]).replace(/"/g, '&quot;') + ',local:\'__NONE__\'})" class="w-full p-3 rounded-xl bg-[#F7F9FC] dark:bg-[#0D1D34] border border-[#DCE4EE] dark:border-[#172E4E] hover:border-[#004C97] flex items-center justify-between text-xs cursor-pointer"><span class="font-bold">' + escHtml(e[0]) + '</span><span class="font-mono font-extrabold text-orange-600">' + e[1] + ' s/ local</span></button>';
     }).join('') || '<div class="text-xs text-emerald-600 font-bold text-center py-6">100% da frota possui localização cadastrada!</div>';
+    pushVoithBackGuard('unmapped', false);
     document.getElementById('unmappedModal').classList.remove('hidden');
 }
 function closeUnmappedModal() { document.getElementById('unmappedModal').classList.add('hidden'); }
@@ -7177,6 +7220,7 @@ function openRapidLocalModal() {
     _rapidIndex = 0;
     if (!_rapidQueue.length) { showToast('Todos os instrumentos já possuem localização!', 'ok'); return; }
     renderRapidLocalStep();
+    pushVoithBackGuard('rapidlocal', false);
     document.getElementById('rapidLocalModal').classList.remove('hidden');
 }
 function closeRapidLocalModal() { document.getElementById('rapidLocalModal').classList.add('hidden'); }
@@ -7220,6 +7264,7 @@ function skipRapidLocal() { _rapidIndex++; renderRapidLocalStep(); }
 function openAdminUsersModal() {
     if (!VoithDB.isAdmin()) { showToast('Acesso restrito ao Administrador.', 'warn'); return; }
     setAdminTab('users');
+    pushVoithBackGuard('admin', false);
     document.getElementById('adminUsersModal').classList.remove('hidden');
 }
 function closeAdminUsersModal() { document.getElementById('adminUsersModal').classList.add('hidden'); }
@@ -7283,6 +7328,7 @@ function openResetPassModal(username) {
     document.getElementById('rpLabel').textContent = username;
     document.getElementById('rpPass').value = '';
     document.getElementById('rpErr').classList.add('hidden');
+    pushVoithBackGuard('resetpass', false);
     document.getElementById('resetPassModal').classList.remove('hidden');
 }
 function closeResetPassModal() { document.getElementById('resetPassModal').classList.add('hidden'); }
@@ -7418,7 +7464,7 @@ async function loadAdminOtaTelemetry(fromClick) {
             '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓ Consulta concluída às ' + nowTime + '</span>' +
             '<button type="button" onclick="sendTestTelemetryPing()" class="px-2.5 py-1 rounded-lg bg-[#EAF0F6] dark:bg-[#132846] hover:bg-[#004C97] hover:text-white text-[#004C97] dark:text-[#00A8E8] font-bold cursor-pointer">Gravar Ping no Servidor</button>' +
         '</div>' +
-        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.21</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
+        (latest ? '<div class="p-3.5 rounded-xl bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-400/30 space-y-1"><div class="flex items-center justify-between gap-2"><span class="font-extrabold text-[#004C97] dark:text-[#00A8E8]">Canal OTA (' + escHtml(latest.channel) + ') — Última Release: v' + escHtml(latest.version) + '</span><span class="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#091527] font-bold">App Atual: v16.22</span></div><pre class="whitespace-pre-wrap font-mono text-[11px] text-slate-600 dark:text-slate-300">' + escHtml(latest.changelog) + '</pre></div>' : '') +
         '<div class="space-y-1.5"><div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">' + telOrigin + '</div>' +
         '<div class="overflow-x-auto rounded-lg border border-[#DCE4EE] dark:border-[#172E4E]"><table class="w-full text-left border-collapse text-[11px]"><thead class="bg-[#F7F9FC] dark:bg-[#0D1D34] text-[10px] font-bold uppercase text-slate-500"><tr><th class="p-2">Hora</th><th class="p-2">Evento</th><th class="p-2">ms</th><th class="p-2">Plataforma</th><th class="p-2">Detalhe</th></tr></thead><tbody class="divide-y divide-[#DCE4EE] dark:divide-[#172E4E]">' +
         (rows.map(function (t) { return '<tr><td class="p-2 font-mono">' + new Date(t.ts).toLocaleTimeString('pt-BR') + '</td><td class="p-2 font-bold">' + escHtml(t.type) + '</td><td class="p-2 font-mono">' + (t.latencyMs || 0) + '</td><td class="p-2">' + escHtml(t.platform || 'WEB') + '</td><td class="p-2 text-slate-500">' + escHtml(t.detail) + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sem eventos de telemetria ainda.</td></tr>') +
@@ -7434,16 +7480,16 @@ async function sendTestTelemetryPing() {
     await VoithCloud.callRpc({
         action: 'log_telemetry',
         eventType: 'HEALTH_PING',
-        detail: 'Teste manual de telemetria via Painel Admin v16.21',
+        detail: 'Teste manual de telemetria via Painel Admin v16.22',
         latencyMs: Math.round(performance.now() - t0),
-        appVersion: '16.21.0',
+        appVersion: '16.22.0',
         username: (VoithDB.state.session && VoithDB.state.session.username) || 'pablo'
     }, false);
     await VoithCloud.callRpc({
         action: 'emit_domain_event',
         eventName: 'METROLOGY_HEALTH_CHECK',
         aggregateCode: 'VOITH-OS',
-        eventPayload: { version: '16.21.0', instruments: VoithDB.state.instruments.length }
+        eventPayload: { version: '16.22.0', instruments: VoithDB.state.instruments.length }
     }, false);
     showToast('Ping gravado no PostgreSQL!', 'ok');
     loadAdminOtaTelemetry(false);
@@ -7470,7 +7516,8 @@ function onSecretAuditTap(ev) {
     if (_secretAuditTaps >= 5) {
         _secretAuditTaps = 0;
         if (!VoithDB.isAdmin()) { showToast('Trilha de Auditoria restrita ao Administrador.', 'warn'); return; }
-        document.getElementById('auditVaultModal').classList.remove('hidden');
+        pushVoithBackGuard('audit', false);
+    document.getElementById('auditVaultModal').classList.remove('hidden');
         loadAuditVault(true);
     }
 }
@@ -7615,6 +7662,7 @@ function openConfirmModal(title, msg, onConfirm) {
         closeConfirmModal();
         if (typeof _confirmCallback === 'function') _confirmCallback();
     };
+    pushVoithBackGuard('confirm', false);
     document.getElementById('confirmModal').classList.remove('hidden');
 }
 
@@ -7696,27 +7744,61 @@ function bootApp() {
         }
     });
 
-    // Intercepta botão Voltar do celular (Android APK Capacitor + Chrome Mobile)
-    // Arma o histórico no primeiro toque real (Chrome/WebView ignora pushState antes de gesto do usuário)
-    var armBackGuardOnGesture = function () {
-        if (!_voithGuardArmed) {
-            pushVoithBackGuard('home');
+    // Intercepta botão/gesto Voltar do celular (Android APK Capacitor + Chrome/Samsung PWA)
+    var getCapacitorAppPlugin = function () {
+        if (!window.Capacitor) return null;
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.App) return window.Capacitor.Plugins.App;
+        if (typeof window.Capacitor.registerPlugin === 'function') {
+            try { return window.Capacitor.registerPlugin('App'); } catch (e) {}
         }
+        return null;
     };
-    document.addEventListener('pointerdown', armBackGuardOnGesture, { passive: true });
-    document.addEventListener('touchstart', armBackGuardOnGesture, { passive: true });
 
-    var handleMobileBackAction = function () {
+    // Inicializa estado base + guarda inicial para Android WebView (canGoBack)
+    try {
+        var baseUrl = getVoithBaseUrl();
+        window.history.replaceState({ voithApp: true, voithBase: true, seq: 0 }, '', baseUrl);
+        pushVoithBackGuard('init', true);
+    } catch (e) {}
+
+    // Em Chrome/Samsung Internet, apenas gestos com User Activation (click/touchend/pointerup/keydown)
+    // garantem que a entrada de histórico não seja pulada pela History Manipulation Intervention
+    var armBackGuardOnRealGesture = function () {
+        if (_voithCapBackBound || !_voithNeedsUserActivatedGuard) return;
+        _voithNeedsUserActivatedGuard = false;
+        pushVoithBackGuard('home', true);
+    };
+    document.addEventListener('click', armBackGuardOnRealGesture, { capture: true, passive: true });
+    document.addEventListener('touchend', armBackGuardOnRealGesture, { capture: true, passive: true });
+    document.addEventListener('pointerup', armBackGuardOnRealGesture, { capture: true, passive: true });
+    document.addEventListener('keydown', armBackGuardOnRealGesture, { capture: true, passive: true });
+
+    var handleMobileBackAction = function (source) {
+        var nowMs = Date.now();
+        // Trava anti-duplicidade: Capacitor AppPlugin dispara 'backButton' e 'document.backbutton' no mesmo gesto!
+        if (nowMs < _voithBackLockUntil) {
+            return true;
+        }
+        _voithBackLockUntil = nowMs + 450;
+
         var sb = document.getElementById('vpSidebar');
         if (sb && sb.classList.contains('is-open')) {
             closeMobileSidebar();
-            pushVoithBackGuard('stay');
+            return true;
+        }
+        var sysMenu = document.getElementById('systemMenuDropdown');
+        if (sysMenu && !sysMenu.classList.contains('hidden')) {
+            closeSystemMenu();
+            return true;
+        }
+        var hqs = document.getElementById('heroQuickSearchResults');
+        if (hqs && !hqs.classList.contains('hidden') && hqs.style.display !== 'none') {
+            clearHeroQuickSearch();
             return true;
         }
         var insp = document.getElementById('inspectorOverlay');
         if (insp && !insp.classList.contains('hidden')) {
             closeInspectorModal();
-            pushVoithBackGuard('stay');
             return true;
         }
         var openModals = [
@@ -7746,53 +7828,86 @@ function bootApp() {
             var mEl = document.getElementById(openModals[i][0]);
             if (mEl && !mEl.classList.contains('hidden')) {
                 openModals[i][1]();
-                pushVoithBackGuard('stay');
                 return true;
             }
         }
+        if (_voithViewStack.length > 1) {
+            _voithViewStack.pop();
+            var targetView = _voithViewStack[_voithViewStack.length - 1] || 'command';
+            navigateTo(targetView, true);
+            return true;
+        }
         if (VoithDB.state.view && VoithDB.state.view !== 'command') {
+            _voithViewStack = ['command'];
             navigateTo('command', true);
-            pushVoithBackGuard('home');
             return true;
         }
-        // Na tela inicial: exige 2 toques rápidos em Voltar para sair (evita fechar o app sem querer)
-        var nowMs = Date.now();
-        if (nowMs - _voithLastBackPress > 2000) {
-            _voithLastBackPress = nowMs;
-            pushVoithBackGuard('exit-guard');
-            showToast('Pressione Voltar novamente para sair', 'warn');
-            return true;
+        // Na tela inicial (Command Center): exige 2 gestos Voltar entre 0.45s e 2.5s para sair
+        var sinceFirst = nowMs - _voithLastBackPress;
+        if (sinceFirst >= 450 && sinceFirst <= 2500) {
+            _voithLastBackPress = 0;
+            return false;
         }
-        return false;
+        _voithLastBackPress = nowMs;
+        showToast('Deslize Voltar novamente para sair', 'warn');
+        return true;
     };
 
-    window.addEventListener('popstate', function () {
-        handleMobileBackAction();
+    window.addEventListener('popstate', function (ev) {
+        if (_voithCapBackBound) return;
+        var stayed = handleMobileBackAction('popstate');
+        if (stayed) {
+            var st = ev && ev.state;
+            // Se chegou na base do histórico (ou sem state), rearma a guarda
+            if (!st || st.voithBase) {
+                pushVoithBackGuard('stay', true);
+                _voithNeedsUserActivatedGuard = true;
+            }
+        } else {
+            try { window.history.back(); } catch (e) {}
+        }
     });
 
+    // Fallback Cordova/WebView antigo (ignorado quando Capacitor.Plugins.App já está vinculado)
     document.addEventListener('backbutton', function (ev) {
-        if (handleMobileBackAction() && ev && typeof ev.preventDefault === 'function') {
+        if (_voithCapBackBound) {
+            if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+            return;
+        }
+        if (handleMobileBackAction('backbutton') && ev && typeof ev.preventDefault === 'function') {
             ev.preventDefault();
         }
     }, false);
 
-    try {
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App && typeof window.Capacitor.Plugins.App.addListener === 'function') {
-            window.Capacitor.Plugins.App.addListener('backButton', function () {
-                if (!handleMobileBackAction()) {
-                    if (typeof window.Capacitor.Plugins.App.exitApp === 'function') {
-                        window.Capacitor.Plugins.App.exitApp();
+    // Vincula listener nativo do Capacitor AppPlugin (com retentativa caso bridge injete logo após boot)
+    var bindCapacitorBackListener = function () {
+        if (_voithCapBackBound) return;
+        try {
+            var capApp = getCapacitorAppPlugin();
+            if (capApp && typeof capApp.addListener === 'function') {
+                _voithCapBackBound = true;
+                capApp.addListener('backButton', function () {
+                    var stayed = handleMobileBackAction('capacitor');
+                    if (!stayed) {
+                        if (typeof capApp.exitApp === 'function') {
+                            capApp.exitApp();
+                        } else if (typeof capApp.minimizeApp === 'function') {
+                            capApp.minimizeApp();
+                        }
                     }
-                }
-            });
-        }
-    } catch (e) {}
+                });
+            }
+        } catch (e) {}
+    };
+    bindCapacitorBackListener();
+    setTimeout(bindCapacitorBackListener, 500);
+    setTimeout(bindCapacitorBackListener, 1500);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootApp);
 else bootApp();
 
-// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.21) =====================
+// ===================== OTA AUTOMÁTICO & MODAL "O QUE MUDOU" (v16.22) =====================
 var _lastOtaVersionShown = '';
 var _otaCheckDone = false;
 
@@ -7829,7 +7944,7 @@ function evaluateReleaseDisplay(latest, curVer) {
 }
 
 async function pollLiveOtaRelease() {
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.22.0';
     var ota = await VoithCloud.callPublicRpc('get_release_channel', { p_channel: 'stable' });
     if (!ota || !ota.ok || !ota.latest || !ota.latest.version) return;
     VoithDB.state.releaseChannel = ota;
@@ -7852,7 +7967,7 @@ async function checkOtaUpdatesOnBoot() {
         await pollLiveOtaRelease();
         return;
     }
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.22.0';
 
     // 1. Tenta mostrar cache local imediato se houver release salva ainda não vista
     try {
@@ -7891,6 +8006,7 @@ function openWhatsNewModal(releaseObj, needsReload, curVer) {
     }
     if (chg) chg.textContent = releaseObj.changelog || '- Melhorias gerais de desempenho e estabilidade.';
     if (reloadBtn) reloadBtn.classList.toggle('hidden', !needsReload);
+    pushVoithBackGuard('whatsnew', false);
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
 }
@@ -7924,7 +8040,7 @@ function sendBootTelemetryOnce() {
         if (sessionStorage.getItem('voith_boot_ping_sent')) return;
         sessionStorage.setItem('voith_boot_ping_sent', '1');
     } catch (e) {}
-    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
+    var curVer = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.22.0';
     var user = (VoithDB.state.session && VoithDB.state.session.username) || 'consulta';
     VoithCloud.callRpc({
         action: 'log_telemetry',
@@ -7942,7 +8058,7 @@ function togglePublishReleaseForm() {
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
         var vInp = document.getElementById('otaPubVersion');
-        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.21.0';
+        if (vInp && !vInp.value) vInp.value = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || '16.22.0';
     }
 }
 
