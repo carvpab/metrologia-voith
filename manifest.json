@@ -1,24 +1,9 @@
 {
   "name": "VOITH TURBO — Precision Metrology OS",
   "short_name": "Voith Metrologia",
-  "description": "Sistema corporativo de gestão metrológica, cautelas e calibração externa — Voith Turbo Brasil",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#001833",
   "theme_color": "#001833",
-  "orientation": "any",
-  "icons": [
-    {
-      "src": "./icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ]
+  "description": "Gestão Metrológica Industrial Voith Turbo Brasil"
 }
