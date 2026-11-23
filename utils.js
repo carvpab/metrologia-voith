@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.16 • utils.js
+ * VOITH TURBO — PRECISION METROLOGY OS v16.17 • utils.js
  * Utilitários puros: datas BR, classificação metrológica, máscaras, toast, CSV
  * ============================================================================ */
 
