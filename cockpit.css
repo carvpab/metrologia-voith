@@ -1,5 +1,5 @@
 /* ============================================================================
- * VOITH TURBO — PRECISION METROLOGY OS v16.14 • cockpit.css
+ * VOITH TURBO — PRECISION METROLOGY OS v16.15 • cockpit.css
  * Design System Industrial Cockpit v12 (100% Fiel) + Modo Fábrica
  * ============================================================================ */
 
@@ -572,4 +572,48 @@ body.vp-factory-mode #heroManualDateToggleBtn {
 body.vp-factory-mode #heroManualDateOkBtn {
     background: #FACC15 !important;
     color: #000000 !important;
+}
+
+/* === CORREÇÕES v16.15: Strip Mobile, Input Data Manual e Modo Fábrica === */
+@media (min-width: 1024px) {
+    .ck-mob-strip { display: none !important; }
+}
+
+#heroCustomDateBR {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+html body.vp-factory-mode #systemMenuDropdown {
+    background: #0A0A0A !important;
+    background-color: #0A0A0A !important;
+    border: 1.5px solid #FACC15 !important;
+    color: #FFFFFF !important;
+}
+html body.vp-factory-mode #systemMenuDropdown button,
+html body.vp-factory-mode #systemMenuDropdown a {
+    background: #0A0A0A !important;
+    background-color: #0A0A0A !important;
+    color: #FFFFFF !important;
+}
+html body.vp-factory-mode #systemMenuDropdown button:hover,
+html body.vp-factory-mode #systemMenuDropdown a:hover {
+    background: #2A2400 !important;
+    background-color: #2A2400 !important;
+    color: #FDE047 !important;
+}
+html body.vp-factory-mode .ck-topbar button,
+html body.vp-factory-mode .ck-mob-strip,
+html body.vp-factory-mode .ck-mob-strip button {
+    background: #141414 !important;
+    background-color: #141414 !important;
+    color: #FFFFFF !important;
+    border-color: #FACC15 !important;
+}
+html body.vp-factory-mode .ck-topbar button.bg-\[\#004C97\] {
+    background: #004C97 !important;
+    background-color: #004C97 !important;
+    color: #FFFFFF !important;
 }
