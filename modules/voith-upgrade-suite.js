@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v4.1 (Revisado: UTF-8, Session Auto-Detect & sb_publishable)
+ * VOITH METROLOGIA — Upgrade Suite v4.3 (Pílula no topo direito + RBAC/Cautela)
  * ============================================================================
  */
 (function (global) {
@@ -32,9 +32,6 @@
     otaChannel: localStorage.getItem('voith_ota_channel') || 'stable'
   };
 
-  // -------------------------------------------------------------------------
-  // Helper: Chamada RPC ao Supabase (compatível com sb_publishable_ e eyJ...)
-  // -------------------------------------------------------------------------
   async function rpc(fnName, params = {}) {
     const { supabaseUrl, supabaseAnonKey } = state.cfg;
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -74,22 +71,36 @@
       .replace(/'/g, '&#39;');
   }
 
-  // -------------------------------------------------------------------------
-  // Estilos embutidos (isolados com prefixo vu- e reset defensivo contra Tailwind)
-  // -------------------------------------------------------------------------
   function injectStyles() {
-    if (document.getElementById('voith-upgrade-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'voith-upgrade-styles';
+    let style = document.getElementById('voith-upgrade-styles');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'voith-upgrade-styles';
+      document.head.appendChild(style);
+    }
     style.textContent = `
-      .vu-sync-pill {
-        position: fixed; bottom: 16px; left: 16px; z-index: 9500;
+      .vu-sync-pill,
+      #vu-sync-pill {
+        position: fixed !important;
+        top: 64px !important;
+        right: 16px !important;
+        bottom: auto !important;
+        left: auto !important;
+        z-index: 9500 !important;
         display: inline-flex; align-items: center; gap: 8px;
         padding: 6px 12px; border-radius: 999px; font: 600 12px/1.2 system-ui, sans-serif;
         box-shadow: 0 4px 16px rgba(0,0,0,.28); backdrop-filter: blur(8px);
         transition: all .2s ease; user-select: none; cursor: pointer;
       }
-      @media (max-width: 1023px) { .vu-sync-pill { bottom: 68px; left: 12px; } }
+      @media (max-width: 1023px) {
+        .vu-sync-pill,
+        #vu-sync-pill {
+          top: 64px !important;
+          right: 12px !important;
+          bottom: auto !important;
+          left: auto !important;
+        }
+      }
       .vu-sync-ok { background: #0f2e1f; color: #5eead4; border: 1px solid #166534; }
       .vu-sync-busy { background: #0f2540; color: #93c5fd; border: 1px solid #1d4ed8; }
       .vu-sync-offline { background: #3b2208; color: #fcd34d; border: 1px solid #d97706; }
@@ -167,12 +178,8 @@
       .vu-table th, .vu-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; text-align: left; }
       .vu-table th { color: #94a3b8; font-weight: 600; }
     `;
-    document.head.appendChild(style);
   }
 
-  // -------------------------------------------------------------------------
-  // 1. INDICADOR EXPLÍCITO DE MODO OFFLINE & FILA DE SINCRONIZAÇÃO
-  // -------------------------------------------------------------------------
   function renderSyncPill() {
     let pill = document.getElementById('vu-sync-pill');
     if (!pill) {
@@ -219,9 +226,6 @@
     renderSyncPill();
   }
 
-  // -------------------------------------------------------------------------
-  // 2. BUSCA GLOBAL POR ATALHO (Ctrl + K / Cmd + K)
-  // -------------------------------------------------------------------------
   function openGlobalSearch() {
     closeModals();
     const instruments = typeof state.cfg.getInstruments === 'function' ? state.cfg.getInstruments() : [];
@@ -333,9 +337,6 @@
     setTimeout(() => input.focus(), 20);
   }
 
-  // -------------------------------------------------------------------------
-  // 3. AÇÕES EM LOTE (BULK ACTIONS)
-  // -------------------------------------------------------------------------
   function ensureBulkBar() {
     let bar = document.getElementById('vu-bulk-bar');
     if (bar) return bar;
@@ -424,9 +425,6 @@
     win.print();
   }
 
-  // -------------------------------------------------------------------------
-  // 4. CAUTELA RÁPIDA COM AUTO-PREENCHIMENTO DO LOGIN (Nome, Matrícula, Setor)
-  // -------------------------------------------------------------------------
   async function openCautelaModal(preselectedTag = '') {
     if (!state.profile) await loadSessionProfile();
     if (!state.profile) {
@@ -522,13 +520,10 @@
     });
   }
 
-  // -------------------------------------------------------------------------
-  // 5. PAINEL DE TIPOS DE LOGIN, HIERARQUIA & USUÁRIOS (RBAC)
-  // -------------------------------------------------------------------------
   async function openRbacAdminModal() {
     if (!state.profile) await loadSessionProfile();
     if (!state.profile) {
-      return alert('Não foi possível validar sua sessão no Supabase. Verifique se você está logado e se os SQLs 01 e 02 foram executados.');
+      return alert('Não foi possível validar sua sessão no Supabase. Verifique se você está logado.');
     }
     if (!hasPerm('manage_users') && !hasPerm('manage_roles')) {
       return alert('Seu perfil não possui permissão para gerenciar logins ou hierarquia.');
@@ -711,9 +706,6 @@
     renderRolesTab();
   }
 
-  // -------------------------------------------------------------------------
-  // 6. INDICADORES DE SLA (LEAD TIME) E CUSTO POR LABORATÓRIO
-  // -------------------------------------------------------------------------
   function computeLabSlaMetrics(history) {
     const map = new Map();
     const today = new Date();
@@ -803,9 +795,6 @@
     document.body.appendChild(backdrop);
   }
 
-  // -------------------------------------------------------------------------
-  // 7. CAPTURA AUTOMÁTICA DE ERROS JS PARA app_telemetry
-  // -------------------------------------------------------------------------
   function sendTelemetryError(eventType, message, stack) {
     const key = `${eventType}:${message}`;
     const now = Date.now();
@@ -850,9 +839,6 @@
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Menu Rápido ao clicar na pílula de status
-  // -------------------------------------------------------------------------
   async function openQuickMenu() {
     if (!state.profile) await loadSessionProfile();
     closeModals();
@@ -917,9 +903,6 @@
     document.querySelectorAll('[data-vu-modal="1"]').forEach((el) => el.remove());
   }
 
-  // -------------------------------------------------------------------------
-  // Inicialização Principal
-  // -------------------------------------------------------------------------
   async function loadSessionProfile() {
     const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
     if (!token) return null;
