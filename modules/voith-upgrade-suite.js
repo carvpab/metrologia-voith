@@ -1,9 +1,10 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v4.4
- * - Auto-oculta pílula quando sincronizado
- * - Botão "← Voltar" na Gestão de Logins & Hierarquia
- * - Auto-injeta aba RBAC no Painel Admin e botão Auto-Preencher na Cautela
+ * VOITH METROLOGIA — Upgrade Suite v4.5
+ * - Barra de abas do Painel Admin deslizável horizontalmente no celular
+ * - Suporte ao gesto de voltar do Android/navegador (volta ao Painel Admin)
+ * - Auto-oculta pílula quando sincronizado + botão "← Voltar"
+ * - Corrige autocomplete de senha e exibe erros de salvamento na tela
  * ============================================================================
  */
 (function (global) {
@@ -32,7 +33,10 @@
     pendingMutations: 0,
     syncing: false,
     errorBurstCache: new Map(),
-    otaChannel: localStorage.getItem('voith_ota_channel') || 'stable'
+    otaChannel: localStorage.getItem('voith_ota_channel') || 'stable',
+    modalHistoryPushed: false,
+    modalReturnToAdmin: false,
+    ignoreNextPopstate: false
   };
 
   async function rpc(fnName, params = {}) {
@@ -82,6 +86,34 @@
       document.head.appendChild(style);
     }
     style.textContent = `
+      /* Abas deslizáveis horizontalmente no Painel Administrativo (celular) */
+      .vu-admin-tabs-scroll,
+      #adminUsersModal div:has(> #admTabUsers) {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        flex-wrap: nowrap !important;
+        scrollbar-width: none;
+        touch-action: pan-x !important;
+        gap: 6px !important;
+      }
+      @media (max-width: 640px) {
+        .vu-admin-tabs-scroll,
+        #adminUsersModal div:has(> #admTabUsers) {
+          padding-left: 12px !important;
+          padding-right: 20px !important;
+        }
+      }
+      .vu-admin-tabs-scroll::-webkit-scrollbar,
+      #adminUsersModal div:has(> #admTabUsers)::-webkit-scrollbar {
+        display: none;
+      }
+      .vu-admin-tabs-scroll > button,
+      #adminUsersModal div:has(> #admTabUsers) > button {
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+      }
+
       .vu-sync-pill,
       #vu-sync-pill {
         position: fixed !important;
@@ -103,7 +135,7 @@
       .vu-backdrop {
         position: fixed; inset: 0; z-index: 9800; background: rgba(6, 11, 20, .75);
         display: flex; align-items: flex-start; justify-content: center;
-        padding: 48px 16px 24px; overflow-y: auto; backdrop-filter: blur(4px);
+        padding: 40px 12px 24px; overflow-y: auto; backdrop-filter: blur(4px);
       }
       .vu-modal {
         width: 100%; max-width: 880px; background: #0f172a; color: #e2e8f0;
@@ -112,15 +144,15 @@
       }
       .vu-modal-sm { max-width: 620px; }
       .vu-header {
-        display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 16px 20px; background: #1e293b; border-bottom: 1px solid #334155;
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 14px 16px; background: #1e293b; border-bottom: 1px solid #334155;
       }
       .vu-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-      .vu-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: #f8fafc; }
+      .vu-header h3 { margin: 0; font-size: 15px; font-weight: 700; color: #f8fafc; }
       .vu-close {
-        background: transparent; border: none; color: #94a3b8; font-size: 22px; line-height: 1; cursor: pointer;
+        background: transparent; border: none; color: #94a3b8; font-size: 22px; line-height: 1; cursor: pointer; flex-shrink: 0;
       }
-      .vu-body { padding: 18px 20px; max-height: 76vh; overflow-y: auto; }
+      .vu-body { padding: 16px; max-height: 78vh; overflow-y: auto; }
       .vu-input, .vu-select, .vu-textarea {
         width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px;
         border: 1px solid #334155; background: #0b1220; color: #f8fafc; font-size: 13px;
@@ -131,7 +163,7 @@
         background: #1e293b; color: #f8fafc; font: 600 13px/1.2 system-ui, sans-serif; cursor: pointer;
       }
       .vu-btn:hover { background: #334155; }
-      .vu-btn-sm { padding: 6px 10px; font-size: 12px; }
+      .vu-btn-sm { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
       .vu-btn-primary { background: #0284c7; border-color: #0ea5e9; color: #fff; }
       .vu-btn-primary:hover { background: #0369a1; }
       .vu-btn-danger { background: #991b1b; border-color: #dc2626; color: #fff; }
@@ -156,28 +188,102 @@
       }
       .vu-k-item.active, .vu-k-item:hover { border-color: #0ea5e9; background: #17253d; }
 
-      .vu-tabs { display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
-      .vu-tab { background: transparent; border: none; color: #94a3b8; font-weight: 600; padding: 6px 12px; cursor: pointer; border-radius: 6px; }
+      .vu-tabs {
+        display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;
+        overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+      }
+      .vu-tabs::-webkit-scrollbar { display: none; }
+      .vu-tab {
+        background: transparent; border: none; color: #94a3b8; font-weight: 600;
+        padding: 6px 12px; cursor: pointer; border-radius: 6px; white-space: nowrap; flex-shrink: 0;
+      }
       .vu-tab.active { background: #0284c7; color: #fff; }
       .vu-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
       .vu-perm-item { display: flex; align-items: center; gap: 8px; font-size: 12px; background: #0b1220; padding: 7px 9px; border-radius: 6px; border: 1px solid #1e293b; cursor: pointer; }
-      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+      .vu-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
       .vu-table th, .vu-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; text-align: left; }
       .vu-table th { color: #94a3b8; font-weight: 600; }
     `;
   }
 
+  // -------------------------------------------------------------------------
+  // Gesto de voltar do celular (popstate) — retorna ao Painel Administrativo
+  // -------------------------------------------------------------------------
+  function ensureAdminModalVisible() {
+    const adm = document.getElementById('adminUsersModal');
+    if (adm && adm.classList.contains('hidden')) {
+      if (typeof global.openAdminUsersModal === 'function') {
+        global.openAdminUsersModal();
+      } else {
+        adm.classList.remove('hidden');
+      }
+    }
+  }
+
+  function pushModalHistory(returnToAdmin = false) {
+    state.modalReturnToAdmin = Boolean(returnToAdmin);
+    if (!state.modalHistoryPushed) {
+      try {
+        history.pushState({ vuModal: true, fromAdmin: state.modalReturnToAdmin }, '', window.location.href);
+        state.modalHistoryPushed = true;
+      } catch (_) {}
+    }
+  }
+
+  function setupHistoryBackHandler() {
+    window.addEventListener('popstate', (e) => {
+      if (state.ignoreNextPopstate) {
+        state.ignoreNextPopstate = false;
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        return;
+      }
+      if (state.modalHistoryPushed && document.querySelector('[data-vu-modal="1"]')) {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        const shouldReturnAdmin = state.modalReturnToAdmin;
+        state.modalHistoryPushed = false;
+        state.modalReturnToAdmin = false;
+        closeModals({ fromPopstate: true, reopenAdmin: shouldReturnAdmin });
+      }
+    }, true);
+  }
+
+  function closeModals(options = {}) {
+    const { fromPopstate = false, keepHistory = false, reopenAdmin = false } = options;
+    document.querySelectorAll('[data-vu-modal="1"]').forEach((el) => el.remove());
+
+    if (!keepHistory && state.modalHistoryPushed) {
+      state.modalHistoryPushed = false;
+      state.modalReturnToAdmin = false;
+      if (!fromPopstate) {
+        state.ignoreNextPopstate = true;
+        try { history.back(); } catch (_) {}
+        setTimeout(() => { state.ignoreNextPopstate = false; }, 350);
+      }
+    }
+
+    if (reopenAdmin) {
+      setTimeout(ensureAdminModalVisible, 40);
+    }
+  }
+
   function injectAppHooks() {
     const adminTabsBar = document.querySelector('#adminUsersModal #admTabOta')?.parentElement
       || document.querySelector('#adminUsersModal #admTabUsers')?.parentElement;
-    if (adminTabsBar && !document.getElementById('admTabRbac')) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.id = 'admTabRbac';
-      btn.className = 'px-3.5 py-2 rounded-t-lg font-bold text-amber-600 dark:text-amber-300 hover:underline cursor-pointer';
-      btn.textContent = 'Tipos de Login & Hierarquia';
-      btn.addEventListener('click', () => openRbacAdminModal());
-      adminTabsBar.appendChild(btn);
+
+    if (adminTabsBar) {
+      adminTabsBar.classList.add('vu-admin-tabs-scroll');
+      if (!document.getElementById('admTabRbac')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'admTabRbac';
+        btn.className = 'px-3.5 py-2 rounded-t-lg font-bold text-amber-600 dark:text-amber-300 hover:underline cursor-pointer';
+        btn.textContent = 'Tipos de Login & Hierarquia';
+        btn.addEventListener('click', () => openRbacAdminModal());
+        adminTabsBar.appendChild(btn);
+      }
     }
 
     const calPresetBtn = document.querySelector('#custodyModal button[onclick*="applyCustPreset"]');
@@ -246,7 +352,8 @@
   }
 
   function openGlobalSearch() {
-    closeModals();
+    closeModals({ keepHistory: true });
+    pushModalHistory(false);
     const instruments = typeof state.cfg.getInstruments === 'function' ? state.cfg.getInstruments() : [];
     let activeIdx = 0;
     let filtered = instruments.slice(0, 12);
@@ -341,7 +448,8 @@
     if (!hasPerm('request_cautela')) {
       return alert('Seu tipo de login não tem permissão para solicitar/preencher cautelas.');
     }
-    closeModals();
+    closeModals({ keepHistory: true });
+    pushModalHistory(false);
 
     const prof = state.profile;
     const canOverride = hasPerm('override_cautela_holder');
@@ -431,7 +539,7 @@
     });
   }
 
-  async function openRbacAdminModal() {
+  async function openRbacAdminModal(isRefresh = false, activeTab = 'roles') {
     if (!state.profile) await loadSessionProfile();
     if (!state.profile) {
       return alert('Não foi possível validar sua sessão no Supabase. Verifique se você está logado.');
@@ -439,7 +547,8 @@
     if (!hasPerm('manage_users') && !hasPerm('manage_roles')) {
       return alert('Seu perfil não possui permissão para gerenciar logins ou hierarquia.');
     }
-    closeModals();
+    closeModals({ keepHistory: true });
+    if (!isRefresh) pushModalHistory(true);
 
     const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
     let roles = [];
@@ -452,6 +561,7 @@
         if (uRes.ok) users = uRes.users || [];
       }
     } catch (err) {
+      closeModals({ reopenAdmin: true });
       return alert('Erro ao carregar perfis/usuários: ' + err.message);
     }
 
@@ -469,8 +579,8 @@
         </div>
         <div class="vu-body">
           <div class="vu-tabs">
-            <button type="button" class="vu-tab active" data-tab="roles">Tipos de Login & Hierarquia</button>
-            <button type="button" class="vu-tab" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
+            <button type="button" class="vu-tab ${activeTab === 'roles' ? 'active' : ''}" data-tab="roles">Tipos de Login & Hierarquia</button>
+            <button type="button" class="vu-tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
           </div>
           <div id="vu-rbac-content"></div>
         </div>
@@ -478,16 +588,14 @@
     `;
 
     backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeModals();
+      if (e.target === backdrop || e.target.classList.contains('vu-close')) {
+        closeModals({ reopenAdmin: true });
+      }
     });
     const backBtn = backdrop.querySelector('.vu-back-admin');
     if (backBtn) {
       backBtn.addEventListener('click', () => {
-        closeModals();
-        const adm = document.getElementById('adminUsersModal');
-        if (adm && adm.classList.contains('hidden') && typeof global.openAdminUsersModal === 'function') {
-          global.openAdminUsersModal();
-        }
+        closeModals({ reopenAdmin: true });
       });
     }
     document.body.appendChild(backdrop);
@@ -504,49 +612,55 @@
       content.innerHTML = `
         <div class="vu-card" style="margin-bottom:14px;">
           <h4 style="margin:0 0 10px;font-weight:700;">Cadastrar / Editar Usuário</h4>
-          <form id="vu-user-form" style="display:flex;flex-direction:column;gap:10px;">
+          <form id="vu-user-form" autocomplete="off" style="display:flex;flex-direction:column;gap:10px;">
             <div class="vu-grid-3">
-              <input class="vu-input" name="username" placeholder="Login (ex: joao.silva)" required />
-              <input class="vu-input" name="display_name" placeholder="Nome Completo" required />
-              <input class="vu-input" name="matricula" placeholder="Matrícula (ex: 12345)" required />
+              <input class="vu-input" name="username" autocomplete="off" placeholder="Login (ex: joao.silva)" required />
+              <input class="vu-input" name="display_name" autocomplete="off" placeholder="Nome Completo" required />
+              <input class="vu-input" name="matricula" autocomplete="off" placeholder="Matrícula (ex: 12345)" required />
             </div>
             <div class="vu-grid-3">
-              <input class="vu-input" name="setor" placeholder="Setor (ex: Usinagem / Turbo)" required />
+              <input class="vu-input" name="setor" autocomplete="off" placeholder="Setor (ex: Usinagem / Turbo)" required />
               <select class="vu-select" name="role_code">${roleOptions}</select>
-              <input class="vu-input" name="password" type="password" placeholder="Senha (vazio = manter atual)" />
+              <input class="vu-input" name="password" type="password" autocomplete="new-password" placeholder="Senha (vazio = manter atual)" />
             </div>
             <div style="display:flex;justify-content:flex-end;">
               <button class="vu-btn vu-btn-primary" type="submit">Salvar Usuário</button>
             </div>
           </form>
         </div>
-        <table class="vu-table">
-          <thead>
-            <tr><th>Login</th><th>Nome</th><th>Matrícula</th><th>Setor</th><th>Tipo de Login</th><th>Nível</th></tr>
-          </thead>
-          <tbody>
-            ${users.map((u) => `
-              <tr>
-                <td><strong>${escapeHtml(u.username)}</strong></td>
-                <td>${escapeHtml(u.display_name)}</td>
-                <td>${escapeHtml(u.matricula || '—')}</td>
-                <td>${escapeHtml(u.setor || '—')}</td>
-                <td><span class="vu-badge">${escapeHtml(u.role_name || u.role_code)}</span></td>
-                <td>${u.hierarchy_level}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        <div class="vu-table-wrap">
+          <table class="vu-table">
+            <thead>
+              <tr><th>Login</th><th>Nome</th><th>Matrícula</th><th>Setor</th><th>Tipo de Login</th><th>Nível</th></tr>
+            </thead>
+            <tbody>
+              ${users.map((u) => `
+                <tr>
+                  <td><strong>${escapeHtml(u.username)}</strong></td>
+                  <td>${escapeHtml(u.display_name)}</td>
+                  <td>${escapeHtml(u.matricula || '—')}</td>
+                  <td>${escapeHtml(u.setor || '—')}</td>
+                  <td><span class="vu-badge">${escapeHtml(u.role_name || u.role_code)}</span></td>
+                  <td>${u.hierarchy_level}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
       `;
 
       content.querySelector('#vu-user-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
         const payload = Object.fromEntries(fd.entries());
-        const res = await rpc('voith_upsert_user_profile', { p_token: token, p_user: payload });
-        if (!res.ok) return alert(res.error);
-        alert('Usuário salvo com sucesso!');
-        openRbacAdminModal();
+        try {
+          const res = await rpc('voith_upsert_user_profile', { p_token: token, p_user: payload });
+          if (!res.ok) return alert(res.error || 'Erro ao salvar usuário.');
+          alert('Usuário salvo com sucesso!');
+          openRbacAdminModal(true, 'users');
+        } catch (err) {
+          alert('Erro ao salvar usuário: ' + err.message);
+        }
       });
     }
 
@@ -576,22 +690,24 @@
             </div>
           </form>
         </div>` : '<p style="color:#94a3b8;">Apenas perfis com permissão de gestão de papéis podem criar novos tipos de login.</p>'}
-        <table class="vu-table">
-          <thead><tr><th>Código</th><th>Nome</th><th>Hierarquia</th><th>Permissões Ativas</th></tr></thead>
-          <tbody>
-            ${roles.map((r) => {
-              const activePerms = Object.entries(r.permissions || {}).filter(([, v]) => v).length;
-              return `
-                <tr>
-                  <td><strong>${escapeHtml(r.code)}</strong></td>
-                  <td>${escapeHtml(r.name)}<div style="font-size:11px;color:#94a3b8;">${escapeHtml(r.description || '')}</div></td>
-                  <td><span class="vu-badge">Nível ${r.hierarchy_level}</span></td>
-                  <td>${activePerms} permissões</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+        <div class="vu-table-wrap">
+          <table class="vu-table">
+            <thead><tr><th>Código</th><th>Nome</th><th>Hierarquia</th><th>Permissões Ativas</th></tr></thead>
+            <tbody>
+              ${roles.map((r) => {
+                const activePerms = Object.entries(r.permissions || {}).filter(([, v]) => v).length;
+                return `
+                  <tr>
+                    <td><strong>${escapeHtml(r.code)}</strong></td>
+                    <td>${escapeHtml(r.name)}<div style="font-size:11px;color:#94a3b8;">${escapeHtml(r.description || '')}</div></td>
+                    <td><span class="vu-badge">Nível ${r.hierarchy_level}</span></td>
+                    <td>${activePerms} permissões</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       `;
 
       const rForm = content.querySelector('#vu-role-form');
@@ -610,10 +726,14 @@
             hierarchy_level: Number(fd.get('hierarchy_level')),
             permissions: perms
           };
-          const res = await rpc('voith_upsert_role', { p_token: token, p_role: payload });
-          if (!res.ok) return alert(res.error);
-          alert('Tipo de login salvo com sucesso!');
-          openRbacAdminModal();
+          try {
+            const res = await rpc('voith_upsert_role', { p_token: token, p_role: payload });
+            if (!res.ok) return alert(res.error || 'Erro ao salvar tipo de login.');
+            alert('Tipo de login salvo com sucesso!');
+            openRbacAdminModal(true, 'roles');
+          } catch (err) {
+            alert('Erro ao salvar tipo de login: ' + err.message);
+          }
         });
       }
     }
@@ -627,7 +747,8 @@
       });
     });
 
-    renderRolesTab();
+    if (activeTab === 'users') renderUsersTab();
+    else renderRolesTab();
   }
 
   function computeLabSlaMetrics(history) {
@@ -660,7 +781,8 @@
   async function openLabSlaModal() {
     if (!state.profile) await loadSessionProfile();
     if (!hasPerm('view_sla_costs')) return alert('Seu perfil não tem permissão para visualizar SLA e custos.');
-    closeModals();
+    closeModals({ keepHistory: true });
+    pushModalHistory(false);
     const history = typeof state.cfg.getCalibrationHistory === 'function' ? state.cfg.getCalibrationHistory() : [];
     const rows = computeLabSlaMetrics(history);
     const totalCost = rows.reduce((acc, r) => acc + r.custoTotal, 0);
@@ -684,21 +806,23 @@
             <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Custo Acumulado</div><div style="font-size:22px;font-weight:700;color:#38bdf8;">${fmtBRL(totalCost)}</div></div>
             <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Envios Atrasados</div><div style="font-size:22px;font-weight:700;color:#fbbf24;">${rows.reduce((a, r) => a + r.atrasados, 0)}</div></div>
           </div>
-          <table class="vu-table">
-            <thead><tr><th>Laboratório</th><th>Envios</th><th>Lead Time Médio</th><th>Atrasados</th><th>Custo Acumulado</th><th>Custo Médio</th></tr></thead>
-            <tbody>
-              ${rows.length ? rows.map((r) => `
-                <tr>
-                  <td><strong>${escapeHtml(r.lab)}</strong></td>
-                  <td>${r.totalEnvios}</td>
-                  <td>${r.leadTimeMedio} dias</td>
-                  <td>${r.atrasados > 0 ? `<span class="vu-badge vu-badge-amber">${r.atrasados}</span>` : '0'}</td>
-                  <td>${fmtBRL(r.custoTotal)}</td>
-                  <td>${fmtBRL(r.custoMedio)}</td>
-                </tr>
-              `).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">Sem registros em calibration_history.</td></tr>'}
-            </tbody>
-          </table>
+          <div class="vu-table-wrap">
+            <table class="vu-table">
+              <thead><tr><th>Laboratório</th><th>Envios</th><th>Lead Time Médio</th><th>Atrasados</th><th>Custo Acumulado</th><th>Custo Médio</th></tr></thead>
+              <tbody>
+                ${rows.length ? rows.map((r) => `
+                  <tr>
+                    <td><strong>${escapeHtml(r.lab)}</strong></td>
+                    <td>${r.totalEnvios}</td>
+                    <td>${r.leadTimeMedio} dias</td>
+                    <td>${r.atrasados > 0 ? `<span class="vu-badge vu-badge-amber">${r.atrasados}</span>` : '0'}</td>
+                    <td>${fmtBRL(r.custoTotal)}</td>
+                    <td>${fmtBRL(r.custoMedio)}</td>
+                  </tr>
+                `).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">Sem registros em calibration_history.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     `;
@@ -751,7 +875,8 @@
 
   async function openQuickMenu() {
     if (!state.profile) await loadSessionProfile();
-    closeModals();
+    closeModals({ keepHistory: true });
+    pushModalHistory(false);
     const prof = state.profile;
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
@@ -787,11 +912,7 @@
     const slaBtn = backdrop.querySelector('#vu-act-sla');
     if (slaBtn) slaBtn.onclick = openLabSlaModal;
     const rbacBtn = backdrop.querySelector('#vu-act-rbac');
-    if (rbacBtn) rbacBtn.onclick = openRbacAdminModal;
-  }
-
-  function closeModals() {
-    document.querySelectorAll('[data-vu-modal="1"]').forEach((el) => el.remove());
+    if (rbacBtn) rbacBtn.onclick = () => openRbacAdminModal(false, 'roles');
   }
 
   async function loadSessionProfile() {
@@ -817,6 +938,7 @@
     state.cfg = config;
     injectStyles();
     injectAppHooks();
+    setupHistoryBackHandler();
     setupOfflineMonitors();
     setupErrorTelemetry();
 
