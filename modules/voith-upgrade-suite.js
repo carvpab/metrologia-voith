@@ -1,10 +1,10 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v4.5
+ * VOITH METROLOGIA — Upgrade Suite v4.6
+ * - Intercepta gesto voltar do Android/Capacitor sem fechar o Painel Admin
+ * - Impede encerramento acidental do APK ao voltar de modais internos
  * - Barra de abas do Painel Admin deslizável horizontalmente no celular
- * - Suporte ao gesto de voltar do Android/navegador (volta ao Painel Admin)
  * - Auto-oculta pílula quando sincronizado + botão "← Voltar"
- * - Corrige autocomplete de senha e exibe erros de salvamento na tela
  * ============================================================================
  */
 (function (global) {
@@ -36,7 +36,9 @@
     otaChannel: localStorage.getItem('voith_ota_channel') || 'stable',
     modalHistoryPushed: false,
     modalReturnToAdmin: false,
-    ignoreNextPopstate: false
+    ignoreNextPopstate: false,
+    blockExitUntil: 0,
+    adminLockObserver: null
   };
 
   async function rpc(fnName, params = {}) {
@@ -86,7 +88,6 @@
       document.head.appendChild(style);
     }
     style.textContent = `
-      /* Abas deslizáveis horizontalmente no Painel Administrativo (celular) */
       .vu-admin-tabs-scroll,
       #adminUsersModal div:has(> #admTabUsers) {
         overflow-x: auto !important;
@@ -208,22 +209,65 @@
   }
 
   // -------------------------------------------------------------------------
-  // Gesto de voltar do celular (popstate) — retorna ao Painel Administrativo
+  // Controle de Voltar no Android (Capacitor + WebView)
   // -------------------------------------------------------------------------
+  function isNativeApk() {
+    return Boolean(global.Capacitor && (typeof global.Capacitor.isNativePlatform !== 'function' || global.Capacitor.isNativePlatform()));
+  }
+
   function ensureAdminModalVisible() {
     const adm = document.getElementById('adminUsersModal');
-    if (adm && adm.classList.contains('hidden')) {
+    if (!adm) return;
+    if (adm.classList.contains('hidden') || adm.style.display === 'none') {
       if (typeof global.openAdminUsersModal === 'function') {
         global.openAdminUsersModal();
       } else {
         adm.classList.remove('hidden');
+        adm.style.display = '';
       }
     }
   }
 
+  function startAdminBackgroundLock() {
+    stopAdminBackgroundLock();
+    const adm = document.getElementById('adminUsersModal');
+    if (!adm) return;
+    state.adminLockObserver = new MutationObserver(() => {
+      if (state.modalReturnToAdmin && document.querySelector('[data-vu-modal="1"]')) {
+        if (adm.classList.contains('hidden')) {
+          adm.classList.remove('hidden');
+        }
+      }
+    });
+    state.adminLockObserver.observe(adm, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+
+  function stopAdminBackgroundLock() {
+    if (state.adminLockObserver) {
+      state.adminLockObserver.disconnect();
+      state.adminLockObserver = null;
+    }
+  }
+
+  function guardCapacitorExitApp() {
+    const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
+    if (!appPlugin || typeof appPlugin.exitApp !== 'function' || appPlugin.__vuGuarded) return;
+    const origExit = appPlugin.exitApp.bind(appPlugin);
+    appPlugin.exitApp = function () {
+      if (document.querySelector('[data-vu-modal="1"]') || Date.now() < state.blockExitUntil) {
+        return Promise.resolve();
+      }
+      return origExit.apply(this, arguments);
+    };
+    appPlugin.__vuGuarded = true;
+  }
+
   function pushModalHistory(returnToAdmin = false) {
     state.modalReturnToAdmin = Boolean(returnToAdmin);
-    if (!state.modalHistoryPushed) {
+    if (state.modalReturnToAdmin) {
+      startAdminBackgroundLock();
+    }
+    if (!isNativeApk() && !state.modalHistoryPushed) {
       try {
         history.pushState({ vuModal: true, fromAdmin: state.modalReturnToAdmin }, '', window.location.href);
         state.modalHistoryPushed = true;
@@ -231,7 +275,38 @@
     }
   }
 
+  function handleMobileBackEvent(e) {
+    if (!document.querySelector('[data-vu-modal="1"]')) return false;
+    if (e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+    if (e && typeof e.preventDefault === 'function' && e.cancelable) e.preventDefault();
+
+    state.blockExitUntil = Date.now() + 900;
+    const shouldReturnAdmin = state.modalReturnToAdmin;
+    state.modalHistoryPushed = false;
+    closeModals({ fromPopstate: true, reopenAdmin: shouldReturnAdmin });
+    return true;
+  }
+
   function setupHistoryBackHandler() {
+    guardCapacitorExitApp();
+
+    // 1. Evento Cordova / Capacitor WebView
+    document.addEventListener('backbutton', (e) => {
+      handleMobileBackEvent(e);
+    }, true);
+
+    // 2. Plugin App do Capacitor (Android gesture back)
+    const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
+    if (appPlugin && typeof appPlugin.addListener === 'function') {
+      try {
+        appPlugin.addListener('backButton', () => {
+          handleMobileBackEvent(null);
+        });
+      } catch (_) {}
+    }
+
+    // 3. Fallback popstate para navegador mobile comum
     window.addEventListener('popstate', (e) => {
       if (state.ignoreNextPopstate) {
         state.ignoreNextPopstate = false;
@@ -239,33 +314,34 @@
         e.stopPropagation();
         return;
       }
-      if (state.modalHistoryPushed && document.querySelector('[data-vu-modal="1"]')) {
-        e.stopImmediatePropagation();
-        e.stopPropagation();
-        const shouldReturnAdmin = state.modalReturnToAdmin;
-        state.modalHistoryPushed = false;
-        state.modalReturnToAdmin = false;
-        closeModals({ fromPopstate: true, reopenAdmin: shouldReturnAdmin });
+      if (document.querySelector('[data-vu-modal="1"]')) {
+        handleMobileBackEvent(e);
       }
     }, true);
   }
 
   function closeModals(options = {}) {
     const { fromPopstate = false, keepHistory = false, reopenAdmin = false } = options;
+    stopAdminBackgroundLock();
     document.querySelectorAll('[data-vu-modal="1"]').forEach((el) => el.remove());
 
     if (!keepHistory && state.modalHistoryPushed) {
       state.modalHistoryPushed = false;
-      state.modalReturnToAdmin = false;
-      if (!fromPopstate) {
+      if (!fromPopstate && !isNativeApk()) {
         state.ignoreNextPopstate = true;
         try { history.back(); } catch (_) {}
         setTimeout(() => { state.ignoreNextPopstate = false; }, 350);
       }
     }
 
+    if (!keepHistory) {
+      state.modalReturnToAdmin = false;
+    }
+
     if (reopenAdmin) {
-      setTimeout(ensureAdminModalVisible, 40);
+      ensureAdminModalVisible();
+      setTimeout(ensureAdminModalVisible, 60);
+      setTimeout(ensureAdminModalVisible, 200);
     }
   }
 
