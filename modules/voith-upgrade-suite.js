@@ -1,10 +1,12 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v4.6
- * - Intercepta gesto voltar do Android/Capacitor sem fechar o Painel Admin
- * - Impede encerramento acidental do APK ao voltar de modais internos
- * - Barra de abas do Painel Admin deslizável horizontalmente no celular
- * - Auto-oculta pílula quando sincronizado + botão "← Voltar"
+ * VOITH METROLOGIA — Upgrade Suite v5.0
+ * - Trava automática para instrumento Vencido / Reprovado / Em Laboratório
+ * - Análise de Risco & Impacto Retroativo (Non-Conformance)
+ * - Gráfico de Tendência de Deriva & Custo por Família + Taxa de Reprovação
+ * - Visualizador da Trilha de Auditoria Imutável (audit_logs)
+ * - Extrator Modular do index.html (gera styles/main.css e js/core.js)
+ * - Gesto voltar Android/Capacitor + Abas deslizáveis mobile
  * ============================================================================
  */
 (function (global) {
@@ -16,9 +18,9 @@
     delete_instruments: 'Excluir / desativar instrumentos',
     bulk_actions: 'Usar ações em lote (Bulk Actions)',
     manage_calibrations: 'Gerenciar envios e retornos de calibração',
-    view_sla_costs: 'Ver indicadores de SLA e custos de laboratórios',
+    view_sla_costs: 'Ver indicadores de SLA, deriva e custos',
     request_cautela: 'Preencher cautela (retirada de instrumento)',
-    approve_cautela: 'Aprovar cautelas de terceiros',
+    approve_cautela: 'Aprovar cautelas / liberar instrumento bloqueado',
     override_cautela_holder: 'Preencher cautela em nome de outro colaborador',
     manage_users: 'Criar e editar usuários (abaixo da sua hierarquia)',
     manage_roles: 'Criar e editar tipos de login e hierarquia',
@@ -51,16 +53,9 @@
       apikey: supabaseAnonKey
     };
     if (String(supabaseAnonKey).startsWith('eyJ')) {
-      headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      headers.Authorization = `Bearer \${supabaseAnonKey}`;
     }
-    const res = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/${fnName}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(params)
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`RPC ${fnName} falhou (${res.status}): ${txt}`);
+    const res = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/${fnName}`, { method: 'POST', headers, body: JSON.stringify(params) }); if (!res.ok) { const txt = await res.text(); throw new Error(`RPC ${fnName} falhou (${res.status}):${txt}`);
     }
     return res.json();
   }
@@ -78,6 +73,70 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function normText(v) {
+    return String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function getAllInstruments() {
+    return typeof state.cfg.getInstruments === 'function' ? (state.cfg.getInstruments() || []) : [];
+  }
+
+  function findInstrumentByTag(tag) {
+    const clean = String(tag ?? '').trim().toUpperCase();
+    if (!clean) return null;
+    return getAllInstruments().find((i) => {
+      const code = String(i.code || i.tag || i.codigo || i.Instrumento || i.id || '').trim().toUpperCase();
+      return code === clean;
+    }) || null;
+  }
+
+  function parseFlexDate(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (br) return new Date(`${br[3]}-${br[2]}-${br[1]}T12:00:00`); const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (iso) return new Date(`${iso[1]}-${iso[2]}-${iso[3]}T12:00:00`);
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function evaluateInstrumentBlock(inst) {
+    if (!inst) return { blocked: false, reason: '', statusLabel: 'Não localizado' };
+    const rawStatus = String(inst.status || inst.Status || inst.situacao || '').trim();
+    const nStatus = normText(rawStatus);
+    const dueRaw = inst.proxCal || inst.proxima_calibracao || inst.dueDate || inst['Data da Próxima Calibração'] || '';
+    const dueDate = parseFlexDate(dueRaw);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (nStatus.includes('reprovad') || nStatus.includes('fora de tolerancia') || nStatus.includes('bloquead')) {
+      return { blocked: true, severity: 'danger', statusLabel: rawStatus || 'REPROVADO / BLOQUEADO', reason: `Instrumento marcado como "\${rawStatus}". Uso proibido na produção.` };
+    }
+    if (nStatus.includes('laborat') || nStatus.includes('externo') || nStatus.includes('calibrac')) {
+      return { blocked: true, severity: 'warn', statusLabel: rawStatus || 'EM LABORATÓRIO', reason: `Instrumento enviado para calibração externa ("\${rawStatus}").` };
+    }
+    if (nStatus.includes('inativ') || nStatus.includes('perdid') || nStatus.includes('baixad')) {
+      return { blocked: true, severity: 'danger', statusLabel: rawStatus || 'BAIXADO / INATIVO', reason: `Instrumento baixado ou inativo ("\${rawStatus}").` };
+    }
+    if (nStatus.includes('vencid') || (dueDate && dueDate < today)) {
+      const fmtDue = dueDate ? dueDate.toLocaleDateString('pt-BR') : dueRaw;
+      return { blocked: true, severity: 'danger', statusLabel: 'VENCIDO', reason: `Calibração vencida em \${fmtDue || 'data anterior'}. Recolher para calibração antes de operar.` };
+    }
+    return { blocked: false, severity: 'ok', statusLabel: rawStatus || 'EM DIA', reason: '' };
+  }
+
+  function classifyFamily(item) {
+    const text = normText([
+      item.family, item.familia, item.category, item.categoria,
+      item.desc, item.descricao, item['Descrição'], item.instrumentDesc
+    ].join(' '));
+
+    if (/torqu|apert|dinamometr/.test(text)) return 'Torque';
+    if (/multimetr|amper|voltim|megohm|terr|eletric|alicate amper|oscilosc|fonte/.test(text)) return 'Elétrica';
+    if (/press|manometr|vacuometr|termometr|temperatur|pir[oô]metr|umidade|termo-higrom/.test(text)) return 'Pressão & Temp.';
+    if (/paquimet|micromet|relogio compar|subito|calibrador|bloco padrao|trena|goniometr|rugosimetr|altimetr|esquadro|desempeno/.test(text)) return 'Dimensional';
+    return 'Outros';
   }
 
   function injectStyles() {
@@ -106,9 +165,7 @@
         }
       }
       .vu-admin-tabs-scroll::-webkit-scrollbar,
-      #adminUsersModal div:has(> #admTabUsers)::-webkit-scrollbar {
-        display: none;
-      }
+      #adminUsersModal div:has(> #admTabUsers)::-webkit-scrollbar { display: none; }
       .vu-admin-tabs-scroll > button,
       #adminUsersModal div:has(> #admTabUsers) > button {
         white-space: nowrap !important;
@@ -136,14 +193,14 @@
       .vu-backdrop {
         position: fixed; inset: 0; z-index: 9800; background: rgba(6, 11, 20, .75);
         display: flex; align-items: flex-start; justify-content: center;
-        padding: 40px 12px 24px; overflow-y: auto; backdrop-filter: blur(4px);
+        padding: 36px 12px 24px; overflow-y: auto; backdrop-filter: blur(4px);
       }
       .vu-modal {
-        width: 100%; max-width: 880px; background: #0f172a; color: #e2e8f0;
+        width: 100%; max-width: 920px; background: #0f172a; color: #e2e8f0;
         border: 1px solid #334155; border-radius: 14px; overflow: hidden;
         box-shadow: 0 24px 60px rgba(0,0,0,.6); font-family: system-ui, -apple-system, sans-serif;
       }
-      .vu-modal-sm { max-width: 620px; }
+      .vu-modal-sm { max-width: 640px; }
       .vu-header {
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
         padding: 14px 16px; background: #1e293b; border-bottom: 1px solid #334155;
@@ -153,7 +210,7 @@
       .vu-close {
         background: transparent; border: none; color: #94a3b8; font-size: 22px; line-height: 1; cursor: pointer; flex-shrink: 0;
       }
-      .vu-body { padding: 16px; max-height: 78vh; overflow-y: auto; }
+      .vu-body { padding: 16px; max-height: 80vh; overflow-y: auto; }
       .vu-input, .vu-select, .vu-textarea {
         width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px;
         border: 1px solid #334155; background: #0b1220; color: #f8fafc; font-size: 13px;
@@ -164,15 +221,25 @@
         background: #1e293b; color: #f8fafc; font: 600 13px/1.2 system-ui, sans-serif; cursor: pointer;
       }
       .vu-btn:hover { background: #334155; }
+      .vu-btn:disabled { opacity: .45; cursor: not-allowed; }
       .vu-btn-sm { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
       .vu-btn-primary { background: #0284c7; border-color: #0ea5e9; color: #fff; }
       .vu-btn-primary:hover { background: #0369a1; }
       .vu-btn-danger { background: #991b1b; border-color: #dc2626; color: #fff; }
+      .vu-btn-warn { background: #92400e; border-color: #f59e0b; color: #fff; }
       .vu-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .vu-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
       @media (max-width: 640px) { .vu-grid-2, .vu-grid-3, .vu-perm-grid { grid-template-columns: 1fr; } }
       .vu-card {
         background: #111c30; border: 1px solid #24324a; border-radius: 10px; padding: 14px;
+      }
+      .vu-alert-danger {
+        background: rgba(153, 27, 27, .28); border: 1px solid #ef4444; color: #fecaca;
+        border-radius: 10px; padding: 12px; font-size: 12.5px;
+      }
+      .vu-alert-warn {
+        background: rgba(146, 64, 14, .28); border: 1px solid #f59e0b; color: #fde68a;
+        border-radius: 10px; padding: 12px; font-size: 12.5px;
       }
       .vu-badge {
         display: inline-block; padding: 3px 8px; border-radius: 999px;
@@ -180,14 +247,7 @@
       }
       .vu-badge-green { background: #064e3b; color: #6ee7b7; }
       .vu-badge-amber { background: #451a03; color: #fcd34d; }
-
-      .vu-k-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
-      .vu-k-item {
-        display: flex; justify-content: space-between; align-items: center; gap: 12px;
-        padding: 10px 12px; border-radius: 8px; background: #111c30;
-        border: 1px solid transparent; cursor: pointer;
-      }
-      .vu-k-item.active, .vu-k-item:hover { border-color: #0ea5e9; background: #17253d; }
+      .vu-badge-red { background: #7f1d1d; color: #fca5a5; }
 
       .vu-tabs {
         display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;
@@ -202,15 +262,15 @@
       .vu-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
       .vu-perm-item { display: flex; align-items: center; gap: 8px; font-size: 12px; background: #0b1220; padding: 7px 9px; border-radius: 6px; border: 1px solid #1e293b; cursor: pointer; }
       .vu-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
+      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 540px; }
       .vu-table th, .vu-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; text-align: left; }
       .vu-table th { color: #94a3b8; font-weight: 600; }
+
+      .vu-bar-track { width: 100%; height: 10px; background: #0b1220; border-radius: 999px; overflow: hidden; border: 1px solid #1e293b; }
+      .vu-bar-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
     `;
   }
 
-  // -------------------------------------------------------------------------
-  // Controle de Voltar no Android (Capacitor + WebView)
-  // -------------------------------------------------------------------------
   function isNativeApk() {
     return Boolean(global.Capacitor && (typeof global.Capacitor.isNativePlatform !== 'function' || global.Capacitor.isNativePlatform()));
   }
@@ -234,9 +294,7 @@
     if (!adm) return;
     state.adminLockObserver = new MutationObserver(() => {
       if (state.modalReturnToAdmin && document.querySelector('[data-vu-modal="1"]')) {
-        if (adm.classList.contains('hidden')) {
-          adm.classList.remove('hidden');
-        }
+        if (adm.classList.contains('hidden')) adm.classList.remove('hidden');
       }
     });
     state.adminLockObserver.observe(adm, { attributes: true, attributeFilter: ['class', 'style'] });
@@ -264,9 +322,7 @@
 
   function pushModalHistory(returnToAdmin = false) {
     state.modalReturnToAdmin = Boolean(returnToAdmin);
-    if (state.modalReturnToAdmin) {
-      startAdminBackgroundLock();
-    }
+    if (state.modalReturnToAdmin) startAdminBackgroundLock();
     if (!isNativeApk() && !state.modalHistoryPushed) {
       try {
         history.pushState({ vuModal: true, fromAdmin: state.modalReturnToAdmin }, '', window.location.href);
@@ -276,37 +332,43 @@
   }
 
   function handleMobileBackEvent(e) {
-    if (!document.querySelector('[data-vu-modal="1"]')) return false;
+    const activeModals = document.querySelectorAll('[data-vu-modal="1"]');
+    if (!activeModals.length) return false;
+
     if (e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     if (e && typeof e.preventDefault === 'function' && e.cancelable) e.preventDefault();
 
-    state.blockExitUntil = Date.now() + 900;
+    state.blockExitUntil = Date.now() + 1000;
     const shouldReturnAdmin = state.modalReturnToAdmin;
     state.modalHistoryPushed = false;
-    closeModals({ fromPopstate: true, reopenAdmin: shouldReturnAdmin });
+
+    activeModals.forEach((el) => el.remove());
+    stopAdminBackgroundLock();
+    state.modalReturnToAdmin = false;
+
+    if (shouldReturnAdmin) {
+      ensureAdminModalVisible();
+      setTimeout(ensureAdminModalVisible, 50);
+      setTimeout(ensureAdminModalVisible, 180);
+    }
     return true;
   }
 
   function setupHistoryBackHandler() {
     guardCapacitorExitApp();
+    const onBack = (e) => { handleMobileBackEvent(e); };
+    document.addEventListener('backbutton', onBack, true);
+    window.addEventListener('backbutton', onBack, true);
 
-    // 1. Evento Cordova / Capacitor WebView
-    document.addEventListener('backbutton', (e) => {
-      handleMobileBackEvent(e);
-    }, true);
-
-    // 2. Plugin App do Capacitor (Android gesture back)
     const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
-    if (appPlugin && typeof appPlugin.addListener === 'function') {
+    if (appPlugin && typeof appPlugin.addListener === 'function' && !appPlugin.__vuBackListenerAdded) {
+      appPlugin.__vuBackListenerAdded = true;
       try {
-        appPlugin.addListener('backButton', () => {
-          handleMobileBackEvent(null);
-        });
+        appPlugin.addListener('backButton', (data) => { handleMobileBackEvent(data); });
       } catch (_) {}
     }
 
-    // 3. Fallback popstate para navegador mobile comum
     window.addEventListener('popstate', (e) => {
       if (state.ignoreNextPopstate) {
         state.ignoreNextPopstate = false;
@@ -333,10 +395,7 @@
         setTimeout(() => { state.ignoreNextPopstate = false; }, 350);
       }
     }
-
-    if (!keepHistory) {
-      state.modalReturnToAdmin = false;
-    }
+    if (!keepHistory) state.modalReturnToAdmin = false;
 
     if (reopenAdmin) {
       ensureAdminModalVisible();
@@ -351,6 +410,7 @@
 
     if (adminTabsBar) {
       adminTabsBar.classList.add('vu-admin-tabs-scroll');
+
       if (!document.getElementById('admTabRbac')) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -359,6 +419,26 @@
         btn.textContent = 'Tipos de Login & Hierarquia';
         btn.addEventListener('click', () => openRbacAdminModal());
         adminTabsBar.appendChild(btn);
+      }
+
+      if (!document.getElementById('admTabAudit')) {
+        const btnAudit = document.createElement('button');
+        btnAudit.type = 'button';
+        btnAudit.id = 'admTabAudit';
+        btnAudit.className = 'px-3.5 py-2 rounded-t-lg font-bold text-sky-600 dark:text-sky-300 hover:underline cursor-pointer';
+        btnAudit.textContent = 'Auditoria & Governança';
+        btnAudit.addEventListener('click', () => openAuditLogsModal(true));
+        adminTabsBar.appendChild(btnAudit);
+      }
+
+      if (!document.getElementById('admTabSplit')) {
+        const btnSplit = document.createElement('button');
+        btnSplit.type = 'button';
+        btnSplit.id = 'admTabSplit';
+        btnSplit.className = 'px-3.5 py-2 rounded-t-lg font-bold text-emerald-600 dark:text-emerald-300 hover:underline cursor-pointer';
+        btnSplit.textContent = 'Modularizar HTML';
+        btnSplit.addEventListener('click', () => openModularizerModal(true));
+        adminTabsBar.appendChild(btnSplit);
       }
     }
 
@@ -374,6 +454,19 @@
         openCautelaModal(c ? c.value : '');
       });
       calPresetBtn.parentElement.appendChild(btn);
+    }
+
+    const extReturnModal = document.getElementById('extReturnModal') || document.getElementById('batchReturnModal');
+    if (extReturnModal && !extReturnModal.dataset.vuNcHooked) {
+      extReturnModal.dataset.vuNcHooked = '1';
+      extReturnModal.addEventListener('change', (e) => {
+        const val = normText(e.target && e.target.value);
+        if (val.includes('reprovad') || val.includes('fora') || val.includes('nao conforme')) {
+          const codeEl = extReturnModal.querySelector('input[id*="Code"], select[id*="Code"], [data-code]');
+          const tag = codeEl ? (codeEl.value || codeEl.dataset.code) : '';
+          setTimeout(() => openRetroactiveImpactModal(tag), 250);
+        }
+      });
     }
   }
 
@@ -399,10 +492,10 @@
     pill.style.display = 'inline-flex';
     if (!online) {
       pill.className = 'vu-sync-pill vu-sync-offline';
-      pill.innerHTML = `<span class="vu-dot"></span> Offline — ${count} pendente(s)`;
+      pill.innerHTML = `<span class="vu-dot"></span> Offline — \${count} pendente(s)`;
     } else {
       pill.className = 'vu-sync-pill vu-sync-busy';
-      pill.innerHTML = `<span class="vu-dot"></span> Sincronizando (${count})...`;
+      pill.innerHTML = `<span class="vu-dot"></span> Sincronizando (\${count})...`;
     }
   }
 
@@ -427,95 +520,6 @@
     renderSyncPill();
   }
 
-  function openGlobalSearch() {
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
-    const instruments = typeof state.cfg.getInstruments === 'function' ? state.cfg.getInstruments() : [];
-    let activeIdx = 0;
-    let filtered = instruments.slice(0, 12);
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal vu-modal-sm">
-        <div class="vu-header">
-          <h3>Busca Global de Instrumentos <span class="vu-badge">Ctrl + K</span></h3>
-          <button type="button" class="vu-close" aria-label="Fechar">&times;</button>
-        </div>
-        <div class="vu-body">
-          <input id="vu-k-input" class="vu-input" placeholder="Digite TAG, nº de série, descrição, setor ou responsável..." autofocus />
-          <div id="vu-k-list" class="vu-k-list"></div>
-        </div>
-      </div>
-    `;
-
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeModals();
-    });
-    document.body.appendChild(backdrop);
-
-    const input = backdrop.querySelector('#vu-k-input');
-    const listEl = backdrop.querySelector('#vu-k-list');
-
-    function norm(v) {
-      return String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    }
-
-    function renderResults() {
-      if (!filtered.length) {
-        listEl.innerHTML = `<div style="color:#94a3b8;padding:14px;text-align:center;">Nenhum instrumento encontrado.</div>`;
-        return;
-      }
-      listEl.innerHTML = filtered.map((inst, idx) => {
-        const tag = inst.code || inst.tag || inst.codigo || inst.Instrumento || inst.id || '-';
-        const desc = inst.desc || inst.descricao || inst.description || inst['Descrição'] || '';
-        const setor = inst.setor || inst.sector || inst['Setor/Chapa'] || '';
-        const resp = inst.resp || inst.responsavel || inst.responsible || inst['Responsável'] || '';
-        return `
-          <div class="vu-k-item ${idx === activeIdx ? 'active' : ''}" data-idx="${idx}">
-            <div>
-              <div style="font-weight:700;color:#f8fafc;">${escapeHtml(tag)} <span style="font-weight:400;color:#94a3b8;">— ${escapeHtml(desc)}</span></div>
-              <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">Setor: ${escapeHtml(setor || '—')} • Resp.: ${escapeHtml(resp || '—')}</div>
-            </div>
-            <span class="vu-badge">${escapeHtml(inst.status || inst.Status || 'Ver')}</span>
-          </div>
-        `;
-      }).join('');
-
-      listEl.querySelectorAll('.vu-k-item').forEach((el) => {
-        el.addEventListener('click', () => selectItem(Number(el.dataset.idx)));
-      });
-    }
-
-    function selectItem(idx) {
-      const item = filtered[idx];
-      if (!item) return;
-      closeModals();
-      if (typeof state.cfg.onSelectInstrument === 'function') state.cfg.onSelectInstrument(item);
-    }
-
-    input.addEventListener('input', () => {
-      const q = norm(input.value.trim());
-      activeIdx = 0;
-      filtered = !q ? instruments.slice(0, 12) : instruments.filter((i) => {
-        const hay = norm([i.code, i.tag, i.desc, i.setor, i.resp, i.local].join(' '));
-        return hay.includes(q);
-      }).slice(0, 20);
-      renderResults();
-    });
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(filtered.length - 1, activeIdx + 1); renderResults(); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); renderResults(); }
-      else if (e.key === 'Enter') { e.preventDefault(); selectItem(activeIdx); }
-      else if (e.key === 'Escape') { closeModals(); }
-    });
-
-    renderResults();
-    setTimeout(() => input.focus(), 20);
-  }
-
   async function openCautelaModal(preselectedTag = '') {
     if (!state.profile) await loadSessionProfile();
     if (!state.profile) {
@@ -528,8 +532,9 @@
     pushModalHistory(false);
 
     const prof = state.profile;
-    const canOverride = hasPerm('override_cautela_holder');
-    const lockAttr = canOverride ? '' : 'disabled';
+    const canOverrideHolder = hasPerm('override_cautela_holder');
+    const canOverrideBlock = Number(prof.hierarchy_level) >= 50 || hasPerm('approve_cautela') || canOverrideHolder;
+    const lockAttr = canOverrideHolder ? '' : 'disabled';
 
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
@@ -546,7 +551,7 @@
         <div class="vu-body">
           <div style="margin-bottom:12px;">
             <span class="vu-badge vu-badge-green">
-              Preenchido automaticamente pelo login (${escapeHtml(prof.role_name || prof.role_code || '')})
+              Preenchido pelo login (\${escapeHtml(prof.role_name || prof.role_code || '')})
             </span>
           </div>
           <form id="vu-cautela-form" style="display:flex;flex-direction:column;gap:12px;">
@@ -567,16 +572,17 @@
               </div>
               <div>
                 <label style="font-size:12px;color:#94a3b8;">TAG / Código do Instrumento</label>
-                <input class="vu-input" name="instrument_tag" value="${escapeHtml(preselectedTag)}" placeholder="Ex: AC401573" required />
+                <input class="vu-input" id="vu-cautela-tag" name="instrument_tag" value="\${escapeHtml(preselectedTag)}" placeholder="Ex: AC401573" required />
               </div>
             </div>
+            <div id="vu-cautela-guard-box"></div>
             <div>
               <label style="font-size:12px;color:#94a3b8;">Observações / Ordem de Serviço</label>
               <textarea class="vu-textarea" name="notes" rows="2" placeholder="Motivo da retirada ou local de uso..."></textarea>
             </div>
             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
               <button type="button" class="vu-btn vu-close-btn">Cancelar</button>
-              <button type="submit" class="vu-btn vu-btn-primary">Registrar Cautela</button>
+              <button type="submit" id="vu-cautela-submit" class="vu-btn vu-btn-primary">Registrar Cautela</button>
             </div>
           </form>
         </div>
@@ -588,458 +594,35 @@
     });
     document.body.appendChild(backdrop);
 
-    backdrop.querySelector('#vu-cautela-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const payload = {
-        holder_name: fd.get('holder_name') || prof.display_name,
-        holder_matricula: fd.get('holder_matricula') || prof.matricula,
-        holder_setor: fd.get('holder_setor') || prof.setor,
-        instrument_tag: String(fd.get('instrument_tag') || '').trim(),
-        notes: String(fd.get('notes') || '').trim()
-      };
+    const tagInput = backdrop.querySelector('#vu-cautela-tag');
+    const guardBox = backdrop.querySelector('#vu-cautela-guard-box');
+    const submitBtn = backdrop.querySelector('#vu-cautela-submit');
 
-      try {
-        const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-        const res = await rpc('voith_create_cautela_autofill', { p_token: token, p_payload: payload });
-        if (!res.ok) return alert(res.error || 'Erro ao registrar cautela.');
-        closeModals();
-        if (typeof state.cfg.onCautelaCreated === 'function') {
-          state.cfg.onCautelaCreated(res.cautela);
-        } else {
-          alert(`Cautela registrada para ${res.cautela.requester_name} (Mat. ${res.cautela.requester_matricula}) — Status: ${res.cautela.status}`);
-        }
-      } catch (err) {
-        alert('Falha ao comunicar com o Supabase: ' + err.message);
+    function evaluateTagGuard() {
+      const inst = findInstrumentByTag(tagInput.value);
+      const check = evaluateInstrumentBlock(inst);
+
+      if (!inst) {
+        guardBox.innerHTML = '';
+        submitBtn.disabled = false;
+        return { inst: null, check };
       }
-    });
-  }
 
-  async function openRbacAdminModal(isRefresh = false, activeTab = 'roles') {
-    if (!state.profile) await loadSessionProfile();
-    if (!state.profile) {
-      return alert('Não foi possível validar sua sessão no Supabase. Verifique se você está logado.');
-    }
-    if (!hasPerm('manage_users') && !hasPerm('manage_roles')) {
-      return alert('Seu perfil não possui permissão para gerenciar logins ou hierarquia.');
-    }
-    closeModals({ keepHistory: true });
-    if (!isRefresh) pushModalHistory(true);
-
-    const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-    let roles = [];
-    let users = [];
-    try {
-      const rRes = await rpc('voith_list_roles', { p_token: token });
-      if (rRes.ok) roles = rRes.roles || [];
-      if (hasPerm('manage_users')) {
-        const uRes = await rpc('voith_list_users', { p_token: token });
-        if (uRes.ok) users = uRes.users || [];
-      }
-    } catch (err) {
-      closeModals({ reopenAdmin: true });
-      return alert('Erro ao carregar perfis/usuários: ' + err.message);
-    }
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal">
-        <div class="vu-header">
-          <div class="vu-header-left">
-            <button type="button" class="vu-btn vu-btn-sm vu-back-admin">&larr; Voltar</button>
-            <h3>Gestão de Logins, Permissões e Hierarquia</h3>
+      const desc = escapeHtml(inst.desc || inst.descricao || inst['Descrição'] || '');
+      if (!check.blocked) {
+        guardBox.innerHTML = `
+          <div class="vu-card" style="padding:10px;font-size:12px;border-color:#166534;">
+            <strong style="color:#6ee7b7;">✓ Instrumento liberado (\${escapeHtml(check.statusLabel)})</strong>
+            <div style="color:#94a3b8;margin-top:2px;">\${desc}</div>
           </div>
-          <button type="button" class="vu-close" aria-label="Fechar">&times;</button>
-        </div>
-        <div class="vu-body">
-          <div class="vu-tabs">
-            <button type="button" class="vu-tab ${activeTab === 'roles' ? 'active' : ''}" data-tab="roles">Tipos de Login & Hierarquia</button>
-            <button type="button" class="vu-tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
-          </div>
-          <div id="vu-rbac-content"></div>
-        </div>
-      </div>
-    `;
-
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) {
-        closeModals({ reopenAdmin: true });
+        `;
+        submitBtn.disabled = false;
+        return { inst, check };
       }
-    });
-    const backBtn = backdrop.querySelector('.vu-back-admin');
-    if (backBtn) {
-      backBtn.addEventListener('click', () => {
-        closeModals({ reopenAdmin: true });
-      });
-    }
-    document.body.appendChild(backdrop);
 
-    const content = backdrop.querySelector('#vu-rbac-content');
-    const callerLevel = Number(state.profile?.hierarchy_level || 10);
-
-    function renderUsersTab() {
-      const roleOptions = roles
-        .filter((r) => callerLevel >= 100 || r.hierarchy_level < callerLevel)
-        .map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.name)} (Nível ${r.hierarchy_level})</option>`)
-        .join('');
-
-      content.innerHTML = `
-        <div class="vu-card" style="margin-bottom:14px;">
-          <h4 style="margin:0 0 10px;font-weight:700;">Cadastrar / Editar Usuário</h4>
-          <form id="vu-user-form" autocomplete="off" style="display:flex;flex-direction:column;gap:10px;">
-            <div class="vu-grid-3">
-              <input class="vu-input" name="username" autocomplete="off" placeholder="Login (ex: joao.silva)" required />
-              <input class="vu-input" name="display_name" autocomplete="off" placeholder="Nome Completo" required />
-              <input class="vu-input" name="matricula" autocomplete="off" placeholder="Matrícula (ex: 12345)" required />
-            </div>
-            <div class="vu-grid-3">
-              <input class="vu-input" name="setor" autocomplete="off" placeholder="Setor (ex: Usinagem / Turbo)" required />
-              <select class="vu-select" name="role_code">${roleOptions}</select>
-              <input class="vu-input" name="password" type="password" autocomplete="new-password" placeholder="Senha (vazio = manter atual)" />
-            </div>
-            <div style="display:flex;justify-content:flex-end;">
-              <button class="vu-btn vu-btn-primary" type="submit">Salvar Usuário</button>
-            </div>
-          </form>
-        </div>
-        <div class="vu-table-wrap">
-          <table class="vu-table">
-            <thead>
-              <tr><th>Login</th><th>Nome</th><th>Matrícula</th><th>Setor</th><th>Tipo de Login</th><th>Nível</th></tr>
-            </thead>
-            <tbody>
-              ${users.map((u) => `
-                <tr>
-                  <td><strong>${escapeHtml(u.username)}</strong></td>
-                  <td>${escapeHtml(u.display_name)}</td>
-                  <td>${escapeHtml(u.matricula || '—')}</td>
-                  <td>${escapeHtml(u.setor || '—')}</td>
-                  <td><span class="vu-badge">${escapeHtml(u.role_name || u.role_code)}</span></td>
-                  <td>${u.hierarchy_level}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
-
-      content.querySelector('#vu-user-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        const payload = Object.fromEntries(fd.entries());
-        try {
-          const res = await rpc('voith_upsert_user_profile', { p_token: token, p_user: payload });
-          if (!res.ok) return alert(res.error || 'Erro ao salvar usuário.');
-          alert('Usuário salvo com sucesso!');
-          openRbacAdminModal(true, 'users');
-        } catch (err) {
-          alert('Erro ao salvar usuário: ' + err.message);
-        }
-      });
-    }
-
-    function renderRolesTab() {
-      const canManageRoles = hasPerm('manage_roles');
-      content.innerHTML = `
-        ${canManageRoles ? `
-        <div class="vu-card" style="margin-bottom:14px;">
-          <h4 style="margin:0 0 10px;font-weight:700;">Criar / Editar Tipo de Login</h4>
-          <form id="vu-role-form" style="display:flex;flex-direction:column;gap:10px;">
-            <div class="vu-grid-3">
-              <input class="vu-input" name="code" placeholder="Código (ex: LIDER_USINAGEM)" required />
-              <input class="vu-input" name="name" placeholder="Nome de Exibição" required />
-              <input class="vu-input" name="hierarchy_level" type="number" min="1" max="${callerLevel >= 100 ? 99 : callerLevel - 1}" value="20" placeholder="Hierarquia (1-99)" required />
-            </div>
-            <input class="vu-input" name="description" placeholder="Descrição breve das responsabilidades" />
-            <div class="vu-perm-grid">
-              ${Object.entries(PERMISSION_LABELS).map(([k, label]) => `
-                <label class="vu-perm-item">
-                  <input type="checkbox" name="perm_${k}" ${k === 'view_instruments' || k === 'request_cautela' ? 'checked' : ''} />
-                  <span>${escapeHtml(label)}</span>
-                </label>
-              `).join('')}
-            </div>
-            <div style="display:flex;justify-content:flex-end;">
-              <button class="vu-btn vu-btn-primary" type="submit">Salvar Tipo de Login</button>
-            </div>
-          </form>
-        </div>` : '<p style="color:#94a3b8;">Apenas perfis com permissão de gestão de papéis podem criar novos tipos de login.</p>'}
-        <div class="vu-table-wrap">
-          <table class="vu-table">
-            <thead><tr><th>Código</th><th>Nome</th><th>Hierarquia</th><th>Permissões Ativas</th></tr></thead>
-            <tbody>
-              ${roles.map((r) => {
-                const activePerms = Object.entries(r.permissions || {}).filter(([, v]) => v).length;
-                return `
-                  <tr>
-                    <td><strong>${escapeHtml(r.code)}</strong></td>
-                    <td>${escapeHtml(r.name)}<div style="font-size:11px;color:#94a3b8;">${escapeHtml(r.description || '')}</div></td>
-                    <td><span class="vu-badge">Nível ${r.hierarchy_level}</span></td>
-                    <td>${activePerms} permissões</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
-
-      const rForm = content.querySelector('#vu-role-form');
-      if (rForm) {
-        rForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const fd = new FormData(e.target);
-          const perms = {};
-          Object.keys(PERMISSION_LABELS).forEach((k) => {
-            perms[k] = fd.get(`perm_${k}`) === 'on';
-          });
-          const payload = {
-            code: fd.get('code'),
-            name: fd.get('name'),
-            description: fd.get('description'),
-            hierarchy_level: Number(fd.get('hierarchy_level')),
-            permissions: perms
-          };
-          try {
-            const res = await rpc('voith_upsert_role', { p_token: token, p_role: payload });
-            if (!res.ok) return alert(res.error || 'Erro ao salvar tipo de login.');
-            alert('Tipo de login salvo com sucesso!');
-            openRbacAdminModal(true, 'roles');
-          } catch (err) {
-            alert('Erro ao salvar tipo de login: ' + err.message);
-          }
-        });
-      }
-    }
-
-    backdrop.querySelectorAll('.vu-tab').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        backdrop.querySelectorAll('.vu-tab').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        if (btn.dataset.tab === 'users') renderUsersTab();
-        else renderRolesTab();
-      });
-    });
-
-    if (activeTab === 'users') renderUsersTab();
-    else renderRolesTab();
-  }
-
-  function computeLabSlaMetrics(history) {
-    const map = new Map();
-    const today = new Date();
-    for (const row of history || []) {
-      const lab = String(row.lab || row.laboratorio || row.lab_name || 'Não informado').trim();
-      if (!map.has(lab)) map.set(lab, { lab, totalEnvios: 0, concluidos: 0, leadDaysSum: 0, atrasados: 0, custoTotal: 0 });
-      const stat = map.get(lab);
-      stat.totalEnvios += 1;
-      const sent = row.sent_date || row.data_envio || row.sentAt || row.envio;
-      const ret = row.return_date || row.data_retorno || row.returnedAt || row.retorno;
-      const exp = row.expected_return_date || row.previsao_retorno || row.previsao;
-      const cost = Number(row.cost_brl ?? row.custo ?? row.cost ?? 0);
-      if (!Number.isNaN(cost) && cost > 0) stat.custoTotal += cost;
-      if (sent && ret) {
-        const diff = Math.max(0, Math.round((new Date(ret) - new Date(sent)) / 86400000));
-        if (!Number.isNaN(diff)) { stat.concluidos += 1; stat.leadDaysSum += diff; }
-      } else if (exp && new Date(exp) < today) {
-        stat.atrasados += 1;
-      }
-    }
-    return Array.from(map.values()).map((s) => ({
-      ...s,
-      leadTimeMedio: s.concluidos ? (s.leadDaysSum / s.concluidos).toFixed(1) : '—',
-      custoMedio: s.totalEnvios ? s.custoTotal / s.totalEnvios : 0
-    })).sort((a, b) => b.custoTotal - a.custoTotal);
-  }
-
-  async function openLabSlaModal() {
-    if (!state.profile) await loadSessionProfile();
-    if (!hasPerm('view_sla_costs')) return alert('Seu perfil não tem permissão para visualizar SLA e custos.');
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
-    const history = typeof state.cfg.getCalibrationHistory === 'function' ? state.cfg.getCalibrationHistory() : [];
-    const rows = computeLabSlaMetrics(history);
-    const totalCost = rows.reduce((acc, r) => acc + r.custoTotal, 0);
-    const fmtBRL = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal">
-        <div class="vu-header">
-          <div class="vu-header-left">
-            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
-            <h3>SLA e Custos de Laboratórios Externos</h3>
-          </div>
-          <button type="button" class="vu-close">&times;</button>
-        </div>
-        <div class="vu-body">
-          <div class="vu-grid-3" style="margin-bottom:14px;">
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Laboratórios Ativos</div><div style="font-size:22px;font-weight:700;">${rows.length}</div></div>
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Custo Acumulado</div><div style="font-size:22px;font-weight:700;color:#38bdf8;">${fmtBRL(totalCost)}</div></div>
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Envios Atrasados</div><div style="font-size:22px;font-weight:700;color:#fbbf24;">${rows.reduce((a, r) => a + r.atrasados, 0)}</div></div>
-          </div>
-          <div class="vu-table-wrap">
-            <table class="vu-table">
-              <thead><tr><th>Laboratório</th><th>Envios</th><th>Lead Time Médio</th><th>Atrasados</th><th>Custo Acumulado</th><th>Custo Médio</th></tr></thead>
-              <tbody>
-                ${rows.length ? rows.map((r) => `
-                  <tr>
-                    <td><strong>${escapeHtml(r.lab)}</strong></td>
-                    <td>${r.totalEnvios}</td>
-                    <td>${r.leadTimeMedio} dias</td>
-                    <td>${r.atrasados > 0 ? `<span class="vu-badge vu-badge-amber">${r.atrasados}</span>` : '0'}</td>
-                    <td>${fmtBRL(r.custoTotal)}</td>
-                    <td>${fmtBRL(r.custoMedio)}</td>
-                  </tr>
-                `).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">Sem registros em calibration_history.</td></tr>'}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    `;
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close') || e.target.classList.contains('vu-close-btn')) closeModals();
-    });
-    document.body.appendChild(backdrop);
-  }
-
-  function sendTelemetryError(eventType, message, stack) {
-    const key = `${eventType}:${message}`;
-    const now = Date.now();
-    if (state.errorBurstCache.has(key) && now - state.errorBurstCache.get(key) < 30000) return;
-    state.errorBurstCache.set(key, now);
-    const payload = {
-      event_type: eventType,
-      app_version: state.cfg.appVersion || 'unknown',
-      screen: typeof state.cfg.getCurrentScreen === 'function' ? state.cfg.getCurrentScreen() : location.hash || '/',
-      message: String(message || 'Erro desconhecido'),
-      stack: String(stack || ''),
-      user_agent: navigator.userAgent,
-      meta: { ota_channel: state.otaChannel, online: navigator.onLine }
-    };
-    if (!navigator.onLine) {
-      const q = JSON.parse(localStorage.getItem('voith_telemetry_queue') || '[]');
-      q.push(payload);
-      localStorage.setItem('voith_telemetry_queue', JSON.stringify(q.slice(-25)));
-      return;
-    }
-    const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-    rpc('voith_log_telemetry', { p_token: token, p_payload: payload }).catch(() => {});
-  }
-
-  function setupErrorTelemetry() {
-    window.addEventListener('error', (ev) => {
-      sendTelemetryError('window_onerror', ev.message, ev.error?.stack || `${ev.filename}:${ev.lineno}:${ev.colno}`);
-    });
-    window.addEventListener('unhandledrejection', (ev) => {
-      const reason = ev.reason;
-      sendTelemetryError('unhandled_rejection', reason?.message || String(reason), reason?.stack || '');
-    });
-    window.addEventListener('online', () => {
-      const q = JSON.parse(localStorage.getItem('voith_telemetry_queue') || '[]');
-      if (!q.length) return;
-      localStorage.removeItem('voith_telemetry_queue');
-      const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-      q.forEach((p) => rpc('voith_log_telemetry', { p_token: token, p_payload: p }).catch(() => {}));
-    });
-  }
-
-  async function openQuickMenu() {
-    if (!state.profile) await loadSessionProfile();
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
-    const prof = state.profile;
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal vu-modal-sm">
-        <div class="vu-header">
-          <h3>Central Voith Metrologia</h3>
-          <button type="button" class="vu-close">&times;</button>
-        </div>
-        <div class="vu-body" style="display:flex;flex-direction:column;gap:10px;">
-          ${prof ? `
-            <div class="vu-card">
-              <strong>${escapeHtml(prof.display_name)}</strong>
-              <span class="vu-badge" style="margin-left:6px;">${escapeHtml(prof.role_name)} (Nível ${prof.hierarchy_level})</span>
-              <div style="font-size:12px;color:#94a3b8;margin-top:4px;">
-                Matrícula: ${escapeHtml(prof.matricula || '—')} • Setor: ${escapeHtml(prof.setor || '—')}
-              </div>
-            </div>
-          ` : '<div class="vu-card" style="font-size:12px;color:#fcd34d;">Sessão ainda não vinculada ao perfil RBAC. Faça login como Editor.</div>'}
-          <button type="button" class="vu-btn vu-btn-primary" id="vu-act-cautela">📋 Nova Cautela (Auto-preenchida)</button>
-          ${hasPerm('view_sla_costs') ? '<button type="button" class="vu-btn" id="vu-act-sla">📊 SLA e Custos de Laboratórios</button>' : ''}
-          ${(hasPerm('manage_users') || hasPerm('manage_roles')) ? '<button type="button" class="vu-btn" id="vu-act-rbac">🔐 Logins, Permissões e Hierarquia</button>' : ''}
-        </div>
-      </div>
-    `;
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeModals();
-    });
-    document.body.appendChild(backdrop);
-
-    backdrop.querySelector('#vu-act-cautela').onclick = () => openCautelaModal('');
-    const slaBtn = backdrop.querySelector('#vu-act-sla');
-    if (slaBtn) slaBtn.onclick = openLabSlaModal;
-    const rbacBtn = backdrop.querySelector('#vu-act-rbac');
-    if (rbacBtn) rbacBtn.onclick = () => openRbacAdminModal(false, 'roles');
-  }
-
-  async function loadSessionProfile() {
-    const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-    if (!token) return null;
-    try {
-      const res = await rpc('voith_get_session_profile', { p_token: token });
-      if (res.ok && res.profile) {
-        state.profile = res.profile;
-        document.querySelectorAll('[data-permission]').forEach((el) => {
-          const required = el.getAttribute('data-permission');
-          el.style.display = hasPerm(required) ? '' : 'none';
-        });
-        return state.profile;
-      }
-    } catch (e) {
-      console.warn('VoithUpgrade loadSessionProfile:', e.message);
-    }
-    return null;
-  }
-
-  function init(config = {}) {
-    state.cfg = config;
-    injectStyles();
-    injectAppHooks();
-    setupHistoryBackHandler();
-    setupOfflineMonitors();
-    setupErrorTelemetry();
-
-    window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        if (typeof global.openCommandPalette === 'function') return;
-        e.preventDefault();
-        openGlobalSearch();
-      }
-    });
-
-    loadSessionProfile();
-  }
-
-  global.VoithUpgrade = {
-    init,
-    loadSessionProfile,
-    hasPerm,
-    getProfile: () => state.profile,
-    setPendingMutations,
-    openGlobalSearch,
-    openCautelaModal,
-    openRbacAdminModal,
-    openLabSlaModal,
-    openQuickMenu,
-    getOtaChannel: () => state.otaChannel
-  };
-})(window);
+      if (!canOverrideBlock) {
+        guardBox.innerHTML = `
+          <div class="vu-alert-danger">
+            <strong>⛔ BLOQUEIO AUTOMÁTICO — \${escapeHtml(check.statusLabel)}</strong>
+            <div style="margin-top:4px;">\${escapeHtml(check.reason)}</div>
+            <div style="margin-top:6px;font-size:11.5px
