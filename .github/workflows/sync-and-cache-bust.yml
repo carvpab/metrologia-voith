@@ -1,0 +1,57 @@
+name: Sincronizar App & Quebrar Cache
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar metrologia-voith
+        uses: actions/checkout@v4
+        with:
+          path: web
+
+      - name: Injetar hash curto do commit para quebra automática de cache
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          sed -i -E "s/\?v=[0-9a-zA-Z._-]+/\?v=${SHORT_SHA}/g" web/index.html
+
+      - name: Publicar hash atualizado no metrologia-voith (ignora loop)
+        run: |
+          cd web
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add index.html
+            git commit -m "chore: quebra cache automatica (${GITHUB_SHA::7}) [skip ci]"
+            git push
+          fi
+
+      - name: Sincronizar arquivos para voith-metrologia-app/www
+        env:
+          APP_TOKEN: ${{ secrets.APP_SYNC_TOKEN }}
+        run: |
+          if [ -z "$APP_TOKEN" ]; then
+            echo "APP_SYNC_TOKEN não configurado; pulando sincronização."
+            exit 0
+          fi
+          git clone "https://x-access-token:${APP_TOKEN}@github.com/carvpab/voith-metrologia-app.git" app
+          mkdir -p app/www/modules app/www/styles app/www/js
+          cp -f web/index.html app/www/index.html
+          [ -d web/modules ] && cp -rf web/modules/* app/www/modules/ || true
+          [ -d web/styles ] && cp -rf web/styles/* app/www/styles/ || true
+          [ -d web/js ] && cp -rf web/js/* app/www/js/ || true
+          cd app
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add www/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(sync): sincroniza www com metrologia-voith (${GITHUB_SHA::7})"
+            git push
+          fi
