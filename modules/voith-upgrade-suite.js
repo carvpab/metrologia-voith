@@ -1,57 +1,129 @@
 (() => {
   const APK = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia.apk";
   const EXE = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia-setup.exe";
-  const PERM_KEY = "voith_user_permissions_matrix_v1";
+  const PROFILES_KEY = "voith_detailed_user_profiles_v1";
 
-  const PERMISSIONS = [
-    { id: "view_dashboard", label: "Ver Dashboard & KPIs", group: "Leitura" },
-    { id: "view_inventory", label: "Consultar Inventário (441)", group: "Leitura" },
-    { id: "view_cautela", label: "Consultar Cautela & Campo", group: "Leitura" },
-    { id: "edit_instrument", label: "Editar / Cadastrar Instrumentos", group: "Operação" },
-    { id: "delete_instrument", label: "Excluir Instrumentos", group: "Operação" },
-    { id: "register_calib", label: "Registrar Calibrações & Certificados", group: "Operação" },
-    { id: "batch_external", label: "Criar / Enviar Lote & Romaneio Externo", group: "Operação" },
-    { id: "mark_lost_deact", label: "Marcar Perdido / Baixar Equipamento", group: "Operação" },
-    { id: "export_reports", label: "Gerar PDF / Relatórios / Backup", group: "Gestão" },
-    { id: "sync_cloud_ota", label: "Sincronizar Nuvem & Atualizações OTA", group: "Gestão" },
-    { id: "manage_users", label: "Criar / Gerenciar Usuários & Logins", group: "Admin" },
-    { id: "manage_hierarchy", label: "Configurar Hierarquia & Permissões", group: "Admin" }
+  const SECTORS = [
+    "Metrologia / Turbo",
+    "Qualidade",
+    "Ferroviária",
+    "Automotive/Engates",
+    "Assistência Técnica Automotive",
+    "Industrial",
+    "Assistência Técnica Industrial",
+    "Ferroviária Redutor",
+    "Vorecon"
   ];
 
-  const PRESETS = {
-    ADMIN: PERMISSIONS.map(p => p.id),
-    GESTOR: ["view_dashboard", "view_inventory", "view_cautela", "edit_instrument", "register_calib", "batch_external", "export_reports", "sync_cloud_ota"],
-    METROLOGISTA: ["view_dashboard", "view_inventory", "view_cautela", "edit_instrument", "register_calib", "batch_external", "export_reports"],
-    OPERADOR: ["view_dashboard", "view_inventory", "view_cautela"]
+  const PERMISSION_GROUPS = [
+    {
+      group: "Inventário & Instrumentos",
+      items: [
+        { id: "inv_view", label: "Visualizar lista de instrumentos (441)" },
+        { id: "inv_create", label: "Cadastrar novos instrumentos" },
+        { id: "inv_edit", label: "Editar dados, faixa e setor do instrumento" },
+        { id: "inv_delete", label: "Excluir instrumentos do cadastro" },
+        { id: "inv_lost", label: "Marcar equipamento como Perdido / Baixado" },
+        { id: "inv_restore", label: "Restaurar equipamentos perdidos/baixados" }
+      ]
+    },
+    {
+      group: "Calibrações, Cautela & Laboratório",
+      items: [
+        { id: "cal_register", label: "Registrar calibração e número de certificado" },
+        { id: "cal_batch_send", label: "Criar e enviar Lote / Romaneio Externo" },
+        { id: "cal_batch_return", label: "Registrar retorno de laboratório externo" },
+        { id: "cautela_assign", label: "Realizar cautela / entrega a colaborador" },
+        { id: "cautela_return", label: "Registrar devolução de cautela" }
+      ]
+    },
+    {
+      group: "Relatórios, Nuvem, OTA & Administração",
+      items: [
+        { id: "rep_pdf_iso", label: "Gerar relatórios PDF / Auditoria ISO / Armário" },
+        { id: "rep_backup", label: "Exportar e restaurar backup completo" },
+        { id: "cloud_sync", label: "Sincronizar dados com nuvem / Google Sheets" },
+        { id: "ota_manage", label: "Ver e disparar atualizações OTA / App" },
+        { id: "adm_users", label: "Criar e gerenciar logins de usuários" },
+        { id: "adm_hierarchy", label: "Configurar matrículas, setores e permissões" }
+      ]
+    }
+  ];
+
+  const ALL_PERM_IDS = PERMISSION_GROUPS.flatMap(g => g.items.map(i => i.id));
+
+  const PRESET_PERMS = {
+    ADMIN: ALL_PERM_IDS,
+    GESTOR: [
+      "inv_view", "inv_create", "inv_edit", "inv_lost", "inv_restore",
+      "cal_register", "cal_batch_send", "cal_batch_return",
+      "cautela_assign", "cautela_return",
+      "rep_pdf_iso", "rep_backup", "cloud_sync", "ota_manage"
+    ],
+    METROLOGISTA: [
+      "inv_view", "inv_create", "inv_edit",
+      "cal_register", "cal_batch_send", "cal_batch_return",
+      "cautela_assign", "cautela_return", "rep_pdf_iso", "cloud_sync"
+    ],
+    OPERADOR: [
+      "inv_view", "cautela_assign", "cautela_return", "rep_pdf_iso"
+    ]
   };
 
-  const loadMatrix = () => {
-    try { return JSON.parse(localStorage.getItem(PERM_KEY) || "{}"); } catch (_) { return {}; }
+  const loadProfiles = () => {
+    try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}"); } catch (_) { return {}; }
   };
 
-  const saveMatrix = (data) => {
-    try { localStorage.setItem(PERM_KEY, JSON.stringify(data)); } catch (_) {}
+  const saveProfiles = (obj) => {
+    try { localStorage.setItem(PROFILES_KEY, JSON.stringify(obj)); } catch (_) {}
   };
 
-  const discoverUsers = () => {
-    const list = [];
-    const seen = new Set();
+  const getDiscoveredUsers = () => {
+    const stored = loadProfiles();
+    const map = new Map();
+
+    Object.entries(stored).forEach(([loginKey, p]) => {
+      map.set(loginKey.toLowerCase(), {
+        login: loginKey.toLowerCase(),
+        name: p.name || loginKey,
+        matricula: p.matricula || "",
+        sector: p.sector || "Metrologia / Turbo",
+        role: p.role || "OPERADOR",
+        perms: Array.isArray(p.perms) ? p.perms : (PRESET_PERMS[p.role] || PRESET_PERMS.OPERADOR)
+      });
+    });
+
     document.querySelectorAll("table tbody tr").forEach((tr) => {
-      const tds = Array.from(tr.querySelectorAll("td")).map(c => String(c.textContent || "").trim()).filter(Boolean);
+      const tds = Array.from(tr.querySelectorAll("td")).map(td => String(td.textContent || "").trim()).filter(Boolean);
       if (tds.length >= 2) {
         const login = tds[0].toLowerCase();
         const name = tds[1];
-        const role = (tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|TÉCNICO|TECNICO)/i.test(c)) || "OPERADOR").toUpperCase();
-        if (login && !seen.has(login)) {
-          seen.add(login);
-          list.push({ login, name, role });
-        }
+        const roleMatch = tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|TÉCNICO|TECNICO)/i.test(c));
+        const role = roleMatch ? roleMatch.toUpperCase() : "OPERADOR";
+        const existing = map.get(login);
+        map.set(login, {
+          login,
+          name: (existing && existing.name) || name,
+          matricula: (existing && existing.matricula) || "",
+          sector: (existing && existing.sector) || "Metrologia / Turbo",
+          role: (existing && existing.role) || role,
+          perms: (existing && existing.perms) || (PRESET_PERMS[role] || PRESET_PERMS.OPERADOR)
+        });
       }
     });
-    if (!list.length) {
-      list.push({ login: "pablo", name: "Pablo Carvalho", role: "ADMIN" });
+
+    if (!map.has("pablo")) {
+      map.set("pablo", {
+        login: "pablo",
+        name: "Pablo Carvalho",
+        matricula: "",
+        sector: "Metrologia / Turbo",
+        role: "ADMIN",
+        perms: PRESET_PERMS.ADMIN
+      });
     }
-    return list;
+
+    return Array.from(map.values());
   };
 
   const focusLogin = () => {
@@ -119,154 +191,255 @@
     document.body.appendChild(b);
   };
 
-  const findContentArea = (tabEl) => {
+  const ensureSidebarTabs = () => {
+    const extraTabs = [
+      { id: "admTabRbac", label: "Tipos de Login & Hierarquia" },
+      { id: "admTabSlaInline", label: "SLA, Custos & Deriva" },
+      { id: "admTabAudit", label: "Auditoria & Governança" },
+      { id: "admTabSplit", label: "Modularizar HTML" }
+    ];
+
+    const sidebars = Array.from(document.querySelectorAll("aside, nav, [class*='sidebar' i], [class*='menu' i]")).filter((el) => {
+      const txt = String(el.textContent || "");
+      return txt.includes("Usuários & Logins") || txt.includes("OTA & Telemetria");
+    });
+
+    sidebars.forEach((sb) => {
+      extraTabs.forEach((t) => {
+        const exists = Array.from(sb.querySelectorAll("button, a, [role=tab]")).some((el) => {
+          const curTxt = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+          return el.id === t.id || curTxt.includes(t.label.toLowerCase().slice(0, 12));
+        });
+        if (!exists) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.id = t.id;
+          btn.textContent = t.label;
+          btn.style.cssText = "display:flex;align-items:center;width:100%;text-align:left;padding:9px 12px;margin-top:4px;border-radius:8px;border:none;background:transparent;color:#334155;font-size:12.5px;font-weight:600;cursor:pointer;";
+          sb.appendChild(btn);
+        }
+      });
+    });
+  };
+
+  const findMainPanelArea = (tabEl) => {
     const modal = tabEl.closest("[role=dialog], .modal, [class*='modal' i], [class*='admin' i]") || document.body;
-    const candidates = Array.from(modal.querySelectorAll("div, section")).filter((el) => {
-      if (el.id === "vu-rbac-matrix-box") return false;
-      const hasFormOrTable = el.querySelector("input, select, table, form");
-      const notSidebar = !el.closest("aside, nav, [class*='sidebar' i]");
-      return Boolean(hasFormOrTable && notSidebar);
+    const candidates = Array.from(modal.querySelectorAll("div, section, main")).filter((el) => {
+      if (el.id === "vu-rbac-full-panel") return false;
+      const notNav = !el.closest("aside, nav, [class*='sidebar' i]");
+      const hasContent = el.querySelector("input, select, table, form") || el.children.length >= 2;
+      return Boolean(notNav && hasContent);
     });
     return candidates[0] || modal;
   };
 
-  const hideRbacBox = () => {
-    const box = document.getElementById("vu-rbac-matrix-box");
-    if (box) box.style.display = "none";
-    document.querySelectorAll("[data-vu-rbac-hidden='1']").forEach((el) => {
-      el.style.display = el.dataset.vuPrevDisp || "";
-      delete el.dataset.vuRbacHidden;
-      delete el.dataset.vuPrevDisp;
+  const hideRbacPanel = () => {
+    const p = document.getElementById("vu-rbac-full-panel");
+    if (p) p.style.display = "none";
+    document.querySelectorAll("[data-vu-hid='1']").forEach((el) => {
+      el.style.display = el.dataset.vuPrevD || "";
+      delete el.dataset.vuHid;
+      delete el.dataset.vuPrevD;
     });
   };
 
-  const openRbacMatrix = (tabEl) => {
-    const area = findContentArea(tabEl);
+  const renderRbacPanel = (tabEl) => {
+    const area = findMainPanelArea(tabEl);
     if (!area) return;
 
-    Array.from(area.children).forEach((child) => {
-      if (child.id === "vu-rbac-matrix-box") return;
-      if (!child.dataset.vuRbacHidden) {
-        child.dataset.vuPrevDisp = child.style.display || "";
-        child.dataset.vuRbacHidden = "1";
+    Array.from(area.children).forEach((ch) => {
+      if (ch.id === "vu-rbac-full-panel") return;
+      if (!ch.dataset.vuHid) {
+        ch.dataset.vuPrevD = ch.style.display || "";
+        ch.dataset.vuHid = "1";
       }
-      child.style.display = "none";
+      ch.style.display = "none";
     });
 
-    let box = document.getElementById("vu-rbac-matrix-box");
-    if (!box) {
-      box = document.createElement("div");
-      box.id = "vu-rbac-matrix-box";
-      box.style.cssText = "display:grid;gap:12px;color:#0f172a;font-family:system-ui,-apple-system,sans-serif;";
-      area.appendChild(box);
+    let panel = document.getElementById("vu-rbac-full-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "vu-rbac-full-panel";
+      panel.style.cssText = "display:grid;gap:14px;color:#0f172a;font-family:system-ui,-apple-system,sans-serif;";
+      area.appendChild(panel);
     }
 
-    const users = discoverUsers();
-    const matrix = loadMatrix();
+    const users = getDiscoveredUsers();
+    let selectedLogin = users[0] ? users[0].login : "pablo";
 
-    const getUserPerms = (u) => {
-      if (Array.isArray(matrix[u.login])) return new Set(matrix[u.login]);
-      const base = PRESETS[u.role] || PRESETS.OPERADOR;
-      return new Set(base);
-    };
+    const drawEditor = () => {
+      const currentUsers = getDiscoveredUsers();
+      const activeUser = currentUsers.find(u => u.login === selectedLogin) || currentUsers[0];
+      const activePerms = new Set((activeUser && activeUser.perms) || []);
 
-    const userCardsHtml = users.map((u) => {
-      const activeSet = getUserPerms(u);
-      const checksHtml = PERMISSIONS.map((p) => {
-        const checked = activeSet.has(p.id) ? "checked" : "";
+      const userChipsHtml = currentUsers.map((u) => {
+        const isSel = u.login === activeUser.login;
         return (
-          `<label style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:7px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11.5px;color:#1e293b;cursor:pointer;">` +
-            `<input type="checkbox" data-login="${u.login}" data-perm="${p.id}" ${checked} style="width:14px;height:14px;accent-color:#0055b8;cursor:pointer;">` +
-            `<span>${p.label}</span>` +
-          `</label>`
+          `<button type="button" data-pick-user="${u.login}" style="padding:7px 12px;border-radius:8px;border:1px solid ${isSel ? "#004899" : "#cbd5e1"};background:${isSel ? "#004899" : "#ffffff"};color:${isSel ? "#ffffff" : "#0f172a"};font-size:12px;font-weight:700;cursor:pointer;">` +
+            `${u.name} (${u.login})` +
+          `</button>`
         );
       }).join("");
 
-      return (
-        `<div data-user-card="${u.login}" style="padding:12px 14px;border-radius:12px;background:#ffffff;border:1px solid #cbd5e1;display:grid;gap:10px;">` +
+      const sectorOpts = SECTORS.map((s) =>
+        `<option value="${s}" ${activeUser.sector === s ? "selected" : ""}>${s}</option>`
+      ).join("");
+
+      const groupsHtml = PERMISSION_GROUPS.map((grp) => {
+        const checks = grp.items.map((item) => {
+          const chk = activePerms.has(item.id) ? "checked" : "";
+          return (
+            `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;color:#1e293b;cursor:pointer;">` +
+              `<input type="checkbox" class="vu-perm-cb" data-perm-id="${item.id}" ${chk} style="width:15px;height:15px;accent-color:#004899;cursor:pointer;">` +
+              `<span>${item.label}</span>` +
+            `</label>`
+          );
+        }).join("");
+
+        return (
+          `<div style="padding:12px 14px;border-radius:12px;background:#ffffff;border:1px solid #cbd5e1;display:grid;gap:8px;">` +
+            `<div style="font-size:12.5px;font-weight:800;color:#002466;">${grp.group}</div>` +
+            `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:7px;">${checks}</div>` +
+          `</div>`
+        );
+      }).join("");
+
+      panel.innerHTML =
+        `<div style="padding:14px 16px;border-radius:12px;background:#ffffff;border:1px solid #cbd5e1;display:grid;gap:12px;">` +
           `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
             `<div>` +
-              `<span style="font-weight:800;font-size:13.5px;color:#0f172a;">${u.name}</span> ` +
-              `<span style="font-size:12px;color:#64748b;">(${u.login})</span>` +
+              `<div style="font-size:15px;font-weight:800;color:#0f172a;">Gerenciar Login, Matrícula, Setor &amp; Acessos</div>` +
+              `<div style="font-size:12px;color:#475569;">Configure os dados da pessoa e marque exatamente o que ela pode ou não fazer.</div>` +
             `</div>` +
-            `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
-              `<span style="font-size:11px;font-weight:700;color:#475569;">Modelo rápido:</span>` +
-              `<button type="button" data-preset="${u.login}:ADMIN" style="padding:3px 8px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;color:#003399;font-size:11px;font-weight:700;cursor:pointer;">Admin</button>` +
-              `<button type="button" data-preset="${u.login}:GESTOR" style="padding:3px 8px;border-radius:6px;border:1px solid #bae6fd;background:#f0f9ff;color:#0369a1;font-size:11px;font-weight:700;cursor:pointer;">Gestor</button>` +
-              `<button type="button" data-preset="${u.login}:METROLOGISTA" style="padding:3px 8px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;font-size:11px;font-weight:700;cursor:pointer;">Metrologista</button>` +
-              `<button type="button" data-preset="${u.login}:OPERADOR" style="padding:3px 8px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:11px;font-weight:700;cursor:pointer;">Operador</button>` +
-            `</div>` +
+            `<button type="button" id="vu-new-person-btn" style="padding:7px 12px;border-radius:8px;border:1px solid #004899;background:#eff6ff;color:#004899;font-weight:800;font-size:12px;cursor:pointer;">+ Nova Pessoa / Login</button>` +
           `</div>` +
-          `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:6px;">${checksHtml}</div>` +
-        `</div>`
-      );
-    }).join("");
 
-    box.innerHTML =
-      `<div style="padding:12px 14px;border-radius:12px;background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #93c5fd;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
-        `<div>` +
-          `<div style="font-weight:800;font-size:14px;color:#002466;">Tipos de Login &amp; Permissões por Pessoa</div>` +
-          `<div style="font-size:12px;color:#334155;">Marque ou desmarque as caixas do que cada pessoa pode ou não fazer.</div>` +
+          `<div style="display:flex;gap:8px;flex-wrap:wrap;">${userChipsHtml}</div>` +
+
+          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;padding-top:4px;">` +
+            `<label style="display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#334155;">Login` +
+              `<input id="vu-ed-login" type="text" value="${activeUser.login}" style="padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:12.5px;color:#0f172a;">` +
+            `</label>` +
+            `<label style="display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#334155;">Nome Completo` +
+              `<input id="vu-ed-name" type="text" value="${activeUser.name}" style="padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:12.5px;color:#0f172a;">` +
+            `</label>` +
+            `<label style="display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#334155;">Matrícula` +
+              `<input id="vu-ed-mat" type="text" value="${activeUser.matricula || ""}" placeholder="Ex: 104829" style="padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:12.5px;color:#0f172a;">` +
+            `</label>` +
+            `<label style="display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#334155;">Setor` +
+              `<select id="vu-ed-sector" style="padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:12.5px;color:#0f172a;background:#fff;">${sectorOpts}</select>` +
+            `</label>` +
+          `</div>` +
+
+          `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:2px;">` +
+            `<span style="font-size:11.5px;font-weight:700;color:#475569;">Preencher modelo:</span>` +
+            `<button type="button" data-apply-preset="ADMIN" style="padding:4px 10px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;color:#003399;font-size:11px;font-weight:700;cursor:pointer;">Admin</button>` +
+            `<button type="button" data-apply-preset="GESTOR" style="padding:4px 10px;border-radius:6px;border:1px solid #bae6fd;background:#f0f9ff;color:#0369a1;font-size:11px;font-weight:700;cursor:pointer;">Gestor</button>` +
+            `<button type="button" data-apply-preset="METROLOGISTA" style="padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;font-size:11px;font-weight:700;cursor:pointer;">Metrologista</button>` +
+            `<button type="button" data-apply-preset="OPERADOR" style="padding:4px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:11px;font-weight:700;cursor:pointer;">Operador</button>` +
+          `</div>` +
         `</div>` +
-        `<button type="button" id="vu-save-perms-btn" style="padding:8px 16px;border-radius:8px;border:none;background:#0055b8;color:#ffffff;font-weight:800;font-size:12px;cursor:pointer;">Salvar Permissões</button>` +
-      `</div>` +
-      `<div style="display:grid;gap:10px;">${userCardsHtml}</div>` +
-      `<div id="vu-perms-msg" style="font-size:12px;font-weight:700;color:#15803d;min-height:16px;"></div>`;
 
-    box.querySelectorAll("[data-preset]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const [login, presetKey] = String(btn.getAttribute("data-preset") || "").split(":");
-        const allowed = new Set(PRESETS[presetKey] || []);
-        box.querySelectorAll(`input[type=checkbox][data-login="${login}"]`).forEach((cb) => {
-          cb.checked = allowed.has(cb.getAttribute("data-perm"));
+        groupsHtml +
+
+        `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">` +
+          `<span id="vu-save-status" style="font-size:12px;font-weight:700;color:#15803d;"></span>` +
+          `<button type="button" id="vu-save-person-btn" style="padding:10px 18px;border-radius:8px;border:none;background:#16a34a;color:#ffffff;font-weight:800;font-size:12.5px;cursor:pointer;">Salvar Acessos da Pessoa</button>` +
+        `</div>`;
+
+      panel.querySelectorAll("[data-pick-user]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedLogin = btn.getAttribute("data-pick-user");
+          drawEditor();
         });
       });
-    });
 
-    box.querySelector("#vu-save-perms-btn").onclick = () => {
-      const next = loadMatrix();
-      users.forEach((u) => {
-        const checkedIds = Array.from(box.querySelectorAll(`input[type=checkbox][data-login="${u.login}"]:checked`))
-          .map(cb => cb.getAttribute("data-perm"));
-        next[u.login] = checkedIds;
+      panel.querySelector("#vu-new-person-btn").onclick = () => {
+        const newLogin = prompt("Digite o login (ex: lucas):");
+        if (!newLogin) return;
+        const clean = newLogin.trim().toLowerCase();
+        const all = loadProfiles();
+        if (!all[clean]) {
+          all[clean] = {
+            login: clean,
+            name: clean.charAt(0).toUpperCase() + clean.slice(1),
+            matricula: "",
+            sector: "Metrologia / Turbo",
+            role: "OPERADOR",
+            perms: PRESET_PERMS.OPERADOR
+          };
+          saveProfiles(all);
+        }
+        selectedLogin = clean;
+        drawEditor();
+      };
+
+      panel.querySelectorAll("[data-apply-preset]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const pKey = btn.getAttribute("data-apply-preset");
+          const set = new Set(PRESET_PERMS[pKey] || []);
+          panel.querySelectorAll(".vu-perm-cb").forEach((cb) => {
+            cb.checked = set.has(cb.getAttribute("data-perm-id"));
+          });
+        });
       });
-      saveMatrix(next);
-      const msg = box.querySelector("#vu-perms-msg");
-      if (msg) msg.textContent = "Permissões salvas para cada pessoa!";
+
+      panel.querySelector("#vu-save-person-btn").onclick = () => {
+        const edLogin = String(panel.querySelector("#vu-ed-login").value || "").trim().toLowerCase();
+        const edName = String(panel.querySelector("#vu-ed-name").value || "").trim();
+        const edMat = String(panel.querySelector("#vu-ed-mat").value || "").trim();
+        const edSector = String(panel.querySelector("#vu-ed-sector").value || "Metrologia / Turbo");
+        if (!edLogin) return;
+
+        const checkedPerms = Array.from(panel.querySelectorAll(".vu-perm-cb:checked"))
+          .map(cb => cb.getAttribute("data-perm-id"));
+
+        const all = loadProfiles();
+        all[edLogin] = {
+          login: edLogin,
+          name: edName || edLogin,
+          matricula: edMat,
+          sector: edSector,
+          role: checkedPerms.length === ALL_PERM_IDS.length ? "ADMIN" : "CUSTOMIZADO",
+          perms: checkedPerms
+        };
+        saveProfiles(all);
+        selectedLogin = edLogin;
+
+        const st = panel.querySelector("#vu-save-status");
+        if (st) st.textContent = `Salvo para ${edName || edLogin} (${edLogin}) — Matrícula: ${edMat || "—"} • Setor: ${edSector} (${checkedPerms.length} acessos).`;
+        drawEditor();
+      };
     };
 
-    box.style.display = "grid";
+    drawEditor();
+    panel.style.display = "grid";
   };
 
-  const hookTabs = () => {
+  const bindTabs = () => {
     addBtn();
-    const candidates = Array.from(document.querySelectorAll("button, a, [role=tab]")).filter((el) => {
-      const t = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-      return t.includes("hierarqu") || t.includes("tipos de login") || el.id === "admTabRbac";
-    });
+    ensureSidebarTabs();
 
-    candidates.forEach((tab) => {
-      if (tab.dataset.vuRbacHooked) return;
-      tab.dataset.vuRbacHooked = "1";
-      tab.addEventListener("click", () => setTimeout(() => openRbacMatrix(tab), 60));
-    });
+    document.querySelectorAll("button, a, [role=tab]").forEach((el) => {
+      if (el.dataset.vuBound) return;
+      el.dataset.vuBound = "1";
+      const txt = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const isRbac = el.id === "admTabRbac" || txt.includes("hierarqu") || txt.includes("tipos de login");
 
-    const otherTabs = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, [role=tab], [id^='admTab']")).filter((el) => {
-      const t = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-      return !t.includes("hierarqu") && !t.includes("tipos de login") && el.id !== "admTabRbac";
-    });
-
-    otherTabs.forEach((ot) => {
-      if (ot.dataset.vuOtherHooked) return;
-      ot.dataset.vuOtherHooked = "1";
-      ot.addEventListener("click", () => hideRbacBox());
+      el.addEventListener("click", () => {
+        if (isRbac) {
+          setTimeout(() => renderRbacPanel(el), 60);
+        } else {
+          hideRbacPanel();
+        }
+      });
     });
   };
 
-  const obs = new MutationObserver(hookTabs);
+  const obs = new MutationObserver(bindTabs);
   const boot = () => {
     addBtn();
-    hookTabs();
+    bindTabs();
     obs.observe(document.body, { childList: true, subtree: true });
   };
 
@@ -276,6 +449,6 @@
   window.VoithUpgrade = Object.assign({}, window.VoithUpgrade, {
     openDownloadPage,
     focusLoginScreen: focusLogin,
-    getUserPermissions: () => loadMatrix()
+    getUserProfiles: () => loadProfiles()
   });
 })();
