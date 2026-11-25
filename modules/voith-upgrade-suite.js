@@ -14,7 +14,10 @@
 
   const openDownloadPage = async () => {
     if (document.getElementById("vu-dl-voith")) return;
-    let tag = "Latest", apkUrl = APK, exeUrl = EXE, apkMeta = "Pacote de instalação Android", exeMeta = "Instalador Windows Desktop";
+    let tag = "Latest", apkUrl = APK, exeUrl = EXE;
+    let apkMeta = "Pacote Android (.apk) • Campo e cautela";
+    let exeMeta = "Instalador Windows (.exe) • Estações e lab";
+
     try {
       const r = await fetch("https://api.github.com/repos/carvpab/voith-metrologia-app/releases/latest");
       if (r.ok) {
@@ -25,66 +28,78 @@
         const exeAsset = a.find(x => /\.exe$/i.test(x.name));
         if (apkAsset) {
           apkUrl = apkAsset.browser_download_url;
-          if (apkAsset.size) apkMeta = "APK Android • " + (apkAsset.size / (1024 * 1024)).toFixed(1) + " MB";
+          if (apkAsset.size) apkMeta = "APK Android • " + (apkAsset.size / (1024 * 1024)).toFixed(1) + " MB • Coleta e cautela";
         }
         if (exeAsset) {
           exeUrl = exeAsset.browser_download_url;
-          if (exeAsset.size) exeMeta = "Windows EXE • " + (exeAsset.size / (1024 * 1024)).toFixed(1) + " MB";
+          if (exeAsset.size) exeMeta = "Windows EXE • " + (exeAsset.size / (1024 * 1024)).toFixed(1) + " MB • PC e laboratório";
         }
       }
     } catch (_) {}
 
     const d = document.createElement("div");
     d.id = "vu-dl-voith";
-    d.style.cssText = "position:fixed;inset:0;z-index:10600;background:#0b1526;color:#f8fafc;overflow:auto;padding:24px 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;";
+    d.style.cssText = [
+      "position:fixed;inset:0;z-index:10600;overflow:auto;padding:28px 16px;",
+      "background:radial-gradient(circle at 15% 15%, rgba(0,114,206,.32), transparent 45%),",
+      "radial-gradient(circle at 85% 80%, rgba(14,165,233,.20), transparent 48%),",
+      "linear-gradient(145deg, #061021 0%, #0a1d3d 55%, #071329 100%);",
+      "background-image:linear-gradient(rgba(148,163,184,.06) 1px, transparent 1px),linear-gradient(90deg, rgba(148,163,184,.06) 1px, transparent 1px),radial-gradient(circle at 20% 15%, rgba(0,102,204,.35), transparent 45%),linear-gradient(145deg,#061021 0%,#0a1d3d 55%,#071329 100%);",
+      "background-size:32px 32px, 32px 32px, 100% 100%, 100% 100%;",
+      "color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;"
+    ].join("");
+
     d.innerHTML =
-      "<div style=\"max-width:920px;margin:0 auto;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45);border:1px solid #cbd5e1;\">" +
-        "<div style=\"background:linear-gradient(90deg,#002b7f 0%,#0055b8 100%);color:#ffffff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;\">" +
-          "<div style=\"display:flex;align-items:center;gap:12px;flex-wrap:wrap;\">" +
-            "<span style=\"background:#ffffff;color:#003399;font-weight:900;font-size:13px;padding:5px 10px;border-radius:6px;letter-spacing:.06em;\">VOITH</span>" +
+      "<div style=\"max-width:940px;margin:0 auto;background:rgba(255,255,255,.98);color:#0f172a;border-radius:18px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.55);border:1px solid rgba(147,197,253,.45);\">" +
+        "<div style=\"background:linear-gradient(90deg,#002466 0%,#004899 55%,#0066cc 100%);color:#ffffff;padding:20px 26px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:3px solid #38bdf8;\">" +
+          "<div style=\"display:flex;align-items:center;gap:14px;flex-wrap:wrap;\">" +
+            "<span style=\"background:#ffffff;color:#003399;font-weight:900;font-size:14px;padding:6px 12px;border-radius:8px;letter-spacing:.08em;box-shadow:0 4px 12px rgba(0,0,0,.2);\">VOITH</span>" +
             "<div>" +
-              "<div style=\"font-weight:800;font-size:16px;\">Voith Metrologia • Centro de Downloads</div>" +
-              "<div style=\"font-size:12px;color:#dbeafe;\">Release ativa: " + tag + "</div>" +
+              "<div style=\"font-weight:800;font-size:17px;letter-spacing:.01em;\">Voith Metrologia &bull; Portal de Downloads</div>" +
+              "<div style=\"font-size:12px;color:#bfdbfe;margin-top:2px;\">Vers&atilde;o / Release: <strong style=\"color:#ffffff;\">" + tag + "</strong> &bull; Atualiza&ccedil;&atilde;o via GitHub Releases</div>" +
             "</div>" +
           "</div>" +
           "<div style=\"display:flex;align-items:center;gap:8px;\">" +
-            "<button type=\"button\" id=\"vu-go-login\" style=\"padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#ffffff;font-weight:700;font-size:12.5px;cursor:pointer;\">Op&ccedil;&otilde;es de Login</button>" +
-            "<button type=\"button\" id=\"vu-close-dl\" aria-label=\"Fechar\" style=\"width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#ffffff;font-size:18px;line-height:1;cursor:pointer;\">&times;</button>" +
+            "<button type=\"button\" id=\"vu-go-login\" style=\"padding:9px 15px;border-radius:9px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.16);color:#ffffff;font-weight:700;font-size:12.5px;cursor:pointer;\">Op&ccedil;&otilde;es de Login</button>" +
+            "<button type=\"button\" id=\"vu-close-dl\" aria-label=\"Fechar\" style=\"width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.16);color:#ffffff;font-size:20px;line-height:1;cursor:pointer;\">&times;</button>" +
           "</div>" +
         "</div>" +
-        "<div style=\"padding:28px 24px;background:#f8fafc;\">" +
-          "<div style=\"margin-bottom:22px;\">" +
-            "<div style=\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#0055b8;margin-bottom:4px;\">Distribui&ccedil;&atilde;o Oficial</div>" +
-            "<h1 style=\"margin:0 0 6px;font-size:24px;font-weight:800;color:#0f172a;\">Selecione a vers&atilde;o do seu dispositivo</h1>" +
-            "<p style=\"margin:0;font-size:13.5px;color:#475569;\">Baixe o instalador correspondente ao aparelho para acesso ao sistema de calibra&ccedil;&atilde;o e invent&aacute;rio.</p>" +
-          "</div>" +
-          "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;\">" +
-            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:4px solid #0055b8;border-radius:12px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;gap:16px;\">" +
-              "<div>" +
-                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;\">" +
-                  "<span style=\"font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:#eff6ff;color:#0055b8;border:1px solid #bfdbfe;\">ANDROID / TABLET</span>" +
-                  "<span style=\"font-size:11.5px;font-weight:700;color:#64748b;\">.APK</span>" +
-                "</div>" +
-                "<div style=\"font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;\">Voith Metrologia Android</div>" +
-                "<div style=\"font-size:12.5px;color:#475569;\">" + apkMeta + " • Coleta em campo e cautela</div>" +
-              "</div>" +
-              "<a href=\"" + apkUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:11px 16px;border-radius:8px;background:#0055b8;color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;\">Baixar APK (.apk)</a>" +
+        "<div style=\"padding:28px 26px;background:linear-gradient(180deg,#f8fafc 0%,#eef4fb 100%);\">" +
+          "<div style=\"display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:22px;\">" +
+            "<div>" +
+              "<div style=\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:#004899;margin-bottom:4px;\">Metrologia &bull; Voith Turbo</div>" +
+              "<h1 style=\"margin:0 0 6px;font-size:25px;font-weight:900;color:#0f172a;\">Escolha o instalador do seu dispositivo</h1>" +
+              "<p style=\"margin:0;font-size:13.5px;color:#475569;\">Baixe o pacote oficial para Android ou Windows e acesse o ambiente de calibra&ccedil;&atilde;o.</p>" +
             "</div>" +
-            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:4px solid #002b7f;border-radius:12px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;gap:16px;\">" +
+            "<span style=\"font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px;background:#dbeafe;color:#003399;border:1px solid #93c5fd;\">Build Automatizada</span>" +
+          "</div>" +
+          "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:20px;\">" +
+            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:5px solid #0055b8;border-radius:14px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;box-shadow:0 10px 24px rgba(15,23,42,.06);\">" +
               "<div>" +
-                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;\">" +
-                  "<span style=\"font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;\">WINDOWS DESKTOP</span>" +
-                  "<span style=\"font-size:11.5px;font-weight:700;color:#64748b;\">.EXE</span>" +
+                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;\">" +
+                  "<span style=\"font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:#eff6ff;color:#004899;border:1px solid #bfdbfe;\">ANDROID &bull; TABLET / CELULAR</span>" +
+                  "<span style=\"font-size:12px;font-weight:800;color:#0055b8;\">.APK</span>" +
                 "</div>" +
-                "<div style=\"font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;\">Voith Metrologia Windows</div>" +
-                "<div style=\"font-size:12.5px;color:#475569;\">" + exeMeta + " • Esta&ccedil;&otilde;es de trabalho e laborat&oacute;rio</div>" +
+                "<div style=\"font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px;\">Voith Metrologia Android</div>" +
+                "<div style=\"font-size:13px;color:#475569;line-height:1.45;\">" + apkMeta + "</div>" +
               "</div>" +
-              "<a href=\"" + exeUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:11px 16px;border-radius:8px;background:#002b7f;color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;\">Baixar Instalador (.exe)</a>" +
+              "<a href=\"" + apkUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,#004899,#0066cc);color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;box-shadow:0 6px 16px rgba(0,72,153,.25);\">Baixar APK (.apk)</a>" +
+            "</div>" +
+            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:5px solid #002466;border-radius:14px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;box-shadow:0 10px 24px rgba(15,23,42,.06);\">" +
+              "<div>" +
+                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;\">" +
+                  "<span style=\"font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e2e8f0;color:#0f172a;border:1px solid #cbd5e1;\">WINDOWS &bull; DESKTOP / PC</span>" +
+                  "<span style=\"font-size:12px;font-weight:800;color:#002466;\">.EXE</span>" +
+                "</div>" +
+                "<div style=\"font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px;\">Voith Metrologia Windows</div>" +
+                "<div style=\"font-size:13px;color:#475569;line-height:1.45;\">" + exeMeta + "</div>" +
+              "</div>" +
+              "<a href=\"" + exeUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,#002466,#004899);color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;box-shadow:0 6px 16px rgba(0,36,102,.25);\">Baixar Instalador (.exe)</a>" +
             "</div>" +
           "</div>" +
-          "<div style=\"margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;\">" +
-            "<span style=\"font-size:12px;color:#64748b;\">J&aacute; possui o aplicativo instalado? Acesse sua conta para continuar.</span>" +
-            "<button type=\"button\" id=\"vu-dl-login-cta\" style=\"padding:9px 16px;border-radius:8px;border:1px solid #0055b8;background:#ffffff;color:#0055b8;font-weight:800;font-size:12.5px;cursor:pointer;\">Ir para Op&ccedil;&otilde;es de Login &rarr;</button>" +
+          "<div style=\"margin-top:22px;padding-top:16px;border-top:1px solid #cbd5e1;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;\">" +
+            "<span style=\"font-size:12.5px;color:#334155;\">Pronto para entrar no sistema? Abra as op&ccedil;&otilde;es de autentica&ccedil;&atilde;o.</span>" +
+            "<button type=\"button\" id=\"vu-dl-login-cta\" style=\"padding:10px 18px;border-radius:9px;border:1px solid #004899;background:#ffffff;color:#004899;font-weight:800;font-size:12.5px;cursor:pointer;\">Ir para Op&ccedil;&otilde;es de Login &rarr;</button>" +
           "</div>" +
         "</div>" +
       "</div>";
@@ -101,7 +116,7 @@
     b.id = "vu-dl-btn";
     b.type = "button";
     b.textContent = "Baixar App";
-    b.style.cssText = "position:fixed;bottom:14px;right:14px;z-index:9950;padding:8px 14px;border-radius:8px;border:1px solid #93c5fd;background:#003399;color:#ffffff;font:800 12px system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.35);cursor:pointer;";
+    b.style.cssText = "position:fixed;bottom:14px;right:14px;z-index:9950;padding:8px 14px;border-radius:8px;border:1px solid #93c5fd;background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;font:800 12px system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.38);cursor:pointer;";
     b.onclick = openDownloadPage;
     document.body.appendChild(b);
   };
@@ -128,6 +143,13 @@
     });
   };
 
+  const roles = [
+    { code: "ADMIN", title: "Administrador", badge: "#1d4ed8", desc: "Gestão completa de usuários, logins, OTA, telemetria, setores e auditoria do sistema." },
+    { code: "GESTOR", title: "Gestor / Líder", badge: "#0284c7", desc: "Aprovação de romaneios externos, acompanhamento de vencimentos e pendências da equipe." },
+    { code: "METROLOGISTA", title: "Técnico / Metrologista", badge: "#0369a1", desc: "Execução de calibrações, inventário, certificados e movimentação de instrumentos." },
+    { code: "OPERADOR", title: "Operador / Consulta", badge: "#475569", desc: "Consulta de status de calibração, cautela em campo e visualização do painel." }
+  ];
+
   const showHierarchyView = (tabEl) => {
     const root = getTabContainer(tabEl);
     if (!root) return;
@@ -147,17 +169,51 @@
       panel = document.createElement("div");
       panel.id = "vu-hierarchy-view";
       panel.style.cssText = "margin-top:14px;display:grid;gap:10px;color:#0f172a;";
+      const cardsHtml = roles.map((r) =>
+        "<div data-role=\"" + r.code + "\" class=\"vu-role-card\" style=\"padding:12px 14px;border-radius:10px;background:#ffffff;border:1px solid #cbd5e1;border-left:4px solid " + r.badge + ";display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;cursor:pointer;\">" +
+          "<div style=\"flex:1;min-width:220px;\">" +
+            "<div style=\"display:flex;align-items:center;gap:8px;margin-bottom:3px;\">" +
+              "<span style=\"font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:#eff6ff;color:" + r.badge + ";\">" + r.code + "</span>" +
+              "<strong style=\"font-size:13.5px;color:#0f172a;\">" + r.title + "</strong>" +
+            "</div>" +
+            "<div style=\"font-size:12px;color:#475569;\">" + r.desc + "</div>" +
+          "</div>" +
+          "<span class=\"vu-role-status\" style=\"font-size:11.5px;font-weight:700;color:#64748b;\">Selecionar</span>" +
+        "</div>"
+      ).join("");
+
       panel.innerHTML =
-        "<div style=\"display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;\">" +
+        "<div style=\"padding:12px 14px;border-radius:10px;background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #93c5fd;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;\">" +
           "<div>" +
-            "<div style=\"font-weight:800;font-size:13.5px;color:#003399;\">Tipos de Login &amp; Hierarquia de Acesso</div>" +
-            "<div style=\"font-size:12px;color:#334155;\">N&iacute;veis de permiss&atilde;o definidos para opera&ccedil;&atilde;o e gest&atilde;o.</div>" +
+            "<div style=\"font-weight:800;font-size:14px;color:#002466;\">Tipos de Login &amp; Hierarquia Voith</div>" +
+            "<div style=\"font-size:12px;color:#334155;\">Clique em um perfil para destacar ou aplicar no seletor de perfil se disponível.</div>" +
           "</div>" +
         "</div>" +
-        "<div style=\"padding:10px 12px;border-radius:10px;background:#ffffff;border:1px solid #e2e8f0;font-size:12.5px;\"><strong>ADMIN</strong> &mdash; Controle completo de usu&aacute;rios, logins, OTA, telemetria e auditoria.</div>" +
-        "<div style=\"padding:10px 12px;border-radius:10px;background:#ffffff;border:1px solid #e2e8f0;font-size:12.5px;\"><strong>GESTOR / L&Iacute;DER</strong> &mdash; Aprova&ccedil;&atilde;o de romaneios externos, acompanhamento de vencimentos e pend&ecirc;ncias.</div>" +
-        "<div style=\"padding:10px 12px;border-radius:10px;background:#ffffff;border:1px solid #e2e8f0;font-size:12.5px;\"><strong>T&Eacute;CNICO / METROLOGISTA</strong> &mdash; Execu&ccedil;&atilde;o de calibra&ccedil;&otilde;es, invent&aacute;rio e movimenta&ccedil;&atilde;o de instrumentos.</div>" +
-        "<div style=\"padding:10px 12px;border-radius:10px;background:#ffffff;border:1px solid #e2e8f0;font-size:12.5px;\"><strong>OPERADOR / CONSULTA</strong> &mdash; Consulta de status, cautela e leitura do painel.</div>";
+        cardsHtml;
+
+      panel.querySelectorAll(".vu-role-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          panel.querySelectorAll(".vu-role-card").forEach((c) => {
+            c.style.background = "#ffffff";
+            const st = c.querySelector(".vu-role-status");
+            if (st) { st.textContent = "Selecionar"; st.style.color = "#64748b"; }
+          });
+          card.style.background = "#f0f9ff";
+          const st = card.querySelector(".vu-role-status");
+          if (st) { st.textContent = "Selecionado"; st.style.color = "#004899"; }
+
+          const roleCode = card.getAttribute("data-role") || "";
+          const sel = root.querySelector("select");
+          if (sel) {
+            const match = Array.from(sel.options).find(o => (o.value + " " + o.text).toUpperCase().includes(roleCode));
+            if (match) {
+              sel.value = match.value;
+              sel.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          }
+        });
+      });
+
       root.appendChild(panel);
     }
     panel.style.display = "grid";
@@ -177,11 +233,8 @@
       const isHier = txt.includes("hierarqu") || txt.includes("tipos de login");
       el.addEventListener("click", () => {
         const root = getTabContainer(el);
-        if (isHier) {
-          setTimeout(() => showHierarchyView(el), 50);
-        } else {
-          clearHierarchyView(root);
-        }
+        if (isHier) setTimeout(() => showHierarchyView(el), 50);
+        else clearHierarchyView(root);
       });
     });
   };
