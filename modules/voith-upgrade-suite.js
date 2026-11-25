@@ -61,6 +61,14 @@
     OPERADOR: ["inv_view","cautela_assign","cautela_return","rep_pdf_iso"]
   };
 
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
   const loadProfiles = () => {
     try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}"); } catch (_) { return {}; }
   };
@@ -144,6 +152,130 @@
     return Array.from(map.values());
   };
 
+  /* -------------------- CONTROLE DE VOLTAR (APP ANDROID + MOBILE WEB) -------------------- */
+  let currentTab = "painel";
+  const tabHistory = [];
+  let isNavigatingBack = false;
+
+  const detectTabKey = (el) => {
+    const raw = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!raw || raw.length > 36) return null;
+    if (raw === "painel" || raw.startsWith("command center")) return "painel";
+    if (raw.startsWith("invent\u00e1rio") || raw.startsWith("inventario")) return "inventario";
+    if (raw.startsWith("cautela")) return "cautela";
+    if (raw === "lab" || raw.startsWith("lab & baixas") || raw.startsWith("lab ")) return "lab";
+    return null;
+  };
+
+  const pushBrowserHistory = () => {
+    try { window.history.pushState({ vuNav: true }, ""); } catch (_) {}
+  };
+
+  const clickTabByKey = (key) => {
+    const btns = Array.from(document.querySelectorAll("nav button, nav a, aside button, aside a, footer button, [role=tab], button"));
+    const match = btns.find((b) => isVisible(b) && detectTabKey(b) === key && !b.closest("#vu-adm-inner"));
+    if (match) {
+      isNavigatingBack = true;
+      match.click();
+      currentTab = key;
+      setTimeout(() => { isNavigatingBack = false; }, 120);
+      return true;
+    }
+    return false;
+  };
+
+  const findCloseBtn = (root) => {
+    if (!root) return null;
+    return Array.from(root.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b)) return false;
+      const t = String(b.textContent || "").trim();
+      const aria = String(b.getAttribute("aria-label") || "").toLowerCase();
+      return t === "\u00d7" || t === "x" || t === "X" || t === "\u2715" || aria.includes("fechar") || aria.includes("close");
+    }) || null;
+  };
+
+  const handleBackAction = () => {
+    // 1. Fecha tela de download
+    const dl = document.getElementById("vu-dl-voith");
+    if (dl && isVisible(dl)) {
+      dl.remove();
+      return "handled";
+    }
+
+    // 2. Fecha modal administrativo se aberto
+    const admInner = document.getElementById("vu-adm-inner");
+    if (admInner && isVisible(admInner)) {
+      const closeAdm = findCloseBtn(admInner);
+      if (closeAdm) {
+        closeAdm.click();
+        return "handled";
+      }
+    }
+
+    // 3. Fecha qualquer outro modal/dialog visível
+    const openOverlays = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0")).filter((el) => {
+      if (!isVisible(el) || el.id === "vu-dl-voith") return false;
+      const t = String(el.textContent || "");
+      return !t.includes("Monitoramento de Frota");
+    });
+    for (let i = openOverlays.length - 1; i >= 0; i--) {
+      const cBtn = findCloseBtn(openOverlays[i]);
+      if (cBtn) {
+        cBtn.click();
+        return "handled";
+      }
+    }
+
+    // 4. Fecha o menu lateral mobile (drawer) se aberto
+    const drawer = Array.from(document.querySelectorAll("aside, div")).find((el) => {
+      if (!isVisible(el)) return false;
+      const r = el.getBoundingClientRect();
+      const t = String(el.textContent || "");
+      return r.left >= -5 && r.width > 180 && r.width < window.innerWidth * 0.9 && t.includes("WORKSPACES") && t.includes("Command Center");
+    });
+    if (drawer && window.innerWidth <= 900) {
+      const closeDrawer = findCloseBtn(drawer);
+      if (closeDrawer) {
+        closeDrawer.click();
+        return "handled";
+      }
+    }
+
+    // 5. Volta para a aba anterior do histórico
+    while (tabHistory.length > 0) {
+      const prev = tabHistory.pop();
+      if (prev && prev !== currentTab && clickTabByKey(prev)) {
+        return "handled";
+      }
+    }
+
+    // 6. Se não estiver no Painel principal, volta para o Painel
+    if (currentTab !== "painel" && clickTabByKey("painel")) {
+      return "handled";
+    }
+
+    return "exit";
+  };
+
+  window.__voithBackHandler = handleBackAction;
+
+  document.addEventListener("click", (ev) => {
+    if (isNavigatingBack) return;
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button, a") : null;
+    if (!btn || btn.closest("#vu-adm-inner") || btn.closest("#vu-dl-voith")) return;
+    const key = detectTabKey(btn);
+    if (key && key !== currentTab) {
+      tabHistory.push(currentTab);
+      if (tabHistory.length > 20) tabHistory.shift();
+      currentTab = key;
+      pushBrowserHistory();
+    }
+  }, true);
+
+  window.addEventListener("popstate", () => {
+    handleBackAction();
+  });
+
   /* -------------------- PORTAL DE DOWNLOADS VOITH -------------------- */
   const focusLogin = () => {
     const m = document.getElementById("vu-dl-voith");
@@ -157,6 +289,7 @@
 
   const openDownloadPage = async () => {
     if (document.getElementById("vu-dl-voith")) return;
+    pushBrowserHistory();
     let tag = "Latest", apkUrl = APK_FALLBACK, exeUrl = EXE_FALLBACK;
     let apkMeta = "Pacote Android (.apk) \u2022 Coleta em campo e cautela";
     let exeMeta = "Instalador Windows (.exe) \u2022 Esta\u00e7\u00f5es de trabalho e lab";
@@ -221,24 +354,29 @@
       b.onclick = openDownloadPage;
       document.body.appendChild(b);
     }
-    b.style.cssText = "position:fixed;" + (isMobile ? "bottom:84px;right:12px;padding:6px 11px;font-size:11px;" : "bottom:14px;right:14px;padding:8px 14px;font-size:12px;") + "z-index:9950;border-radius:8px;border:1px solid #93c5fd;background:linear-gradient(90deg,#002466,#0055b8);color:#fff;font-weight:800;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.35);cursor:pointer;";
+    b.style.cssText = "position:fixed;" + (isMobile ? "bottom:82px;right:12px;padding:6px 11px;font-size:11px;" : "bottom:14px;right:14px;padding:8px 14px;font-size:12px;") + "z-index:35;border-radius:8px;border:1px solid #93c5fd;background:linear-gradient(90deg,#002466,#0055b8);color:#fff;font-weight:800;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.35);cursor:pointer;";
   };
 
-  /* -------------------- ESTILOS DO MODAL COM SIDEBAR -------------------- */
+  /* -------------------- ESTILOS SEGUROS (SEM FORCAR DISPLAY NO MODAL) -------------------- */
   const ensureAdminStyles = () => {
     if (document.getElementById("vu-admin-sidebar-css")) return;
     const st = document.createElement("style");
     st.id = "vu-admin-sidebar-css";
     st.textContent = `
-      .vu-adm-shell:not(.hidden):not([hidden]) {
-        display: flex !important;
-        flex-direction: row !important;
+      .vu-adm-card-host {
         max-width: 1080px !important;
         width: 95vw !important;
         max-height: 90vh !important;
-        overflow: hidden !important;
         padding: 0 !important;
-        background: #ffffff !important;
+        overflow: hidden !important;
+      }
+      #vu-adm-inner {
+        display: flex;
+        flex-direction: row;
+        width: 100%;
+        max-height: 90vh;
+        background: #ffffff;
+        overflow: hidden;
       }
       #vu-admin-sidebar {
         width: 245px;
@@ -265,7 +403,6 @@
         font-weight: 600 !important;
         color: #475569 !important;
         cursor: pointer !important;
-        transition: background .15s, color .15s !important;
         white-space: normal !important;
         line-height: 1.25 !important;
       }
@@ -297,20 +434,24 @@
         padding-right: 4px;
       }
       @media (max-width: 768px) {
-        .vu-adm-shell:not(.hidden):not([hidden]) {
-          flex-direction: column !important;
+        .vu-adm-card-host {
           width: 96vw !important;
           max-height: 92vh !important;
         }
+        #vu-adm-inner {
+          flex-direction: column;
+          max-height: 92vh;
+        }
         #vu-admin-sidebar {
-          width: 100% !important;
-          flex: 0 0 auto !important;
-          flex-direction: row !important;
-          overflow-x: auto !important;
-          overflow-y: hidden !important;
-          border-right: none !important;
-          border-bottom: 1px solid #e2e8f0 !important;
-          padding: 8px !important;
+          width: 100%;
+          flex: 0 0 auto;
+          flex-direction: row;
+          overflow-x: auto;
+          overflow-y: hidden;
+          border-right: none;
+          border-bottom: 1px solid #e2e8f0;
+          padding: 8px;
+          order: 2;
         }
         #vu-admin-sidebar .vu-side-item {
           width: auto !important;
@@ -320,7 +461,10 @@
           font-size: 12px !important;
         }
         #vu-admin-main {
-          padding: 12px !important;
+          padding: 12px;
+          order: 1;
+          flex: 1 1 auto;
+          min-height: 0;
         }
       }
     `;
@@ -537,26 +681,25 @@
           `<div style="padding:14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;"><div style="font-size:15px;font-weight:800;color:#065f46;">&#129513; Modulariza&ccedil;&atilde;o &amp; Arquitetura HTML</div><div style="font-size:12.5px;color:#334155;">Status dos m&oacute;dulos carregados na aplica&ccedil;&atilde;o (Vers&atilde;o ${ver}).</div></div>` +
           `<div style="display:grid;gap:8px;font-size:12.5px;">` +
             `<div style="padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #cbd5e1;"><strong>index.html</strong> &mdash; Cockpit principal + Supabase + Realtime</div>` +
-            `<div style="padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #cbd5e1;"><strong>modules/voith-upgrade-suite.js</strong> &mdash; Sidebar Admin, RBAC Granular, Portal de Downloads &amp; OTA</div>` +
+            `<div style="padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #cbd5e1;"><strong>modules/voith-upgrade-suite.js</strong> &mdash; Sidebar Admin, RBAC Granular, Navega&ccedil;&atilde;o Voltar &amp; Portal de Downloads</div>` +
             `<div style="padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #cbd5e1;"><strong>app.js / cloud.js / db.js / views.js</strong> &mdash; M&oacute;dulos preparados para separa&ccedil;&atilde;o incremental</div>` +
           `</div>` +
         `</div>`;
     }
   };
 
-  /* -------------------- TRANSFORMA SOMENTE O CARD DO MODAL -------------------- */
+  /* -------------------- TRANSFORMA SOMENTE O MODAL QUANDO VISIVEL -------------------- */
   const upgradeAdminModal = () => {
     ensureAdminStyles();
 
-    // 1. Localiza exclusivamente o elemento folha do título do modal (<= 80 caracteres)
     const titleEl = Array.from(document.querySelectorAll("h1, h2, h3, h4, span, p, div")).find((el) => {
+      if (!isVisible(el)) return false;
       const txt = String(el.textContent || "").trim();
       if (!txt.includes("Painel Administrativo (Voith)") || txt.length > 80) return false;
       return !Array.from(el.children).some(ch => String(ch.textContent || "").includes("Painel Administrativo (Voith)"));
     });
     if (!titleEl) return;
 
-    // 2. Sobe apenas até o card interno do modal que contém as abas administrativas
     let modalCard = titleEl.parentElement;
     while (modalCard && modalCard !== document.body && modalCard !== document.documentElement) {
       const txt = String(modalCard.textContent || "");
@@ -564,26 +707,31 @@
       modalCard = modalCard.parentElement;
     }
 
-    // 3. Travas de segurança: nunca tocar no body, no backdrop nem no cockpit principal
     if (!modalCard || modalCard === document.body || modalCard === document.documentElement) return;
     if (modalCard.dataset.vuSidebarDone === "1") return;
+
     const cardTxt = String(modalCard.textContent || "");
     if (
       cardTxt.includes("Monitoramento de Frota") ||
       cardTxt.includes("WORKSPACES") ||
+      cardTxt.includes("Command Center") ||
       modalCard.classList.contains("inset-0")
     ) {
       return;
     }
 
     modalCard.dataset.vuSidebarDone = "1";
-    modalCard.classList.add("vu-adm-shell");
+    modalCard.classList.add("vu-adm-card-host");
+    pushBrowserHistory();
 
     const nativeTabBtns = Array.from(modalCard.querySelectorAll("button, [role=tab]")).filter(btn => {
       const t = String(btn.textContent || "").replace(/\s+/g, " ").trim();
       return /^(Usu\u00e1rios & Logins|Locais & Setores Oficiais|Risco & SLA Lab|OTA & Telemetria|Tipos de Login & Hierarquia)$/i.test(t);
     });
     const origTabBar = nativeTabBtns[0] ? nativeTabBtns[0].parentElement : null;
+
+    const inner = document.createElement("div");
+    inner.id = "vu-adm-inner";
 
     const sidebar = document.createElement("aside");
     sidebar.id = "vu-admin-sidebar";
@@ -605,8 +753,9 @@
 
     const existingChildren = Array.from(modalCard.children);
     modalCard.innerHTML = "";
-    modalCard.appendChild(sidebar);
-    modalCard.appendChild(mainCol);
+    inner.appendChild(sidebar);
+    inner.appendChild(mainCol);
+    modalCard.appendChild(inner);
 
     const nativeBodyBlocks = [];
     existingChildren.forEach((ch) => {
@@ -695,7 +844,7 @@
       addDownloadBtn();
       upgradeAdminModal();
     });
-    obs.observe(document.body, { childList: true, subtree: true });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
     window.addEventListener("resize", addDownloadBtn);
   };
 
