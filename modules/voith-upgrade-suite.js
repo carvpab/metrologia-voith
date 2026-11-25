@@ -105,9 +105,16 @@
   };
 
   const discoverUsers = (scopeEl) => {
+    const isLogNoise = (login, name) => {
+      const l = String(login || "").trim().toLowerCase();
+      const n = String(name || "").trim().toUpperCase();
+      return !l || /^\d{2}:\d{2}/.test(l) || l.includes("health_check") || n === "APP_BOOT" || n === "VOITH-OS";
+    };
+
     const stored = loadProfiles();
     const map = new Map();
     Object.entries(stored).forEach(([k, p]) => {
+      if (isLogNoise(k, p && p.name)) return;
       map.set(k.toLowerCase(), {
         login: k.toLowerCase(),
         name: p.name || k,
@@ -119,24 +126,28 @@
     });
 
     const root = scopeEl || document;
-    root.querySelectorAll("table tbody tr").forEach((tr) => {
-      const tds = Array.from(tr.querySelectorAll("td")).map(td => String(td.textContent || "").trim()).filter(Boolean);
-      if (tds.length >= 2) {
-        const login = tds[0].toLowerCase();
-        if (!login || login.includes(" ") || login.length > 30) return;
-        const name = tds[1];
-        const roleCell = tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|T\u00c9CNICO|TECNICO)/i.test(c));
-        const role = roleCell ? roleCell.toUpperCase() : "OPERADOR";
-        const ex = map.get(login);
-        map.set(login, {
-          login,
-          name: (ex && ex.name) || name,
-          matricula: (ex && ex.matricula) || "",
-          sector: (ex && ex.sector) || "Metrologia / Turbo",
-          role: (ex && ex.role) || role,
-          perms: (ex && ex.perms) || (PRESET_PERMS[role] || PRESET_PERMS.OPERADOR)
-        });
-      }
+    root.querySelectorAll("table").forEach((tbl) => {
+      const hdr = String((tbl.querySelector("thead") || tbl.querySelector("tr") || {}).textContent || "").toUpperCase();
+      if (!(hdr.includes("LOGIN") && hdr.includes("PERFIL"))) return;
+      tbl.querySelectorAll("tbody tr").forEach((tr) => {
+        const tds = Array.from(tr.querySelectorAll("td")).map(td => String(td.textContent || "").trim()).filter(Boolean);
+        if (tds.length >= 2) {
+          const login = tds[0].toLowerCase();
+          const name = tds[1];
+          if (login.includes(" ") || login.length > 30 || isLogNoise(login, name)) return;
+          const roleCell = tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|T\u00c9CNICO|TECNICO)/i.test(c));
+          const role = roleCell ? roleCell.toUpperCase() : "OPERADOR";
+          const ex = map.get(login);
+          map.set(login, {
+            login,
+            name: (ex && ex.name) || name,
+            matricula: (ex && ex.matricula) || "",
+            sector: (ex && ex.sector) || "Metrologia / Turbo",
+            role: (ex && ex.role) || role,
+            perms: (ex && ex.perms) || (PRESET_PERMS[role] || PRESET_PERMS.OPERADOR)
+          });
+        }
+      });
     });
 
     if (!map.has("pablo")) {
