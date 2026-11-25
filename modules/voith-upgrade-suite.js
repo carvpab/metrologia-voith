@@ -1,13 +1,13 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v5.3
- * - Trava automática para instrumento Vencido / Reprovado / Em Laboratório
- * - Próxima Calibração ao devolver cautela "Aguardando calibração"
- * - Análise de Risco & Impacto Retroativo (Non-Conformance)
- * - Gráfico de Tendência de Deriva & Custo por Família + Taxa de Reprovação
- * - Visualizador da Trilha de Auditoria Imutável (audit_logs)
- * - Extrator Modular do index.html (gera styles/main.css e js/core.js)
- * - Interceptação nativa de voltar Android/Capacitor + Rolagem horizontal de abas
+ * VOITH METROLOGIA — Upgrade Suite v6.0 (UX & Ergonomia Edition)
+ * - Painel Administrativo com Menu Lateral no PC e Bottom Sheets no Celular
+ * - Zero modais empilhados (telas dedicadas dentro do próprio painel)
+ * - Sistema de Toasts (substitui alert() nativo), Confirmação e Skeleton Loaders
+ * - Command Palette completa no Ctrl + K (busca por TAG + comandos "> ...")
+ * - Feedback tátil (@capacitor/haptics + fallback navigator.vibrate)
+ * - Safe-area Android/iOS (env(safe-area-inset-*)) + transições nativas
+ * - Mantém todas as travas metrológicas, cautela, impacto retroativo, SLA e auditoria
  * ============================================================================
  */
 (function (global) {
@@ -32,18 +32,76 @@
   const state = {
     cfg: {},
     profile: null,
-    selectedTags: new Set(),
     pendingMutations: 0,
     syncing: false,
     errorBurstCache: new Map(),
     otaChannel: localStorage.getItem('voith_ota_channel') || 'stable',
-    modalHistoryPushed: false,
-    modalReturnToAdmin: false,
-    ignoreNextPopstate: false,
-    blockExitUntil: 0,
-    adminLockObserver: null
+    modalStack: [],
+    activeInlineTab: null,
+    blockExitUntil: 0
   };
 
+  /* -------------------------------------------------------------------------
+   * 1. Meta tags mobile (safe-area + viewport-fit=cover) e Feedback Tátil
+   * ------------------------------------------------------------------------- */
+  function ensureMobileMeta() {
+    let vp = document.querySelector('meta[name="viewport"]');
+    if (vp) {
+      const content = vp.getAttribute('content') || '';
+      if (!content.includes('viewport-fit=cover')) {
+        vp.setAttribute('content', content ? `${content}, viewport-fit=cover` : 'width=device-width, initial-scale=1.0, viewport-fit=cover');
+      }
+    } else {
+      vp = document.createElement('meta');
+      vp.name = 'viewport';
+      vp.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+      document.head.appendChild(vp);
+    }
+
+    if (!document.querySelector('meta[name="mobile-web-app-capable"]')) {
+      const m = document.createElement('meta');
+      m.name = 'mobile-web-app-capable';
+      m.content = 'yes';
+      document.head.appendChild(m);
+    }
+  }
+
+  function haptic(kind = 'light') {
+    const plugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.Haptics;
+    if (plugin) {
+      try {
+        if (kind === 'success' && typeof plugin.notification === 'function') {
+          plugin.notification({ type: 'SUCCESS' });
+          return;
+        }
+        if (kind === 'error' && typeof plugin.notification === 'function') {
+          plugin.notification({ type: 'ERROR' });
+          return;
+        }
+        if (kind === 'warn' && typeof plugin.notification === 'function') {
+          plugin.notification({ type: 'WARNING' });
+          return;
+        }
+        if (typeof plugin.impact === 'function') {
+          plugin.impact({ style: kind === 'medium' ? 'MEDIUM' : 'LIGHT' });
+          return;
+        }
+      } catch (_) {}
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        if (kind === 'success') navigator.vibrate([12, 35, 18]);
+        else if (kind === 'error') navigator.vibrate([25, 40, 25]);
+        else if (kind === 'medium') navigator.vibrate(18);
+        else navigator.vibrate(10);
+      } catch (_) {}
+    }
+  }
+
+  /* -------------------------------------------------------------------------
+   * 2. Utilitários, RPC e Regras Metrológicas
+   * ------------------------------------------------------------------------- */
   async function rpc(fnName, params = {}) {
     const { supabaseUrl, supabaseAnonKey } = state.cfg;
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -87,17 +145,34 @@
     return String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   }
 
+  function debounce(fn, wait = 160) {
+    let t = null;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
   function getAllInstruments() {
-    return typeof state.cfg.getInstruments === 'function' ? (state.cfg.getInstruments() || []) : [];
+    if (typeof state.cfg.getInstruments === 'function') {
+      const list = state.cfg.getInstruments();
+      if (Array.isArray(list) && list.length) return list;
+    }
+    if (global.VoithDB && global.VoithDB.state && Array.isArray(global.VoithDB.state.instruments)) {
+      return global.VoithDB.state.instruments;
+    }
+    if (Array.isArray(global.instruments)) return global.instruments;
+    return [];
+  }
+
+  function getInstrumentCode(i) {
+    return String(i?.code || i?.tag || i?.codigo || i?.Instrumento || i?.id || '').trim().toUpperCase();
   }
 
   function findInstrumentByTag(tag) {
     const clean = String(tag ?? '').trim().toUpperCase();
     if (!clean) return null;
-    return getAllInstruments().find((i) => {
-      const code = String(i.code || i.tag || i.codigo || i.Instrumento || i.id || '').trim().toUpperCase();
-      return code === clean;
-    }) || null;
+    return getAllInstruments().find((i) => getInstrumentCode(i) === clean) || null;
   }
 
   function parseFlexDate(raw) {
@@ -141,7 +216,6 @@
       item.family, item.familia, item.category, item.categoria,
       item.desc, item.descricao, item['Descrição'], item.instrumentDesc
     ].join(' '));
-
     if (/torqu|apert|dinamometr/.test(text)) return 'Torque';
     if (/multimetr|amper|voltim|megohm|terr|eletric|alicate amper|oscilosc|fonte/.test(text)) return 'Elétrica';
     if (/press|manometr|vacuometr|termometr|temperatur|pir[oô]metr|umidade|termo-higrom/.test(text)) return 'Pressão & Temp.';
@@ -149,6 +223,131 @@
     return 'Outros';
   }
 
+  /* -------------------------------------------------------------------------
+   * 3. Toasts, Modal de Confirmação e Skeleton Loaders
+   * ------------------------------------------------------------------------- */
+  function showToast(message, type = 'info', duration = 3800) {
+    let box = document.getElementById('vu-toast-stack');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'vu-toast-stack';
+      document.body.appendChild(box);
+    }
+
+    const icons = { success: '✓', error: '✕', warn: '⚠', info: 'ℹ' };
+    const el = document.createElement('div');
+    el.className = `vu-toast vu-toast-${type}`;
+    el.setAttribute('role', 'status');
+    el.innerHTML = `
+      <span class="vu-toast-ico">${icons[type] || icons.info}</span>
+      <span class="vu-toast-msg">${escapeHtml(message)}</span>
+      <button type="button" class="vu-toast-x" aria-label="Fechar">&times;</button>
+    `;
+
+    const dismiss = () => {
+      if (el.dataset.closing) return;
+      el.dataset.closing = '1';
+      el.classList.remove('vu-toast-in');
+      setTimeout(() => el.remove(), 220);
+    };
+
+    el.querySelector('.vu-toast-x').onclick = dismiss;
+    box.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('vu-toast-in'));
+
+    if (type === 'success') haptic('success');
+    else if (type === 'error') haptic('error');
+    else if (type === 'warn') haptic('warn');
+    else haptic('light');
+
+    if (duration > 0) setTimeout(dismiss, duration);
+    return dismiss;
+  }
+
+  function installFriendlyAlert() {
+    if (global.__vuNativeAlert) return;
+    global.__vuNativeAlert = typeof global.alert === 'function' ? global.alert.bind(global) : () => {};
+    global.alert = function (msg) {
+      const text = String(msg ?? '').trim();
+      if (!text) return;
+      const low = normText(text);
+      let type = 'info';
+      if (/erro|falha|invalido|invalida|nao tem permissao|nao possui permissao|bloquead|negad|nao localizad/.test(low)) type = 'error';
+      else if (/sucesso|salvo|salva|registrad|concluid|atualizad|enviado/.test(low)) type = 'success';
+      else if (/atencao|aviso|alerta|vencid|reprovad|offline/.test(low)) type = 'warn';
+      showToast(text, type);
+    };
+  }
+
+  function showConfirm({ title = 'Confirmar ação', message = '', confirmText = 'Confirmar', cancelText = 'Cancelar', danger = false } = {}) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        closeOverlayById('vu-confirm-dialog', true);
+        resolve(val);
+      };
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'vu-backdrop';
+      backdrop.innerHTML = `
+        <div class="vu-modal vu-modal-xs" role="alertdialog" aria-modal="true">
+          <div class="vu-sheet-handle"></div>
+          <div class="vu-header">
+            <h3>${escapeHtml(title)}</h3>
+            <button type="button" class="vu-close" aria-label="Fechar">&times;</button>
+          </div>
+          <div class="vu-body" style="padding:18px;">
+            <p style="margin:0 0 18px;font-size:13.5px;line-height:1.55;color:var(--vu-muted-text);">${escapeHtml(message)}</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="vu-btn vu-cfm-cancel">${escapeHtml(cancelText)}</button>
+              <button type="button" class="vu-btn ${danger ? 'vu-btn-danger' : 'vu-btn-primary'} vu-cfm-ok">${escapeHtml(confirmText)}</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      backdrop.querySelector('.vu-close').onclick = () => finish(false);
+      backdrop.querySelector('.vu-cfm-cancel').onclick = () => finish(false);
+      backdrop.querySelector('.vu-cfm-ok').onclick = () => { haptic('medium'); finish(true); };
+
+      openOverlay({
+        id: 'vu-confirm-dialog',
+        element: backdrop,
+        onClose: () => finish(false)
+      });
+    });
+  }
+
+  function skeletonCardsHtml(cards = 3, rows = 4) {
+    return `
+      <div class="vu-skel-wrap" aria-busy="true">
+        <div class="vu-grid-3" style="margin-bottom:14px;">
+          ${Array.from({ length: cards }).map(() => `
+            <div class="vu-card">
+              <div class="vu-skel" style="width:48%;height:11px;margin-bottom:10px;"></div>
+              <div class="vu-skel" style="width:72%;height:24px;"></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="vu-card" style="display:flex;flex-direction:column;gap:12px;">
+          ${Array.from({ length: rows }).map(() => `
+            <div style="display:grid;grid-template-columns:1.1fr 2fr 1fr;gap:10px;">
+              <div class="vu-skel" style="height:14px;"></div>
+              <div class="vu-skel" style="height:14px;"></div>
+              <div class="vu-skel" style="height:14px;"></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  /* -------------------------------------------------------------------------
+   * 4. Estilos Unificados (Tema Claro/Escuro, Sidebar Desktop, Bottom Sheet Mobile,
+   *    Safe-Area, Toasts, Skeletons e Command Palette)
+   * ------------------------------------------------------------------------- */
   function injectStyles() {
     let style = document.getElementById('voith-upgrade-styles');
     if (!style) {
@@ -157,327 +356,947 @@
       document.head.appendChild(style);
     }
     style.textContent = `
-      .vu-admin-tabs-scroll,
-      #adminUsersModal [role="tablist"],
-      #adminUsersModal div:has(> #admTabUsers),
-      #adminUsersModal div:has(> button[id^="admTab"]) {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
-        -webkit-overflow-scrolling: touch !important;
-        scrollbar-width: thin !important;
-        touch-action: pan-x !important;
-        max-width: 100% !important;
-        gap: 6px !important;
-        padding-bottom: 6px !important;
+      :root {
+        --vu-safe-top: env(safe-area-inset-top, 0px);
+        --vu-safe-bottom: env(safe-area-inset-bottom, 0px);
+        --vu-safe-left: env(safe-area-inset-left, 0px);
+        --vu-safe-right: env(safe-area-inset-right, 0px);
+        --vu-bg: #ffffff;
+        --vu-surface: #f8fafc;
+        --vu-header-bg: #0b1628;
+        --vu-border: #e2e8f0;
+        --vu-text: #0f172a;
+        --vu-muted-text: #475569;
+        --vu-input-bg: #ffffff;
+        --vu-accent: #0284c7;
+        --vu-skel-a: #e2e8f0;
+        --vu-skel-b: #f1f5f9;
+        --vu-ease: cubic-bezier(0.22, 1, 0.36, 1);
       }
-      @media (max-width: 640px) {
-        .vu-admin-tabs-scroll,
-        #adminUsersModal [role="tablist"],
-        #adminUsersModal div:has(> #admTabUsers),
-        #adminUsersModal div:has(> button[id^="admTab"]) {
-          padding-left: 12px !important;
-          padding-right: 20px !important;
+
+      html.dark, body.dark {
+        --vu-bg: #0f172a;
+        --vu-surface: #111c30;
+        --vu-header-bg: #0b1628;
+        --vu-border: #334155;
+        --vu-text: #f8fafc;
+        --vu-muted-text: #94a3b8;
+        --vu-input-bg: #0b1220;
+        --vu-skel-a: #1e293b;
+        --vu-skel-b: #334155;
+      }
+
+      /* Safe-area nativo Android/iOS */
+      body {
+        padding-top: var(--vu-safe-top);
+        padding-bottom: var(--vu-safe-bottom);
+        padding-left: var(--vu-safe-left);
+        padding-right: var(--vu-safe-right);
+        overscroll-behavior-y: contain;
+      }
+
+      /* =====================================================================
+       * PAINEL ADMINISTRATIVO: Menu Lateral no PC / Bottom Sheet no Celular
+       * ===================================================================== */
+      @media (min-width: 769px) {
+        #adminUsersModal > div {
+          max-width: 1080px !important;
+          width: min(94vw, 1080px) !important;
+          transition: transform 0.22s var(--vu-ease), opacity 0.22s ease;
+        }
+        .vu-admin-workspace {
+          display: flex !important;
+          flex-direction: row !important;
+          align-items: stretch !important;
+          min-height: 520px !important;
+          max-height: 76vh !important;
+          padding: 0 !important;
+          gap: 0 !important;
+        }
+        .vu-admin-sidebar {
+          display: flex !important;
+          flex-direction: column !important;
+          flex-wrap: nowrap !important;
+          width: 242px !important;
+          min-width: 242px !important;
+          flex-shrink: 0 !important;
+          padding: 14px 10px !important;
+          gap: 4px !important;
+          margin: 0 !important;
+          border-bottom: none !important;
+          border-right: 1px solid var(--vu-border) !important;
+          background: var(--vu-surface) !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+        }
+        .vu-admin-sidebar > button {
+          width: 100% !important;
+          text-align: left !important;
+          justify-content: flex-start !important;
+          display: flex !important;
+          align-items: center !important;
+          gap: 8px !important;
+          padding: 10px 12px !important;
+          border-radius: 10px !important;
+          font-size: 13px !important;
+          line-height: 1.3 !important;
+          white-space: normal !important;
+          transition: background 0.16s ease, color 0.16s ease, transform 0.12s ease !important;
+        }
+        .vu-admin-sidebar > button:hover {
+          background: rgba(2, 132, 199, 0.12) !important;
+        }
+        .vu-admin-sidebar > button.vu-sidebar-active {
+          background: rgba(2, 132, 199, 0.18) !important;
+          color: #0284c7 !important;
+          font-weight: 700 !important;
+          box-shadow: inset 3px 0 0 #0284c7 !important;
+        }
+        html.dark .vu-admin-sidebar > button.vu-sidebar-active {
+          color: #7dd3fc !important;
+          box-shadow: inset 3px 0 0 #38bdf8 !important;
+        }
+        .vu-admin-stage {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+          padding: 18px 22px !important;
+          overflow-y: auto !important;
+          background: var(--vu-bg) !important;
         }
       }
-      .vu-admin-tabs-scroll > *,
-      #adminUsersModal [role="tablist"] > *,
-      #adminUsersModal div:has(> #admTabUsers) > *,
-      #adminUsersModal div:has(> button[id^="admTab"]) > * {
-        white-space: nowrap !important;
-        flex-shrink: 0 !important;
+
+      @media (max-width: 768px) {
+        #adminUsersModal {
+          align-items: flex-end !important;
+          justify-content: center !important;
+          padding: 0 !important;
+        }
+        #adminUsersModal > div {
+          width: 100% !important;
+          max-width: 100% !important;
+          max-height: 90vh !important;
+          margin: 0 !important;
+          border-radius: 22px 22px 0 0 !important;
+          padding-bottom: var(--vu-safe-bottom) !important;
+          animation: vuSheetUp 0.24s var(--vu-ease) both;
+          overflow: hidden !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }
+        .vu-admin-workspace {
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+          padding: 0 !important;
+        }
+        .vu-admin-sidebar {
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+          -webkit-overflow-scrolling: touch !important;
+          scrollbar-width: none !important;
+          gap: 6px !important;
+          padding: 10px 12px !important;
+          margin: 0 !important;
+          border-bottom: 1px solid var(--vu-border) !important;
+          background: var(--vu-surface) !important;
+          flex-shrink: 0 !important;
+        }
+        .vu-admin-sidebar::-webkit-scrollbar { display: none; }
+        .vu-admin-sidebar > button {
+          white-space: nowrap !important;
+          flex-shrink: 0 !important;
+          border-radius: 999px !important;
+          padding: 8px 13px !important;
+          font-size: 12.5px !important;
+        }
+        .vu-admin-sidebar > button.vu-sidebar-active {
+          background: #0284c7 !important;
+          color: #ffffff !important;
+        }
+        .vu-admin-stage {
+          flex: 1 1 auto !important;
+          overflow-y: auto !important;
+          padding: 14px 14px calc(18px + var(--vu-safe-bottom)) !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
       }
 
-      .vu-sync-pill,
-      #vu-sync-pill {
-        position: fixed !important;
-        bottom: 18px !important;
-        right: 18px !important;
-        top: auto !important;
-        left: auto !important;
-        z-index: 9500 !important;
-        display: inline-flex; align-items: center; gap: 8px;
-        padding: 6px 12px; border-radius: 999px; font: 600 12px/1.2 system-ui, sans-serif;
-        box-shadow: 0 4px 16px rgba(0,0,0,.28); backdrop-filter: blur(8px);
-        transition: all .2s ease; user-select: none; cursor: pointer;
+      @keyframes vuSheetUp {
+        from { transform: translateY(36px); opacity: 0.4; }
+        to { transform: translateY(0); opacity: 1; }
       }
-      .vu-sync-ok { background: #0f2e1f; color: #5eead4; border: 1px solid #166534; }
-      .vu-sync-busy { background: #0f2540; color: #93c5fd; border: 1px solid #1d4ed8; }
-      .vu-sync-offline { background: #3b2208; color: #fcd34d; border: 1px solid #d97706; }
-      .vu-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
+      /* =====================================================================
+       * OVERLAYS, MODAIS E BOTTOM SHEETS DA SUÍTE
+       * ===================================================================== */
       .vu-backdrop {
-        position: fixed; inset: 0; z-index: 9800; background: rgba(6, 11, 20, .75);
+        position: fixed; inset: 0; z-index: 9800;
+        background: rgba(6, 11, 20, 0.72);
+        backdrop-filter: blur(5px);
         display: flex; align-items: flex-start; justify-content: center;
-        padding: 36px 12px 24px; overflow-y: auto; backdrop-filter: blur(4px);
+        padding: calc(32px + var(--vu-safe-top)) 14px calc(24px + var(--vu-safe-bottom));
+        overflow-y: auto;
+        opacity: 0;
+        transition: opacity 0.18s ease;
       }
+      .vu-backdrop.vu-open { opacity: 1; }
+
       .vu-modal {
-        width: 100%; max-width: 920px; background: #0f172a; color: #e2e8f0;
-        border: 1px solid #334155; border-radius: 14px; overflow: hidden;
-        box-shadow: 0 24px 60px rgba(0,0,0,.6); font-family: system-ui, -apple-system, sans-serif;
+        width: 100%; max-width: 900px;
+        background: var(--vu-bg); color: var(--vu-text);
+        border: 1px solid var(--vu-border); border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.48);
+        font-family: system-ui, -apple-system, sans-serif;
+        transform: translateY(14px) scale(0.985);
+        transition: transform 0.22s var(--vu-ease);
       }
+      .vu-backdrop.vu-open .vu-modal { transform: translateY(0) scale(1); }
       .vu-modal-sm { max-width: 640px; }
+      .vu-modal-xs { max-width: 440px; }
+
+      .vu-sheet-handle { display: none; }
+
+      @media (max-width: 768px) {
+        .vu-backdrop {
+          align-items: flex-end;
+          padding: 0;
+          overflow-y: hidden;
+        }
+        .vu-modal, .vu-modal-sm, .vu-modal-xs {
+          max-width: 100%;
+          max-height: 90vh;
+          border-radius: 22px 22px 0 0;
+          border-left: none; border-right: none; border-bottom: none;
+          display: flex; flex-direction: column;
+          transform: translateY(100%);
+        }
+        .vu-backdrop.vu-open .vu-modal { transform: translateY(0); }
+        .vu-sheet-handle {
+          display: block;
+          width: 40px; height: 4px; border-radius: 999px;
+          background: rgba(148, 163, 184, 0.45);
+          margin: 10px auto 2px;
+          flex-shrink: 0;
+        }
+        .vu-body {
+          flex: 1 1 auto;
+          max-height: none;
+          padding-bottom: calc(20px + var(--vu-safe-bottom)) !important;
+        }
+      }
+
       .vu-header {
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        padding: 14px 16px; background: #1e293b; border-bottom: 1px solid #334155;
+        padding: 14px 16px; background: var(--vu-header-bg); color: #f8fafc;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
       }
       .vu-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
       .vu-header h3 { margin: 0; font-size: 15px; font-weight: 700; color: #f8fafc; }
       .vu-close {
-        background: transparent; border: none; color: #94a3b8; font-size: 22px; line-height: 1; cursor: pointer; flex-shrink: 0;
+        background: transparent; border: none; color: #cbd5e1;
+        font-size: 22px; line-height: 1; cursor: pointer; flex-shrink: 0;
+        width: 32px; height: 32px; border-radius: 8px;
       }
-      .vu-body { padding: 16px; max-height: 80vh; overflow-y: auto; }
+      .vu-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+      .vu-body { padding: 16px; max-height: 78vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
       .vu-input, .vu-select, .vu-textarea {
-        width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px;
-        border: 1px solid #334155; background: #0b1220; color: #f8fafc; font-size: 13px;
+        width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 9px;
+        border: 1px solid var(--vu-border); background: var(--vu-input-bg);
+        color: var(--vu-text); font-size: 13px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
-      .vu-input:disabled { opacity: .75; background: #162032; cursor: not-allowed; }
+      .vu-input:focus, .vu-select:focus, .vu-textarea:focus {
+        outline: none; border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+      }
+      .vu-input:disabled { opacity: 0.72; cursor: not-allowed; }
+
       .vu-btn {
-        padding: 8px 14px; border-radius: 8px; border: 1px solid #334155;
-        background: #1e293b; color: #f8fafc; font: 600 13px/1.2 system-ui, sans-serif; cursor: pointer;
+        padding: 8px 14px; border-radius: 9px; border: 1px solid var(--vu-border);
+        background: var(--vu-surface); color: var(--vu-text);
+        font: 600 13px/1.2 system-ui, sans-serif; cursor: pointer;
+        transition: transform 0.1s ease, background 0.15s ease, opacity 0.15s ease;
       }
-      .vu-btn:hover { background: #334155; }
-      .vu-btn:disabled { opacity: .45; cursor: not-allowed; }
+      .vu-btn:hover { opacity: 0.92; }
+      .vu-btn:active { transform: scale(0.97); }
+      .vu-btn:disabled { opacity: 0.45; cursor: not-allowed; }
       .vu-btn-sm { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
-      .vu-btn-primary { background: #0284c7; border-color: #0ea5e9; color: #fff; }
+      .vu-btn-primary { background: #0284c7; border-color: #0284c7; color: #fff; }
       .vu-btn-primary:hover { background: #0369a1; }
-      .vu-btn-danger { background: #991b1b; border-color: #dc2626; color: #fff; }
-      .vu-btn-warn { background: #92400e; border-color: #f59e0b; color: #fff; }
+      .vu-btn-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+      .vu-btn-warn { background: #d97706; border-color: #d97706; color: #fff; }
+
       .vu-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .vu-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
       @media (max-width: 640px) { .vu-grid-2, .vu-grid-3, .vu-perm-grid { grid-template-columns: 1fr; } }
+
       .vu-card {
-        background: #111c30; border: 1px solid #24324a; border-radius: 10px; padding: 14px;
+        background: var(--vu-surface); border: 1px solid var(--vu-border);
+        border-radius: 12px; padding: 14px;
       }
       .vu-alert-danger {
-        background: rgba(153, 27, 27, .28); border: 1px solid #ef4444; color: #fecaca;
-        border-radius: 10px; padding: 12px; font-size: 12.5px;
+        background: rgba(220, 38, 38, 0.12); border: 1px solid rgba(239, 68, 68, 0.55);
+        color: #b91c1c; border-radius: 10px; padding: 12px; font-size: 12.5px;
       }
+      html.dark .vu-alert-danger { color: #fecaca; background: rgba(153, 27, 27, 0.28); }
       .vu-alert-warn {
-        background: rgba(146, 64, 14, .28); border: 1px solid #f59e0b; color: #fde68a;
-        border-radius: 10px; padding: 12px; font-size: 12.5px;
+        background: rgba(217, 119, 6, 0.12); border: 1px solid rgba(245, 158, 11, 0.55);
+        color: #92400e; border-radius: 10px; padding: 12px; font-size: 12.5px;
       }
+      html.dark .vu-alert-warn { color: #fde68a; background: rgba(146, 64, 14, 0.28); }
+
       .vu-badge {
-        display: inline-block; padding: 3px 8px; border-radius: 999px;
-        font-size: 11px; font-weight: 600; background: #1e3a5f; color: #7dd3fc;
+        display: inline-block; padding: 3px 9px; border-radius: 999px;
+        font-size: 11px; font-weight: 600; background: rgba(2, 132, 199, 0.14); color: #0284c7;
       }
-      .vu-badge-green { background: #064e3b; color: #6ee7b7; }
-      .vu-badge-amber { background: #451a03; color: #fcd34d; }
-      .vu-badge-red { background: #7f1d1d; color: #fca5a5; }
+      html.dark .vu-badge { background: #1e3a5f; color: #7dd3fc; }
+      .vu-badge-green { background: rgba(16, 185, 129, 0.15); color: #047857; }
+      html.dark .vu-badge-green { background: #064e3b; color: #6ee7b7; }
+      .vu-badge-amber { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+      html.dark .vu-badge-amber { background: #451a03; color: #fcd34d; }
+      .vu-badge-red { background: rgba(239, 68, 68, 0.16); color: #b91c1c; }
+      html.dark .vu-badge-red { background: #7f1d1d; color: #fca5a5; }
 
       .vu-tabs {
-        display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;
-        overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--vu-border);
+        padding-bottom: 10px; overflow-x: auto; scrollbar-width: none;
       }
       .vu-tabs::-webkit-scrollbar { display: none; }
       .vu-tab {
-        background: transparent; border: none; color: #94a3b8; font-weight: 600;
-        padding: 6px 12px; cursor: pointer; border-radius: 6px; white-space: nowrap; flex-shrink: 0;
+        background: transparent; border: none; color: var(--vu-muted-text); font-weight: 600;
+        padding: 7px 13px; cursor: pointer; border-radius: 8px; white-space: nowrap; flex-shrink: 0;
+        transition: background 0.15s ease, color 0.15s ease;
       }
       .vu-tab.active { background: #0284c7; color: #fff; }
-      .vu-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-      .vu-perm-item { display: flex; align-items: center; gap: 8px; font-size: 12px; background: #0b1220; padding: 7px 9px; border-radius: 6px; border: 1px solid #1e293b; cursor: pointer; }
-      .vu-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 540px; }
-      .vu-table th, .vu-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; text-align: left; }
-      .vu-table th { color: #94a3b8; font-weight: 600; }
 
-      .vu-bar-track { width: 100%; height: 10px; background: #0b1220; border-radius: 999px; overflow: hidden; border: 1px solid #1e293b; }
-      .vu-bar-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
+      .vu-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+      .vu-perm-item {
+        display: flex; align-items: center; gap: 8px; font-size: 12px;
+        background: var(--vu-input-bg); padding: 8px 10px; border-radius: 8px;
+        border: 1px solid var(--vu-border); cursor: pointer;
+      }
+      .vu-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
+      .vu-table th, .vu-table td { padding: 9px 10px; border-bottom: 1px solid var(--vu-border); text-align: left; }
+      .vu-table th { color: var(--vu-muted-text); font-weight: 600; }
+
+      .vu-bar-track { width: 100%; height: 10px; background: var(--vu-input-bg); border-radius: 999px; overflow: hidden; border: 1px solid var(--vu-border); }
+      .vu-bar-fill { height: 100%; border-radius: 999px; transition: width 0.35s var(--vu-ease); }
+
+      /* =====================================================================
+       * TOASTS
+       * ===================================================================== */
+      #vu-toast-stack {
+        position: fixed;
+        top: calc(16px + var(--vu-safe-top));
+        right: calc(16px + var(--vu-safe-right));
+        z-index: 10500;
+        display: flex; flex-direction: column; gap: 8px;
+        width: min(370px, calc(100vw - 28px));
+        pointer-events: none;
+      }
+      .vu-toast {
+        pointer-events: auto;
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 11px 13px; border-radius: 12px;
+        font: 600 13px/1.38 system-ui, sans-serif;
+        background: var(--vu-bg); color: var(--vu-text);
+        border: 1px solid var(--vu-border);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+        opacity: 0; transform: translateY(-10px) scale(0.97);
+        transition: opacity 0.2s ease, transform 0.22s var(--vu-ease);
+      }
+      .vu-toast.vu-toast-in { opacity: 1; transform: translateY(0) scale(1); }
+      .vu-toast-ico {
+        width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 12px; font-weight: 800; color: #fff; background: #0284c7;
+      }
+      .vu-toast-success { border-left: 4px solid #10b981; }
+      .vu-toast-success .vu-toast-ico { background: #10b981; }
+      .vu-toast-warn { border-left: 4px solid #f59e0b; }
+      .vu-toast-warn .vu-toast-ico { background: #f59e0b; }
+      .vu-toast-error { border-left: 4px solid #ef4444; }
+      .vu-toast-error .vu-toast-ico { background: #ef4444; }
+      .vu-toast-msg { flex: 1; min-width: 0; word-break: break-word; }
+      .vu-toast-x {
+        background: transparent; border: none; color: var(--vu-muted-text);
+        font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px;
+      }
+
+      /* =====================================================================
+       * SKELETON LOADERS
+       * ===================================================================== */
+      .vu-skel {
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--vu-skel-a) 25%, var(--vu-skel-b) 50%, var(--vu-skel-a) 75%);
+        background-size: 200% 100%;
+        animation: vuShimmer 1.25s infinite linear;
+      }
+      @keyframes vuShimmer {
+        from { background-position: 200% 0; }
+        to { background-position: -200% 0; }
+      }
+
+      /* =====================================================================
+       * COMMAND PALETTE (Ctrl + K)
+       * ===================================================================== */
+      .vu-cmd-box {
+        width: 100%; max-width: 620px;
+        background: var(--vu-bg); color: var(--vu-text);
+        border: 1px solid var(--vu-border); border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52);
+        transform: translateY(-8px) scale(0.985);
+        transition: transform 0.18s var(--vu-ease);
+      }
+      .vu-backdrop.vu-open .vu-cmd-box { transform: translateY(0) scale(1); }
+      .vu-cmd-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 16px; border-bottom: 1px solid var(--vu-border);
+        background: var(--vu-surface);
+      }
+      .vu-cmd-input {
+        flex: 1; border: none; outline: none; background: transparent;
+        color: var(--vu-text); font-size: 14.5px; font-weight: 500;
+      }
+      .vu-cmd-kbd {
+        font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
+        border: 1px solid var(--vu-border); color: var(--vu-muted-text);
+      }
+      .vu-cmd-list {
+        max-height: 390px; overflow-y: auto; padding: 8px;
+      }
+      .vu-cmd-group {
+        font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+        color: var(--vu-muted-text); padding: 8px 10px 4px;
+      }
+      .vu-cmd-item {
+        width: 100%; border: none; background: transparent; color: var(--vu-text);
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 10px 12px; border-radius: 10px; cursor: pointer; text-align: left;
+        font-size: 13.5px; transition: background 0.12s ease;
+      }
+      .vu-cmd-item.selected, .vu-cmd-item:hover {
+        background: rgba(2, 132, 199, 0.15);
+      }
+      .vu-cmd-item-sub { font-size: 11.5px; color: var(--vu-muted-text); }
+      .vu-cmd-foot {
+        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+        padding: 9px 14px; font-size: 11px; color: var(--vu-muted-text);
+        border-top: 1px solid var(--vu-border); background: var(--vu-surface);
+      }
+
+      /* Sync Pill */
+      .vu-sync-pill, #vu-sync-pill {
+        position: fixed !important;
+        bottom: calc(18px + var(--vu-safe-bottom)) !important;
+        right: calc(18px + var(--vu-safe-right)) !important;
+        z-index: 9500 !important;
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 7px 13px; border-radius: 999px; font: 600 12px/1.2 system-ui, sans-serif;
+        box-shadow: 0 6px 18px rgba(0,0,0,.28); backdrop-filter: blur(8px);
+        user-select: none; cursor: pointer;
+      }
+      .vu-sync-busy { background: #0f2540; color: #93c5fd; border: 1px solid #1d4ed8; }
+      .vu-sync-offline { background: #3b2208; color: #fcd34d; border: 1px solid #d97706; }
+      .vu-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
     `;
   }
 
-  function enableWheelHorizontalScroll(el) {
-    if (!el || el.dataset.vuWheelBound) return;
-    el.dataset.vuWheelBound = '1';
-    el.addEventListener('wheel', (e) => {
-      if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        el.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    }, { passive: false });
+  /* -------------------------------------------------------------------------
+   * 5. Pilha Única de Overlays + Voltar Android/Capacitor
+   * ------------------------------------------------------------------------- */
+  function openOverlay({ id, element, onClose = null, closeOnBackdrop = true }) {
+    closeOverlayById(id, true);
+    const z = 9700 + state.modalStack.length * 10;
+    element.style.zIndex = String(z);
+    element.dataset.vuModal = '1';
+    element.dataset.vuModalId = id;
+
+    if (closeOnBackdrop) {
+      element.addEventListener('click', (e) => {
+        if (e.target === element) closeOverlayById(id);
+      });
+    }
+
+    document.body.appendChild(element);
+    requestAnimationFrame(() => element.classList.add('vu-open'));
+    state.modalStack.push({ id, element, onClose });
+    state.blockExitUntil = Date.now() + 2000;
+    haptic('light');
   }
 
-  function isNativeApk() {
-    return Boolean(global.Capacitor && (typeof global.Capacitor.isNativePlatform !== 'function' || global.Capacitor.isNativePlatform()));
+  function closeOverlayById(id, silent = false) {
+    const idx = state.modalStack.findIndex((m) => m.id === id);
+    if (idx === -1) return false;
+    const [entry] = state.modalStack.splice(idx, 1);
+    entry.element.classList.remove('vu-open');
+    setTimeout(() => entry.element.remove(), 180);
+    if (!silent && typeof entry.onClose === 'function') entry.onClose();
+    return true;
   }
 
-  function ensureAdminModalVisible() {
+  function closeTopOverlay() {
+    if (!state.modalStack.length) return false;
+    const top = state.modalStack.pop();
+    top.element.classList.remove('vu-open');
+    setTimeout(() => top.element.remove(), 180);
+    if (typeof top.onClose === 'function') top.onClose();
+    haptic('light');
+    return true;
+  }
+
+  function isAdminModalOpen() {
     const adm = document.getElementById('adminUsersModal');
-    if (!adm) return;
-    if (adm.classList.contains('hidden') || adm.style.display === 'none') {
-      if (typeof global.openAdminUsersModal === 'function') {
-        global.openAdminUsersModal();
+    return Boolean(adm && !adm.classList.contains('hidden') && adm.style.display !== 'none');
+  }
+
+  function handleBackAction(e) {
+    if (state.modalStack.length > 0) {
+      if (e && typeof e.preventDefault === 'function' && e.cancelable) e.preventDefault();
+      if (e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      state.blockExitUntil = Date.now() + 2000;
+      closeTopOverlay();
+      return true;
+    }
+
+    if (isAdminModalOpen()) {
+      if (e && typeof e.preventDefault === 'function' && e.cancelable) e.preventDefault();
+      if (e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      state.blockExitUntil = Date.now() + 2000;
+      if (state.activeInlineTab) {
+        showNativeAdminPanes();
       } else {
+        const adm = document.getElementById('adminUsersModal');
+        const closeBtn = adm.querySelector('button[onclick*="close"], button[aria-label*="Fechar"], .close');
+        if (closeBtn) closeBtn.click();
+        else adm.classList.add('hidden');
+      }
+      haptic('light');
+      return true;
+    }
+    return false;
+  }
+
+  function setupBackNavigation() {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') handleBackAction(e);
+    });
+
+    const onBack = (e) => handleBackAction(e);
+    document.addEventListener('backbutton', onBack, true);
+    window.addEventListener('backbutton', onBack, true);
+
+    const bindCap = () => {
+      const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
+      if (!appPlugin) return;
+      if (typeof appPlugin.exitApp === 'function' && !appPlugin.__vuGuarded) {
+        const orig = appPlugin.exitApp.bind(appPlugin);
+        appPlugin.exitApp = function () {
+          if (state.modalStack.length > 0 || isAdminModalOpen() || Date.now() < state.blockExitUntil) {
+            return Promise.resolve();
+          }
+          return orig.apply(this, arguments);
+        };
+        appPlugin.__vuGuarded = true;
+      }
+      if (typeof appPlugin.addListener === 'function' && !appPlugin.__vuBackBound) {
+        appPlugin.__vuBackBound = true;
+        try {
+          appPlugin.addListener('backButton', (ev) => handleBackAction(ev));
+        } catch (_) {}
+      }
+    };
+    bindCap();
+    setTimeout(bindCap, 1200);
+    setTimeout(bindCap, 3500);
+  }
+
+  /* -------------------------------------------------------------------------
+   * 6. Painel Administrativo Dedicado (Sidebar PC / Bottom Sheet Celular)
+   * ------------------------------------------------------------------------- */
+  function showNativeAdminPanes() {
+    state.activeInlineTab = null;
+    const nativeWrap = document.getElementById('vu-admin-native-panes');
+    const customStage = document.getElementById('vu-admin-custom-stage');
+    if (nativeWrap) nativeWrap.style.display = '';
+    if (customStage) {
+      customStage.style.display = 'none';
+      customStage.innerHTML = '';
+    }
+    document.querySelectorAll('.vu-admin-sidebar > button').forEach((b) => b.classList.remove('vu-sidebar-active'));
+  }
+
+  function activateInlineAdminStage(tabId, renderFn) {
+    const adm = document.getElementById('adminUsersModal');
+    if (adm && (adm.classList.contains('hidden') || adm.style.display === 'none')) {
+      if (typeof global.openAdminUsersModal === 'function') global.openAdminUsersModal();
+      else {
         adm.classList.remove('hidden');
         adm.style.display = '';
       }
     }
-  }
 
-  function startAdminBackgroundLock() {
-    stopAdminBackgroundLock();
-    const adm = document.getElementById('adminUsersModal');
-    if (!adm) return;
-    state.adminLockObserver = new MutationObserver(() => {
-      if (state.modalReturnToAdmin && document.querySelector('[data-vu-modal="1"]')) {
-        if (adm.classList.contains('hidden')) adm.classList.remove('hidden');
-      }
+    transformAdminModal();
+    const nativeWrap = document.getElementById('vu-admin-native-panes');
+    const customStage = document.getElementById('vu-admin-custom-stage');
+    if (!customStage) {
+      // Fallback caso o modal admin não exista nesta tela
+      renderFn(null);
+      return;
+    }
+
+    state.activeInlineTab = tabId;
+    if (nativeWrap) nativeWrap.style.display = 'none';
+    customStage.style.display = 'block';
+
+    document.querySelectorAll('.vu-admin-sidebar > button').forEach((b) => {
+      b.classList.toggle('vu-sidebar-active', b.id === tabId);
     });
-    state.adminLockObserver.observe(adm, { attributes: true, attributeFilter: ['class', 'style'] });
+    haptic('light');
+    renderFn(customStage);
   }
 
-  function stopAdminBackgroundLock() {
-    if (state.adminLockObserver) {
-      state.adminLockObserver.disconnect();
-      state.adminLockObserver = null;
+  function transformAdminModal() {
+    const adminTabsBar = document.querySelector('#adminUsersModal #admTabUsers')?.parentElement
+      || document.querySelector('#adminUsersModal #admTabOta')?.parentElement
+      || document.querySelector('#adminUsersModal button[id^="admTab"]')?.parentElement;
+
+    if (!adminTabsBar || !adminTabsBar.parentElement) return;
+    const workspace = adminTabsBar.parentElement;
+
+    if (!workspace.classList.contains('vu-admin-workspace')) {
+      const nativeSiblings = Array.from(workspace.children).filter((el) => el !== adminTabsBar);
+      workspace.classList.add('vu-admin-workspace');
+      adminTabsBar.classList.add('vu-admin-sidebar');
+
+      const stage = document.createElement('div');
+      stage.className = 'vu-admin-stage';
+      stage.id = 'vu-admin-stage';
+
+      const nativeWrap = document.createElement('div');
+      nativeWrap.id = 'vu-admin-native-panes';
+      nativeSiblings.forEach((node) => nativeWrap.appendChild(node));
+
+      const customStage = document.createElement('div');
+      customStage.id = 'vu-admin-custom-stage';
+      customStage.style.display = 'none';
+
+      stage.appendChild(nativeWrap);
+      stage.appendChild(customStage);
+      workspace.appendChild(stage);
+
+      // Ao clicar em qualquer aba nativa existente, volta para o conteúdo nativo
+      Array.from(adminTabsBar.querySelectorAll('button')).forEach((btn) => {
+        if (!btn.dataset.vuNativeHooked) {
+          btn.dataset.vuNativeHooked = '1';
+          btn.addEventListener('click', () => {
+            showNativeAdminPanes();
+            btn.classList.add('vu-sidebar-active');
+            haptic('light');
+          });
+        }
+      });
     }
-  }
 
-  function guardCapacitorExitApp() {
-    const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
-    if (!appPlugin || typeof appPlugin.exitApp !== 'function' || appPlugin.__vuGuarded) return;
-    const origExit = appPlugin.exitApp.bind(appPlugin);
-    appPlugin.exitApp = function () {
-      if (document.querySelector('[data-vu-modal="1"]') || Date.now() < state.blockExitUntil) {
-        return Promise.resolve();
-      }
-      return origExit.apply(this, arguments);
+    const addSidebarTab = (id, label, colorClass, handler) => {
+      if (document.getElementById(id)) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = id;
+      btn.className = `font-semibold cursor-pointer ${colorClass}`;
+      btn.textContent = label;
+      btn.addEventListener('click', handler);
+      adminTabsBar.appendChild(btn);
     };
-    appPlugin.__vuGuarded = true;
+
+    addSidebarTab('admTabRbac', '🔐 Tipos de Login & Hierarquia', 'text-amber-600 dark:text-amber-300', () => openRbacAdminModal());
+    addSidebarTab('admTabSlaInline', '📊 SLA, Custos & Deriva', 'text-indigo-600 dark:text-indigo-300', () => openLabSlaModal(true));
+    addSidebarTab('admTabAudit', '🛡️ Auditoria & Governança', 'text-sky-600 dark:text-sky-300', () => openAuditLogsModal(true));
+    addSidebarTab('admTabSplit', '🧩 Modularizar HTML', 'text-emerald-600 dark:text-emerald-300', () => openModularizerModal(true));
   }
 
-  function pushModalHistory(returnToAdmin = false) {
-    state.modalReturnToAdmin = Boolean(returnToAdmin);
-    if (state.modalReturnToAdmin) startAdminBackgroundLock();
-    state.blockExitUntil = Date.now() + 2500;
-    try {
-      history.pushState({ vuModal: true, fromAdmin: state.modalReturnToAdmin }, '', window.location.href);
-      state.modalHistoryPushed = true;
-    } catch (_) {}
+  /* -------------------------------------------------------------------------
+   * 7. Command Palette Real (Ctrl + K)
+   * ------------------------------------------------------------------------- */
+  function openInstrumentQuickCard(inst) {
+    const code = getInstrumentCode(inst);
+    const desc = inst.desc || inst.descricao || inst['Descrição'] || 'Sem descrição';
+    const sector = inst.sector || inst.setor || inst.Setor || '—';
+    const cabinet = inst.armario || inst.cabinet || inst.local || inst.Armário || '—';
+    const due = inst.proxCal || inst.proxima_calibracao || inst.dueDate || inst['Data da Próxima Calibração'] || '—';
+    const check = evaluateInstrumentBlock(inst);
+    const badgeCls = check.blocked ? (check.severity === 'warn' ? 'vu-badge-amber' : 'vu-badge-red') : 'vu-badge-green';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-modal vu-modal-sm">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-header">
+          <div class="vu-header-left">
+            <h3>🔧 ${escapeHtml(code)}</h3>
+            <span class="vu-badge ${badgeCls}">${escapeHtml(check.statusLabel)}</span>
+          </div>
+          <button type="button" class="vu-close">&times;</button>
+        </div>
+        <div class="vu-body" style="display:flex;flex-direction:column;gap:14px;">
+          <div class="vu-card">
+            <div style="font-size:14px;font-weight:700;margin-bottom:6px;">${escapeHtml(desc)}</div>
+            <div style="font-size:12.5px;color:var(--vu-muted-text);display:flex;flex-wrap:wrap;gap:12px;">
+              <span><strong>Setor:</strong> ${escapeHtml(sector)}</span>
+              <span><strong>Armário/Local:</strong> ${escapeHtml(cabinet)}</span>
+              <span><strong>Próx. Calibração:</strong> ${escapeHtml(due)}</span>
+            </div>
+          </div>
+          ${check.blocked ? `<div class="${check.severity === 'warn' ? 'vu-alert-warn' : 'vu-alert-danger'}">${escapeHtml(check.reason)}</div>` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">
+            <button type="button" class="vu-btn" id="vu-qi-filter">🔎 Localizar no Inventário</button>
+            <button type="button" class="vu-btn vu-btn-warn" id="vu-qi-nc">⚠️ Impacto Retroativo</button>
+            <button type="button" class="vu-btn vu-btn-primary" id="vu-qi-cautela">📋 Nova Cautela</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    backdrop.querySelector('.vu-close').onclick = () => closeOverlayById('vu-quick-inst');
+    backdrop.querySelector('#vu-qi-cautela').onclick = () => {
+      closeOverlayById('vu-quick-inst', true);
+      openCautelaModal(code);
+    };
+    backdrop.querySelector('#vu-qi-nc').onclick = () => {
+      closeOverlayById('vu-quick-inst', true);
+      openRetroactiveImpactModal(code);
+    };
+    backdrop.querySelector('#vu-qi-filter').onclick = () => {
+      closeOverlayById('vu-quick-inst', true);
+      const searchInput = document.querySelector('input[placeholder*="Buscar código"], input[id*="search"], input[type="search"]');
+      if (searchInput) {
+        searchInput.value = code;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const invBtn = Array.from(document.querySelectorAll('button, a')).find((b) => normText(b.textContent).includes('abrir inventario') || normText(b.textContent).trim() === 'inventario');
+      if (invBtn) invBtn.click();
+      showToast(`Filtrando inventário por ${code}`, 'info', 2200);
+    };
+
+    openOverlay({ id: 'vu-quick-inst', element: backdrop });
   }
 
-  function handleMobileBackEvent(e) {
-    const activeModals = document.querySelectorAll('[data-vu-modal="1"]');
-    if (!activeModals.length) return false;
-
-    if (e && typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-    if (e && typeof e.preventDefault === 'function' && e.cancelable) e.preventDefault();
-
-    state.blockExitUntil = Date.now() + 2500;
-    const shouldReturnAdmin = state.modalReturnToAdmin;
-    state.modalHistoryPushed = false;
-
-    activeModals.forEach((el) => el.remove());
-    stopAdminBackgroundLock();
-    state.modalReturnToAdmin = false;
-
-    if (shouldReturnAdmin) {
-      ensureAdminModalVisible();
-      setTimeout(ensureAdminModalVisible, 50);
-      setTimeout(ensureAdminModalVisible, 180);
+  function triggerLegacyPdfAction() {
+    const pdfBtn = Array.from(document.querySelectorAll('button')).find((b) => normText(b.textContent).includes('armario / pdf') || normText(b.textContent).includes('pdf'));
+    if (pdfBtn) {
+      pdfBtn.click();
+      haptic('light');
+    } else {
+      showToast('Abra a tela inicial ou o inventário para acessar Armário / PDF.', 'info');
     }
-    return true;
   }
 
-  function bindCapacitorBackListener() {
-    guardCapacitorExitApp();
-    const appPlugin = global.Capacitor && global.Capacitor.Plugins && global.Capacitor.Plugins.App;
-    if (appPlugin && typeof appPlugin.addListener === 'function' && !appPlugin.__vuBackListenerAdded) {
-      appPlugin.__vuBackListenerAdded = true;
-      try {
-        appPlugin.addListener('backButton', (data) => {
-          handleMobileBackEvent(data);
-        });
-      } catch (_) {}
+  function toggleThemeAction() {
+    const themeBtn = document.querySelector('button[onclick*="Theme"], button[onclick*="theme"], button[id*="theme"], button[title*="Tema"]');
+    if (themeBtn) {
+      themeBtn.click();
+    } else {
+      document.documentElement.classList.toggle('dark');
     }
+    haptic('light');
+    showToast('Tema alternado com sucesso.', 'info', 1800);
   }
 
-  function setupHistoryBackHandler() {
-    bindCapacitorBackListener();
-    setTimeout(bindCapacitorBackListener, 1200);
-    setTimeout(bindCapacitorBackListener, 3500);
+  function openCommandPalette(initialQuery = '') {
+    const commands = [
+      { id: 'cautela', label: 'Nova Cautela (com Trava Metrológica)', kw: 'cautela retirada instrumento', tag: '> cautela', run: () => openCautelaModal('') },
+      { id: 'sla', label: 'SLA, Custos & Tendência de Deriva', kw: 'sla custo laboratorio deriva', tag: '> sla', run: () => openLabSlaModal(false) },
+      { id: 'impacto', label: 'Análise de Impacto Retroativo (Reprovados)', kw: 'impacto risco nc reprovado', tag: '> impacto', run: () => openRetroactiveImpactModal('') },
+      { id: 'hierarquia', label: 'Tipos de Login, Usuários & Hierarquia', kw: 'hierarquia rbac login usuario admin', tag: '> hierarquia', run: () => openRbacAdminModal() },
+      { id: 'auditoria', label: 'Trilha de Auditoria Imutável (ISO / IATF)', kw: 'auditoria audit logs iso', tag: '> auditoria', run: () => openAuditLogsModal(true) },
+      { id: 'pdf', label: 'Abrir Relatórios / Armário PDF', kw: 'pdf relatorio armario imprimir', tag: '> pdf', run: triggerLegacyPdfAction },
+      { id: 'admin', label: 'Abrir Painel Administrativo', kw: 'admin painel configuracoes', tag: '> admin', run: () => {
+        if (typeof global.openAdminUsersModal === 'function') global.openAdminUsersModal();
+        else {
+          const adm = document.getElementById('adminUsersModal');
+          if (adm) adm.classList.remove('hidden');
+        }
+        transformAdminModal();
+      } },
+      { id: 'tema', label: 'Alternar Modo Claro / Escuro', kw: 'tema dark light escuro claro', tag: '> tema', run: toggleThemeAction }
+    ];
 
-    const onBack = (e) => { handleMobileBackEvent(e); };
-    document.addEventListener('backbutton', onBack, true);
-    window.addEventListener('backbutton', onBack, true);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-cmd-box" role="dialog" aria-label="Command Palette">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-cmd-head">
+          <span style="font-size:16px;opacity:.7;">⌘</span>
+          <input type="text" class="vu-cmd-input" value="${escapeHtml(initialQuery)}" placeholder="Digite uma TAG, setor ou '>' para comandos (ex: > cautela, > sla, > pdf)..." autocomplete="off" />
+          <span class="vu-cmd-kbd">ESC</span>
+        </div>
+        <div class="vu-cmd-list"></div>
+        <div class="vu-cmd-foot">
+          <span>↑↓ navegar • Enter abrir • &gt; comandos rápidos</span>
+          <span id="vu-cmd-count"></span>
+        </div>
+      </div>
+    `;
 
-    window.addEventListener('popstate', (e) => {
-      if (state.ignoreNextPopstate) {
-        state.ignoreNextPopstate = false;
-        e.stopImmediatePropagation();
-        e.stopPropagation();
+    const input = backdrop.querySelector('.vu-cmd-input');
+    const listEl = backdrop.querySelector('.vu-cmd-list');
+    const countEl = backdrop.querySelector('#vu-cmd-count');
+    let selectedIdx = 0;
+    let items = [];
+
+    function runItem(idx) {
+      const target = items[idx];
+      if (!target) return;
+      closeOverlayById('vu-command-palette', true);
+      haptic('light');
+      target.run();
+    }
+
+    function render() {
+      if (!items.length) {
+        listEl.innerHTML = `<div style="padding:26px;text-align:center;color:var(--vu-muted-text);font-size:13px;">Nenhum instrumento ou comando encontrado.</div>`;
+        countEl.textContent = '0 resultados';
         return;
       }
-      if (document.querySelector('[data-vu-modal="1"]')) {
-        handleMobileBackEvent(e);
+
+      let lastGroup = '';
+      listEl.innerHTML = items.map((item, idx) => {
+        const groupHeader = item.group !== lastGroup ? `<div class="vu-cmd-group">${escapeHtml(item.group)}</div>` : '';
+        lastGroup = item.group;
+        return `
+          ${groupHeader}
+          <button type="button" class="vu-cmd-item ${idx === selectedIdx ? 'selected' : ''}" data-idx="${idx}">
+            <div style="min-width:0;">
+              <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title)}</div>
+              ${item.sub ? `<div class="vu-cmd-item-sub">${escapeHtml(item.sub)}</div>` : ''}
+            </div>
+            <span class="vu-cmd-kbd">${escapeHtml(item.tag || '')}</span>
+          </button>
+        `;
+      }).join('');
+
+      countEl.textContent = `${items.length} resultado(s)`;
+      listEl.querySelectorAll('.vu-cmd-item').forEach((btn) => {
+        btn.onclick = () => runItem(Number(btn.dataset.idx));
+      });
+      const selEl = listEl.querySelector('.vu-cmd-item.selected');
+      if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+    }
+
+    const compute = debounce((rawVal) => {
+      const q = String(rawVal || '').trim();
+      const qNorm = normText(q);
+      selectedIdx = 0;
+
+      if (q.startsWith('>')) {
+        const term = normText(q.slice(1).trim());
+        items = commands
+          .filter((c) => !term || normText(c.label).includes(term) || c.kw.includes(term))
+          .map((c) => ({ group: 'Comandos Rápidos', title: `⚡ ${c.label}`, sub: '', tag: c.tag, run: c.run }));
+        render();
+        return;
+      }
+
+      const insts = getAllInstruments();
+      const matchedInsts = !qNorm
+        ? insts.slice(0, 6)
+        : insts.filter((i) => {
+            const hay = normText([
+              getInstrumentCode(i), i.desc, i.descricao, i['Descrição'],
+              i.sector, i.setor, i.Setor, i.armario, i.local, i.status
+            ].join(' '));
+            return hay.includes(qNorm);
+          }).slice(0, 14);
+
+      const instItems = matchedInsts.map((i) => ({
+        group: qNorm ? 'Instrumentos Encontrados' : 'Instrumentos Recentes',
+        title: `🔧 ${getInstrumentCode(i)} — ${i.desc || i.descricao || i['Descrição'] || 'Instrumento'}`,
+        sub: `${i.sector || i.setor || i.Setor || 'Sem setor'} • ${i.armario || i.local || 'Sem armário'}`,
+        tag: i.status || i.Status || 'EM DIA',
+        run: () => openInstrumentQuickCard(i)
+      }));
+
+      const cmdItems = commands
+        .filter((c) => !qNorm || normText(c.label).includes(qNorm) || c.kw.includes(qNorm))
+        .slice(0, qNorm ? 5 : 4)
+        .map((c) => ({ group: 'Ações & Atalhos', title: `⚡ ${c.label}`, sub: '', tag: c.tag, run: c.run }));
+
+      items = qNorm ? [...instItems, ...cmdItems] : [...cmdItems, ...instItems];
+      render();
+    }, 120);
+
+    input.addEventListener('input', () => compute(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIdx = (selectedIdx + 1) % Math.max(1, items.length);
+        render();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIdx = (selectedIdx - 1 + items.length) % Math.max(1, items.length);
+        render();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        runItem(selectedIdx);
+      }
+    });
+
+    openOverlay({ id: 'vu-command-palette', element: backdrop });
+    compute(initialQuery);
+    setTimeout(() => input.focus(), 40);
+  }
+
+  function setupCommandPaletteTriggers() {
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (state.modalStack.some((m) => m.id === 'vu-command-palette')) {
+          closeOverlayById('vu-command-palette');
+        } else {
+          openCommandPalette('');
+        }
+      }
+    }, true);
+
+    // Conecta clique no chip "Ctrl K" do cabeçalho
+    document.addEventListener('click', (e) => {
+      const target = e.target.closest('kbd, span, button');
+      if (!target) return;
+      const txt = String(target.textContent || '').trim().toLowerCase();
+      if (txt === 'ctrl k' || txt === 'ctrl+k' || txt === '⌘k') {
+        e.preventDefault();
+        e.stopPropagation();
+        openCommandPalette('');
       }
     }, true);
   }
 
-  function closeModals(options = {}) {
-    const { fromPopstate = false, keepHistory = false, reopenAdmin = false } = options;
-    stopAdminBackgroundLock();
-    document.querySelectorAll('[data-vu-modal="1"]').forEach((el) => el.remove());
-
-    if (!keepHistory && state.modalHistoryPushed) {
-      state.modalHistoryPushed = false;
-      if (!fromPopstate && !isNativeApk()) {
-        state.ignoreNextPopstate = true;
-        try { history.back(); } catch (_) {}
-        setTimeout(() => { state.ignoreNextPopstate = false; }, 350);
-      }
-    }
-    if (!keepHistory) state.modalReturnToAdmin = false;
-
-    if (reopenAdmin) {
-      ensureAdminModalVisible();
-      setTimeout(ensureAdminModalVisible, 60);
-      setTimeout(ensureAdminModalVisible, 200);
-    }
-  }
-
+  /* -------------------------------------------------------------------------
+   * 8. Hooks no App (Painel Admin, Cautela, Devolução com Próxima Calibração)
+   * ------------------------------------------------------------------------- */
   function injectAppHooks() {
-    const adminTabsBar = document.querySelector('#adminUsersModal #admTabOta')?.parentElement
-      || document.querySelector('#adminUsersModal #admTabUsers')?.parentElement
-      || document.querySelector('#adminUsersModal button[id^="admTab"]')?.parentElement;
+    transformAdminModal();
 
-    if (adminTabsBar) {
-      adminTabsBar.classList.add('vu-admin-tabs-scroll');
-      enableWheelHorizontalScroll(adminTabsBar);
-
-      if (!document.getElementById('admTabRbac')) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'admTabRbac';
-        btn.className = 'px-3.5 py-2 rounded-t-lg font-bold text-amber-600 dark:text-amber-300 hover:underline cursor-pointer';
-        btn.textContent = 'Tipos de Login & Hierarquia';
-        btn.addEventListener('click', () => openRbacAdminModal());
-        adminTabsBar.appendChild(btn);
-      }
-
-      if (!document.getElementById('admTabAudit')) {
-        const btnAudit = document.createElement('button');
-        btnAudit.type = 'button';
-        btnAudit.id = 'admTabAudit';
-        btnAudit.className = 'px-3.5 py-2 rounded-t-lg font-bold text-sky-600 dark:text-sky-300 hover:underline cursor-pointer';
-        btnAudit.textContent = 'Auditoria & Governança';
-        btnAudit.addEventListener('click', () => openAuditLogsModal(true));
-        adminTabsBar.appendChild(btnAudit);
-      }
-
-      if (!document.getElementById('admTabSplit')) {
-        const btnSplit = document.createElement('button');
-        btnSplit.type = 'button';
-        btnSplit.id = 'admTabSplit';
-        btnSplit.className = 'px-3.5 py-2 rounded-t-lg font-bold text-emerald-600 dark:text-emerald-300 hover:underline cursor-pointer';
-        btnSplit.textContent = 'Modularizar HTML';
-        btnSplit.addEventListener('click', () => openModularizerModal(true));
-        adminTabsBar.appendChild(btnSplit);
-      }
+    // Observa abertura do Painel Administrativo para garantir layout Sidebar/BottomSheet
+    const adm = document.getElementById('adminUsersModal');
+    if (adm && !adm.dataset.vuWatched) {
+      adm.dataset.vuWatched = '1';
+      const obs = new MutationObserver(() => {
+        if (!adm.classList.contains('hidden')) transformAdminModal();
+      });
+      obs.observe(adm, { attributes: true, attributeFilter: ['class', 'style'] });
     }
 
     const calPresetBtn = document.querySelector('#custodyModal button[onclick*="applyCustPreset"]');
@@ -520,28 +1339,22 @@
         if (br) return `${br[3]}-${br[2]}-${br[1]}`;
         return '';
       }
-
       function formatBrFromIso(isoStr) {
         const m = String(isoStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
         return m ? `${m[3]}/${m[2]}/${m[1]}` : isoStr;
       }
-
       function getActiveCustodyInstrument() {
         const codeEl = document.getElementById('custPickerCode') || custodyModalEl.querySelector('[data-code]');
         const code = codeEl ? (codeEl.value || codeEl.dataset.code || codeEl.textContent) : '';
         return findInstrumentByTag(code);
       }
-
       function syncNextCalBox() {
         const confirmBtn = custodyModalEl.querySelector('button[onclick*="confirmCustodyReturn"], button[id*="confirmReturn"], button[onclick*="returnCustody"]');
         const returnBox = confirmBtn ? confirmBtn.parentElement : null;
         if (!returnBox) return;
 
         const inst = getActiveCustodyInstrument();
-        const statusTxt = normText([
-          inst && (inst.status || inst.Status || inst.situacao),
-          custodyModalEl.textContent
-        ].join(' '));
+        const statusTxt = normText([inst && (inst.status || inst.Status || inst.situacao), custodyModalEl.textContent].join(' '));
         const isWaitingCal = statusTxt.includes('aguardando calibr') || statusTxt.includes('em calibr') || statusTxt.includes('recolhido para calibr');
 
         let box = document.getElementById('vu-return-next-cal-box');
@@ -549,23 +1362,22 @@
           if (box) box.style.display = 'none';
           return;
         }
-
         if (!box) {
           box = document.createElement('div');
           box.id = 'vu-return-next-cal-box';
-          box.style.cssText = 'margin:10px 0 12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid #0284c7;text-align:left;';
+          box.className = 'vu-card';
+          box.style.cssText = 'margin:10px 0 12px;border-color:#0284c7;text-align:left;';
           box.innerHTML = `
-            <label for="vuReturnNextCalDate" style="display:block;font-size:11px;font-weight:700;letter-spacing:.04em;color:#7dd3fc;margin-bottom:6px;text-transform:uppercase;">
+            <label for="vuReturnNextCalDate" style="display:block;font-size:11px;font-weight:700;letter-spacing:.04em;color:#0284c7;margin-bottom:6px;text-transform:uppercase;">
               Nova Data da Próxima Calibração (ao devolver)
             </label>
-            <input id="vuReturnNextCalDate" type="date" class="vu-input" style="padding:8px 10px;" />
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+            <input id="vuReturnNextCalDate" type="date" class="vu-input" />
+            <div style="font-size:11px;color:var(--vu-muted-text);margin-top:4px;">
               Atualiza a validade do instrumento automaticamente ao confirmar a devolução.
             </div>
           `;
           confirmBtn.parentNode.insertBefore(box, confirmBtn);
         }
-
         box.style.display = 'block';
         const dateInp = box.querySelector('#vuReturnNextCalDate');
         if (dateInp && inst && !dateInp.dataset.vuTouched) {
@@ -574,31 +1386,27 @@
           dateInp.addEventListener('input', () => { dateInp.dataset.vuTouched = '1'; });
         }
       }
-
       function applyNextCalToInstrument() {
         const dateInp = document.getElementById('vuReturnNextCalDate');
         if (!dateInp || !dateInp.value) return;
-
         const isoVal = dateInp.value;
         const brVal = formatBrFromIso(isoVal);
         const inst = getActiveCustodyInstrument();
         if (!inst) return;
-
         if ('proxCal' in inst) inst.proxCal = isoVal;
         if ('proxima_calibracao' in inst) inst.proxima_calibracao = isoVal;
         if ('dueDate' in inst) inst.dueDate = isoVal;
         if ('Data da Próxima Calibração' in inst) inst['Data da Próxima Calibração'] = brVal;
-
         const autoCheck = custodyModalEl.querySelector('input[type="checkbox"]');
         if (autoCheck && !autoCheck.checked) {
           autoCheck.checked = true;
           autoCheck.dispatchEvent(new Event('change', { bubbles: true }));
         }
-
         if (typeof global.recalcInstrumentStatus === 'function') global.recalcInstrumentStatus(inst);
         if (typeof global.saveDB === 'function') global.saveDB();
         if (typeof global.renderAll === 'function') global.renderAll();
         if (typeof global.scheduleCloudSync === 'function') global.scheduleCloudSync();
+        showToast(`Validade atualizada para ${brVal}`, 'success');
       }
 
       custodyModalEl.addEventListener('click', (e) => {
@@ -621,66 +1429,13 @@
     }
   }
 
-  function renderSyncPill() {
-    let pill = document.getElementById('vu-sync-pill');
-    const online = navigator.onLine;
-    const count = state.pendingMutations;
-    const shouldShow = !online || state.syncing || count > 0;
-
-    if (!shouldShow) {
-      if (pill) pill.style.display = 'none';
-      return;
-    }
-
-    if (!pill) {
-      pill = document.createElement('div');
-      pill.id = 'vu-sync-pill';
-      pill.title = 'Clique para abrir a Central Voith Metrologia';
-      pill.addEventListener('click', openQuickMenu);
-      document.body.appendChild(pill);
-    }
-
-    pill.style.display = 'inline-flex';
-    if (!online) {
-      pill.className = 'vu-sync-pill vu-sync-offline';
-      pill.innerHTML = `<span class="vu-dot"></span> Offline — ${count} pendente(s)`;
-    } else {
-      pill.className = 'vu-sync-pill vu-sync-busy';
-      pill.innerHTML = `<span class="vu-dot"></span> Sincronizando (${count})...`;
-    }
-  }
-
-  function setPendingMutations(count, isSyncing = false) {
-    state.pendingMutations = Math.max(0, Number(count) || 0);
-    state.syncing = Boolean(isSyncing);
-    renderSyncPill();
-  }
-
-  function setupOfflineMonitors() {
-    window.addEventListener('online', () => {
-      renderSyncPill();
-      if (typeof state.cfg.onReconnect === 'function') state.cfg.onReconnect();
-    });
-    window.addEventListener('offline', renderSyncPill);
-    window.addEventListener('beforeunload', (e) => {
-      if (state.pendingMutations > 0) {
-        e.preventDefault();
-        e.returnValue = 'Existem alterações pendentes de sincronização. Tem certeza que deseja fechar?';
-      }
-    });
-    renderSyncPill();
-  }
-
+  /* -------------------------------------------------------------------------
+   * 9. Cautela com Trava Metrológica (Bottom Sheet no Celular)
+   * ------------------------------------------------------------------------- */
   async function openCautelaModal(preselectedTag = '') {
     if (!state.profile) await loadSessionProfile();
-    if (!state.profile) {
-      return alert('Sessão não localizada no servidor. Faça login novamente para preencher a cautela.');
-    }
-    if (!hasPerm('request_cautela')) {
-      return alert('Seu tipo de login não tem permissão para solicitar/preencher cautelas.');
-    }
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
+    if (!state.profile) return showToast('Sessão não localizada. Faça login novamente para preencher a cautela.', 'error');
+    if (!hasPerm('request_cautela')) return showToast('Seu tipo de login não tem permissão para solicitar cautelas.', 'error');
 
     const prof = state.profile;
     const canOverrideHolder = hasPerm('override_cautela_holder');
@@ -689,9 +1444,9 @@
 
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
     backdrop.innerHTML = `
       <div class="vu-modal vu-modal-sm">
+        <div class="vu-sheet-handle"></div>
         <div class="vu-header">
           <div class="vu-header-left">
             <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
@@ -701,37 +1456,35 @@
         </div>
         <div class="vu-body">
           <div style="margin-bottom:12px;">
-            <span class="vu-badge vu-badge-green">
-              Preenchido pelo login (${escapeHtml(prof.role_name || prof.role_code || '')})
-            </span>
+            <span class="vu-badge vu-badge-green">Preenchido pelo login (${escapeHtml(prof.role_name || prof.role_code || '')})</span>
           </div>
           <form id="vu-cautela-form" style="display:flex;flex-direction:column;gap:12px;">
             <div class="vu-grid-2">
               <div>
-                <label style="font-size:12px;color:#94a3b8;">Nome do Colaborador</label>
+                <label style="font-size:12px;color:var(--vu-muted-text);">Nome do Colaborador</label>
                 <input class="vu-input" name="holder_name" value="${escapeHtml(prof.display_name)}" ${lockAttr} required />
               </div>
               <div>
-                <label style="font-size:12px;color:#94a3b8;">Matrícula</label>
+                <label style="font-size:12px;color:var(--vu-muted-text);">Matrícula</label>
                 <input class="vu-input" name="holder_matricula" value="${escapeHtml(prof.matricula)}" ${lockAttr} required />
               </div>
             </div>
             <div class="vu-grid-2">
               <div>
-                <label style="font-size:12px;color:#94a3b8;">Setor</label>
+                <label style="font-size:12px;color:var(--vu-muted-text);">Setor</label>
                 <input class="vu-input" name="holder_setor" value="${escapeHtml(prof.setor)}" ${lockAttr} required />
               </div>
               <div>
-                <label style="font-size:12px;color:#94a3b8;">TAG / Código do Instrumento</label>
+                <label style="font-size:12px;color:var(--vu-muted-text);">TAG / Código do Instrumento</label>
                 <input class="vu-input" id="vu-cautela-tag" name="instrument_tag" value="${escapeHtml(preselectedTag)}" placeholder="Ex: AC401573" required />
               </div>
             </div>
             <div id="vu-cautela-guard-box"></div>
             <div>
-              <label style="font-size:12px;color:#94a3b8;">Observações / Ordem de Serviço</label>
+              <label style="font-size:12px;color:var(--vu-muted-text);">Observações / Ordem de Serviço</label>
               <textarea class="vu-textarea" name="notes" rows="2" placeholder="Motivo da retirada ou local de uso..."></textarea>
             </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
               <button type="button" class="vu-btn vu-close-btn">Cancelar</button>
               <button type="submit" id="vu-cautela-submit" class="vu-btn vu-btn-primary">Registrar Cautela</button>
             </div>
@@ -740,10 +1493,10 @@
       </div>
     `;
 
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close') || e.target.classList.contains('vu-close-btn')) closeModals();
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-cautela-modal');
     });
-    document.body.appendChild(backdrop);
+    openOverlay({ id: 'vu-cautela-modal', element: backdrop });
 
     const tagInput = backdrop.querySelector('#vu-cautela-tag');
     const guardBox = backdrop.querySelector('#vu-cautela-guard-box');
@@ -752,32 +1505,29 @@
     function evaluateTagGuard() {
       const inst = findInstrumentByTag(tagInput.value);
       const check = evaluateInstrumentBlock(inst);
-
       if (!inst) {
         guardBox.innerHTML = '';
         submitBtn.disabled = false;
         return { inst: null, check };
       }
-
       const desc = escapeHtml(inst.desc || inst.descricao || inst['Descrição'] || '');
       if (!check.blocked) {
         guardBox.innerHTML = `
-          <div class="vu-card" style="padding:10px;font-size:12px;border-color:#166534;">
-            <strong style="color:#6ee7b7;">✓ Instrumento liberado (${escapeHtml(check.statusLabel)})</strong>
-            <div style="color:#94a3b8;margin-top:2px;">${desc}</div>
+          <div class="vu-card" style="padding:10px;font-size:12px;border-color:#10b981;">
+            <strong style="color:#059669;">✓ Instrumento liberado (${escapeHtml(check.statusLabel)})</strong>
+            <div style="color:var(--vu-muted-text);margin-top:2px;">${desc}</div>
           </div>
         `;
         submitBtn.disabled = false;
         return { inst, check };
       }
-
       if (!canOverrideBlock) {
         guardBox.innerHTML = `
           <div class="vu-alert-danger">
             <strong>⛔ BLOQUEIO AUTOMÁTICO — ${escapeHtml(check.statusLabel)}</strong>
             <div style="margin-top:4px;">${escapeHtml(check.reason)}</div>
             <div style="margin-top:6px;font-size:11.5px;opacity:.9;">
-              Seu nível hierárquico (${prof.hierarchy_level}) não permite retirar instrumentos vencidos, reprovados ou em laboratório. Solicite liberação a um Líder ou Metrologia.
+              Seu nível hierárquico (${prof.hierarchy_level}) não permite retirar instrumentos vencidos, reprovados ou em laboratório.
             </div>
           </div>
         `;
@@ -791,7 +1541,7 @@
               <label style="font-size:11.5px;font-weight:700;display:block;margin-bottom:4px;">
                 Justificativa Técnica Obrigatória (Liberação Nível ${prof.hierarchy_level}):
               </label>
-              <input class="vu-input" name="override_reason" placeholder="Ex: Recolhimento para calibração externa ou uso restrito autorizado..." required />
+              <input class="vu-input" name="override_reason" placeholder="Ex: Recolhimento para calibração externa..." required />
             </div>
           </div>
         `;
@@ -820,50 +1570,58 @@
         notes: String(fd.get('notes') || '').trim()
       };
 
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Registrando...';
       try {
         const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
         const res = await rpc('voith_create_cautela_autofill', { p_token: token, p_payload: payload });
-        if (!res.ok) return alert(res.error || 'Erro ao registrar cautela.');
-        closeModals();
+        if (!res.ok) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Registrar Cautela';
+          return showToast(res.error || 'Erro ao registrar cautela.', 'error');
+        }
+        closeOverlayById('vu-cautela-modal', true);
         if (typeof state.cfg.onCautelaCreated === 'function') {
           state.cfg.onCautelaCreated(res.cautela);
-        } else {
-          alert(`Cautela registrada para ${res.cautela.requester_name} (Mat. ${res.cautela.requester_matricula}) — Status: ${res.cautela.status}`);
         }
+        showToast(`Cautela registrada para ${res.cautela.requester_name} (${payload.instrument_tag})`, 'success');
       } catch (err) {
-        alert('Falha ao comunicar com o Supabase: ' + err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Registrar Cautela';
+        showToast('Falha ao comunicar com o Supabase: ' + err.message, 'error');
       }
     });
   }
 
+  /* -------------------------------------------------------------------------
+   * 10. Impacto Retroativo (com Skeleton Loader)
+   * ------------------------------------------------------------------------- */
   async function openRetroactiveImpactModal(preselectedTag = '') {
     if (!state.profile) await loadSessionProfile();
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
 
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
     backdrop.innerHTML = `
       <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
         <div class="vu-header">
           <div class="vu-header-left">
             <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
-            <h3>Análise de Risco & Impacto Retroativo (Não-Conformidade)</h3>
+            <h3>Análise de Risco & Impacto Retroativo</h3>
           </div>
           <button type="button" class="vu-close">&times;</button>
         </div>
         <div class="vu-body">
           <div class="vu-alert-warn" style="margin-bottom:14px;">
-            Rastreie todos os colaboradores, setores e movimentações que utilizaram um instrumento reprovado ou fora de tolerância desde sua última calibração válida.
+            Rastreie colaboradores, setores e cautelas de um instrumento reprovado desde a última calibração válida.
           </div>
           <form id="vu-nc-form" class="vu-grid-3" style="margin-bottom:14px;align-items:end;">
             <div>
-              <label style="font-size:12px;color:#94a3b8;">TAG do Instrumento Reprovado</label>
+              <label style="font-size:12px;color:var(--vu-muted-text);">TAG do Instrumento Reprovado</label>
               <input class="vu-input" name="tag" value="${escapeHtml(preselectedTag)}" placeholder="Ex: AC401573" required />
             </div>
             <div>
-              <label style="font-size:12px;color:#94a3b8;">Analisar desde (Data Última Calibração)</label>
+              <label style="font-size:12px;color:var(--vu-muted-text);">Analisar desde</label>
               <input class="vu-input" name="since" type="date" value="${new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10)}" />
             </div>
             <div>
@@ -875,16 +1633,16 @@
       </div>
     `;
 
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close') || e.target.classList.contains('vu-close-btn')) closeModals();
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-nc-modal');
     });
-    document.body.appendChild(backdrop);
+    openOverlay({ id: 'vu-nc-modal', element: backdrop });
 
     const resultEl = backdrop.querySelector('#vu-nc-result');
 
     async function runTrace(tag, since) {
       if (!tag) return;
-      resultEl.innerHTML = '<div style="color:#94a3b8;padding:12px;">Consultando histórico de cautelas e auditoria...</div>';
+      resultEl.innerHTML = skeletonCardsHtml(3, 3);
       const inst = findInstrumentByTag(tag);
       const localCustodies = (global.VoithDB && global.VoithDB.state && Array.isArray(global.VoithDB.state.custodies))
         ? global.VoithDB.state.custodies.filter((c) => String(c.code || c.instrument_tag || '').toUpperCase() === tag.toUpperCase())
@@ -911,17 +1669,17 @@
       resultEl.innerHTML = `
         <div class="vu-grid-3" style="margin-bottom:14px;">
           <div class="vu-card">
-            <div style="font-size:11px;color:#94a3b8;">Instrumento</div>
+            <div style="font-size:11px;color:var(--vu-muted-text);">Instrumento</div>
             <div style="font-size:16px;font-weight:700;">${escapeHtml(tag.toUpperCase())}</div>
-            <div style="font-size:11.5px;color:#94a3b8;">${escapeHtml(inst ? (inst.desc || inst.descricao || '') : 'Não localizado no cadastro')}</div>
+            <div style="font-size:11.5px;color:var(--vu-muted-text);">${escapeHtml(inst ? (inst.desc || inst.descricao || '') : 'Não localizado no cadastro')}</div>
           </div>
           <div class="vu-card">
-            <div style="font-size:11px;color:#94a3b8;">Retiradas / Cautelas no Período</div>
-            <div style="font-size:22px;font-weight:700;color:#fbbf24;">${merged.length}</div>
+            <div style="font-size:11px;color:var(--vu-muted-text);">Retiradas no Período</div>
+            <div style="font-size:22px;font-weight:700;color:#d97706;">${merged.length}</div>
           </div>
           <div class="vu-card">
-            <div style="font-size:11px;color:#94a3b8;">Setores Impactados</div>
-            <div style="font-size:13px;font-weight:700;color:#fca5a5;margin-top:4px;">${sectors.length ? escapeHtml(sectors.join(', ')) : 'Nenhum setor registrado'}</div>
+            <div style="font-size:11px;color:var(--vu-muted-text);">Setores Impactados</div>
+            <div style="font-size:13px;font-weight:700;color:#dc2626;margin-top:4px;">${sectors.length ? escapeHtml(sectors.join(', ')) : 'Nenhum setor registrado'}</div>
           </div>
         </div>
         <div class="vu-table-wrap">
@@ -936,11 +1694,11 @@
                   <td><span class="vu-badge vu-badge-red">${escapeHtml(c.requester_setor || c.setor || '—')}</span></td>
                   <td>${escapeHtml(c.notes || c.obs || '—')}</td>
                 </tr>
-              `).join('') : '<tr><td colspan="5" style="text-align:center;color:#94a3b8;">Nenhuma cautela encontrada para este instrumento no período selecionado.</td></tr>'}
+              `).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--vu-muted-text);">Nenhuma cautela encontrada para este instrumento no período.</td></tr>'}
             </tbody>
           </table>
         </div>
-        ${auditTrail.length ? `<div style="margin-top:12px;font-size:12px;color:#94a3b8;">+ ${auditTrail.length} registro(s) na trilha de auditoria encontrados para esta TAG.</div>` : ''}
+        ${auditTrail.length ? `<div style="margin-top:12px;font-size:12px;color:var(--vu-muted-text);">+ ${auditTrail.length} registro(s) na trilha de auditoria encontrados para esta TAG.</div>` : ''}
       `;
     }
 
@@ -953,6 +1711,9 @@
     if (preselectedTag) runTrace(preselectedTag, backdrop.querySelector('input[name="since"]').value);
   }
 
+  /* -------------------------------------------------------------------------
+   * 11. SLA, Custos & Tendência de Deriva (Inline no Admin ou Bottom Sheet)
+   * ------------------------------------------------------------------------- */
   function computeLabSlaMetrics(history) {
     const labMap = new Map();
     const famMap = new Map();
@@ -977,9 +1738,8 @@
       if (isReproved) stat.reprovados += 1;
 
       if (sent && ret) {
-        const diff = Math.max(0, Math.round((ret - sent) / 86400000));
         stat.concluidos += 1;
-        stat.leadDaysSum += diff;
+        stat.leadDaysSum += Math.max(0, Math.round((ret - sent) / 86400000));
       } else if (exp && exp < today) {
         stat.atrasados += 1;
       }
@@ -1008,123 +1768,115 @@
     return { labs, families };
   }
 
-  async function openLabSlaModal() {
-    if (!state.profile) await loadSessionProfile();
-    if (!hasPerm('view_sla_costs')) return alert('Seu perfil não tem permissão para visualizar SLA e custos.');
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
-
+  function buildLabSlaMarkup() {
     const history = typeof state.cfg.getCalibrationHistory === 'function' ? state.cfg.getCalibrationHistory() : [];
     const { labs, families } = computeLabSlaMetrics(history);
     const totalCost = labs.reduce((acc, r) => acc + r.custoTotal, 0);
     const maxFamCost = Math.max(1, ...families.map((f) => f.custoTotal || f.envios));
     const fmtBRL = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+    return `
+      <div class="vu-grid-3" style="margin-bottom:14px;">
+        <div class="vu-card"><div style="font-size:11px;color:var(--vu-muted-text);">Laboratórios Ativos</div><div style="font-size:22px;font-weight:700;">${labs.length}</div></div>
+        <div class="vu-card"><div style="font-size:11px;color:var(--vu-muted-text);">Custo Acumulado</div><div style="font-size:22px;font-weight:700;color:#0284c7;">${fmtBRL(totalCost)}</div></div>
+        <div class="vu-card"><div style="font-size:11px;color:var(--vu-muted-text);">Envios Atrasados</div><div style="font-size:22px;font-weight:700;color:#d97706;">${labs.reduce((a, r) => a + r.atrasados, 0)}</div></div>
+      </div>
+      <div class="vu-card" style="margin-bottom:14px;">
+        <h4 style="margin:0 0 10px;font-size:13.5px;font-weight:700;">Custo & Taxa de Deriva / Reprovação por Família</h4>
+        ${families.length ? families.map((f) => {
+          const metricVal = f.custoTotal > 0 ? f.custoTotal : f.envios;
+          const pct = Math.min(100, Math.round((metricVal / maxFamCost) * 100));
+          const derivaNum = Number(f.taxaDeriva);
+          const barColor = derivaNum >= 15 ? '#ef4444' : (derivaNum >= 5 ? '#f59e0b' : '#0ea5e9');
+          return `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;gap:8px;flex-wrap:wrap;">
+                <strong>${escapeHtml(f.family)} <span style="color:var(--vu-muted-text);font-weight:400;">(${f.envios} calibrações)</span></strong>
+                <span>${fmtBRL(f.custoTotal)} • Deriva: <strong style="color:${barColor};">${f.taxaDeriva}%</strong></span>
+              </div>
+              <div class="vu-bar-track"><div class="vu-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+            </div>
+          `;
+        }).join('') : '<div style="font-size:12px;color:var(--vu-muted-text);">Sem histórico de calibração externa para agrupar por família.</div>'}
+      </div>
+      <div class="vu-table-wrap">
+        <table class="vu-table">
+          <thead><tr><th>Laboratório</th><th>Envios</th><th>Lead Time</th><th>Atrasados</th><th>Reprov.</th><th>Custo Total</th><th>Custo Médio</th></tr></thead>
+          <tbody>
+            ${labs.length ? labs.map((r) => `
+              <tr>
+                <td><strong>${escapeHtml(r.lab)}</strong></td>
+                <td>${r.totalEnvios}</td>
+                <td>${r.leadTimeMedio} dias</td>
+                <td>${r.atrasados > 0 ? `<span class="vu-badge vu-badge-amber">${r.atrasados}</span>` : '0'}</td>
+                <td>${Number(r.taxaReprovacao) > 0 ? `<span class="vu-badge vu-badge-red">${r.taxaReprovacao}%</span>` : '0.0%'}</td>
+                <td>${fmtBRL(r.custoTotal)}</td>
+                <td>${fmtBRL(r.custoMedio)}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--vu-muted-text);">Sem registros em calibration_history.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function openLabSlaModal(inlineInAdmin = false) {
+    if (!state.profile) await loadSessionProfile();
+    if (!hasPerm('view_sla_costs')) return showToast('Seu perfil não tem permissão para visualizar SLA e custos.', 'error');
+
+    if (inlineInAdmin) {
+      activateInlineAdminStage('admTabSlaInline', (stage) => {
+        if (!stage) return openLabSlaModal(false);
+        stage.innerHTML = `
+          <h3 style="margin:0 0 14px;font-size:16px;font-weight:700;">SLA, Custos & Tendência de Deriva</h3>
+          ${buildLabSlaMarkup()}
+        `;
+      });
+      return;
+    }
+
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
     backdrop.innerHTML = `
       <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
         <div class="vu-header">
           <div class="vu-header-left">
             <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
-            <h3>SLA, Custos & Tendência de Deriva por Família</h3>
+            <h3>SLA, Custos & Tendência de Deriva</h3>
           </div>
           <button type="button" class="vu-close">&times;</button>
         </div>
-        <div class="vu-body">
-          <div class="vu-grid-3" style="margin-bottom:14px;">
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Laboratórios Ativos</div><div style="font-size:22px;font-weight:700;">${labs.length}</div></div>
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Custo Acumulado</div><div style="font-size:22px;font-weight:700;color:#38bdf8;">${fmtBRL(totalCost)}</div></div>
-            <div class="vu-card"><div style="font-size:11px;color:#94a3b8;">Envios Atrasados</div><div style="font-size:22px;font-weight:700;color:#fbbf24;">${labs.reduce((a, r) => a + r.atrasados, 0)}</div></div>
-          </div>
-
-          <div class="vu-card" style="margin-bottom:14px;">
-            <h4 style="margin:0 0 10px;font-size:13.5px;font-weight:700;">Comparativo de Custo & Taxa de Deriva / Reprovação por Família</h4>
-            ${families.length ? families.map((f) => {
-              const metricVal = f.custoTotal > 0 ? f.custoTotal : f.envios;
-              const pct = Math.min(100, Math.round((metricVal / maxFamCost) * 100));
-              const derivaNum = Number(f.taxaDeriva);
-              const barColor = derivaNum >= 15 ? '#ef4444' : (derivaNum >= 5 ? '#f59e0b' : '#0ea5e9');
-              return `
-                <div style="margin-bottom:10px;">
-                  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-                    <strong>${escapeHtml(f.family)} <span style="color:#94a3b8;font-weight:400;">(${f.envios} calibrações)</span></strong>
-                    <span>${fmtBRL(f.custoTotal)} • Deriva/Reprov.: <strong style="color:${barColor};">${f.taxaDeriva}%</strong></span>
-                  </div>
-                  <div class="vu-bar-track"><div class="vu-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
-                </div>
-              `;
-            }).join('') : '<div style="font-size:12px;color:#94a3b8;">Sem histórico de calibração externa para agrupar por família.</div>'}
-          </div>
-
-          <div class="vu-table-wrap">
-            <table class="vu-table">
-              <thead><tr><th>Laboratório</th><th>Envios</th><th>Lead Time</th><th>Atrasados</th><th>Taxa Reprov.</th><th>Custo Total</th><th>Custo Médio</th></tr></thead>
-              <tbody>
-                ${labs.length ? labs.map((r) => `
-                  <tr>
-                    <td><strong>${escapeHtml(r.lab)}</strong></td>
-                    <td>${r.totalEnvios}</td>
-                    <td>${r.leadTimeMedio} dias</td>
-                    <td>${r.atrasados > 0 ? `<span class="vu-badge vu-badge-amber">${r.atrasados}</span>` : '0'}</td>
-                    <td>${Number(r.taxaReprovacao) > 0 ? `<span class="vu-badge vu-badge-red">${r.taxaReprovacao}%</span>` : '0.0%'}</td>
-                    <td>${fmtBRL(r.custoTotal)}</td>
-                    <td>${fmtBRL(r.custoMedio)}</td>
-                  </tr>
-                `).join('') : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">Sem registros em calibration_history.</td></tr>'}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <div class="vu-body">${buildLabSlaMarkup()}</div>
       </div>
     `;
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close') || e.target.classList.contains('vu-close-btn')) closeModals();
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-sla-modal');
     });
-    document.body.appendChild(backdrop);
+    openOverlay({ id: 'vu-sla-modal', element: backdrop });
   }
 
-  async function openAuditLogsModal(fromAdmin = false) {
-    if (!state.profile) await loadSessionProfile();
-    if (!state.profile) return alert('Sessão inválida. Faça login novamente.');
-    closeModals({ keepHistory: true });
-    pushModalHistory(Boolean(fromAdmin));
-
-    const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal">
-        <div class="vu-header">
-          <div class="vu-header-left">
-            <button type="button" class="vu-btn vu-btn-sm vu-back-btn">&larr; Voltar</button>
-            <h3>Trilha de Auditoria Imutável (ISO / IATF)</h3>
-          </div>
-          <button type="button" class="vu-close">&times;</button>
-        </div>
-        <div class="vu-body">
-          <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <input id="vu-audit-search" class="vu-input" placeholder="Filtrar por TAG, usuário, tabela ou ação..." />
-            <button type="button" id="vu-audit-reload" class="vu-btn vu-btn-primary">Buscar</button>
-          </div>
-          <div id="vu-audit-body"><div style="color:#94a3b8;">Carregando registros imutáveis...</div></div>
-        </div>
+  /* -------------------------------------------------------------------------
+   * 12. Trilha de Auditoria Imutável (Inline no Admin — sem modal empilhado)
+   * ------------------------------------------------------------------------- */
+  async function mountAuditView(container) {
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:16px;font-weight:700;">Trilha de Auditoria Imutável (ISO / IATF)</h3>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <input id="vu-audit-search" class="vu-input" placeholder="Filtrar por TAG, usuário, tabela ou ação..." />
+        <button type="button" id="vu-audit-reload" class="vu-btn vu-btn-primary">Buscar</button>
+      </div>
+      <div id="vu-audit-body">${skeletonCardsHtml(3, 5)}</div>
     `;
 
-    const closeFn = () => closeModals({ reopenAdmin: Boolean(fromAdmin) });
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeFn();
-    });
-    backdrop.querySelector('.vu-back-btn').addEventListener('click', closeFn);
-    document.body.appendChild(backdrop);
-
-    const bodyEl = backdrop.querySelector('#vu-audit-body');
-    const searchEl = backdrop.querySelector('#vu-audit-search');
+    const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
+    const bodyEl = container.querySelector('#vu-audit-body');
+    const searchEl = container.querySelector('#vu-audit-search');
 
     async function loadLogs(q = '') {
+      bodyEl.innerHTML = skeletonCardsHtml(0, 5);
       try {
         const res = await rpc('voith_list_audit_logs', { p_token: token, p_limit: 120, p_search: q });
         if (!res.ok) {
@@ -1135,7 +1887,7 @@
         bodyEl.innerHTML = `
           <div class="vu-table-wrap">
             <table class="vu-table">
-              <thead><tr><th>Data / Hora</th><th>Responsável</th><th>Ação</th><th>Entidade</th><th>ID / TAG</th><th>Resumo Alteração</th></tr></thead>
+              <thead><tr><th>Data / Hora</th><th>Responsável</th><th>Ação</th><th>Entidade</th><th>ID / TAG</th><th>Resumo</th></tr></thead>
               <tbody>
                 ${logs.length ? logs.map((l) => {
                   const summary = l.new_value ? JSON.stringify(l.new_value).slice(0, 90) : (l.old_value ? JSON.stringify(l.old_value).slice(0, 90) : '—');
@@ -1146,10 +1898,10 @@
                       <td><span class="vu-badge">${escapeHtml(l.action || '—')}</span></td>
                       <td>${escapeHtml(l.entity_type || '—')}</td>
                       <td><strong>${escapeHtml(l.entity_id || '—')}</strong></td>
-                      <td style="font-size:11px;color:#94a3b8;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
+                      <td style="font-size:11px;color:var(--vu-muted-text);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(summary)}">${escapeHtml(summary)}</td>
                     </tr>
                   `;
-                }).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">Nenhum evento registrado ainda em audit_logs.</td></tr>'}
+                }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--vu-muted-text);">Nenhum evento registrado em audit_logs.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1159,109 +1911,55 @@
       }
     }
 
-    backdrop.querySelector('#vu-audit-reload').addEventListener('click', () => loadLogs(searchEl.value.trim()));
+    container.querySelector('#vu-audit-reload').onclick = () => loadLogs(searchEl.value.trim());
     searchEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); loadLogs(searchEl.value.trim()); }
     });
     loadLogs('');
   }
 
-  function openModularizerModal(fromAdmin = false) {
-    closeModals({ keepHistory: true });
-    pushModalHistory(Boolean(fromAdmin));
+  async function openAuditLogsModal(preferInline = true) {
+    if (!state.profile) await loadSessionProfile();
+    if (!state.profile) return showToast('Sessão inválida. Faça login novamente.', 'error');
+
+    if (preferInline && document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabAudit', (stage) => {
+        if (!stage) return openAuditLogsModal(false);
+        mountAuditView(stage);
+      });
+      return;
+    }
 
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
     backdrop.innerHTML = `
-      <div class="vu-modal vu-modal-sm">
+      <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
         <div class="vu-header">
           <div class="vu-header-left">
-            <button type="button" class="vu-btn vu-btn-sm vu-back-btn">&larr; Voltar</button>
-            <h3>Modularização Progressiva do index.html</h3>
+            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
+            <h3>Trilha de Auditoria Imutável</h3>
           </div>
           <button type="button" class="vu-close">&times;</button>
         </div>
-        <div class="vu-body" style="display:flex;flex-direction:column;gap:12px;">
-          <div class="vu-card" style="font-size:12.5px;line-height:1.5;">
-            Gera automaticamente os 3 arquivos separados para você subir no GitHub Web:
-            <ul style="margin:8px 0 0 18px;color:#94a3b8;">
-              <li><strong>styles/main.css</strong> (CSS principal extraído)</li>
-              <li><strong>js/core.js</strong> (lógica JavaScript interna extraída)</li>
-              <li><strong>index.html</strong> (enxuto, apontando para os 2 arquivos acima)</li>
-            </ul>
-          </div>
-          <button type="button" id="vu-run-split" class="vu-btn vu-btn-primary">Gerar e Baixar Pacote Modular (3 arquivos)</button>
-          <div id="vu-split-status" style="font-size:12px;color:#94a3b8;"></div>
-        </div>
+        <div class="vu-body" id="vu-audit-standalone"></div>
       </div>
     `;
-
-    const closeFn = () => closeModals({ reopenAdmin: Boolean(fromAdmin) });
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeFn();
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-audit-modal');
     });
-    backdrop.querySelector('.vu-back-btn').addEventListener('click', closeFn);
-    document.body.appendChild(backdrop);
-
-    function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') {
-      const blob = new Blob([content], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
-    }
-
-    backdrop.querySelector('#vu-run-split').addEventListener('click', async () => {
-      const statusEl = backdrop.querySelector('#vu-split-status');
-      statusEl.textContent = 'Lendo index.html atual...';
-      try {
-        const res = await fetch('./index.html', { cache: 'no-store' });
-        const html = await res.text();
-
-        const cssChunks = [];
-        let cleanHtml = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (full, inner) => {
-          if (full.includes('voith-upgrade-styles')) return '';
-          cssChunks.push(inner.trim());
-          return '';
-        });
-
-        const jsChunks = [];
-        cleanHtml = cleanHtml.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs, inner) => {
-          if (/\bsrc\s*=/.test(attrs)) return full;
-          if (inner.includes('VoithUpgrade.init')) return full;
-          jsChunks.push(inner.trim());
-          return '';
-        });
-
-        cleanHtml = cleanHtml.replace('</head>', '    <link rel="stylesheet" href="./styles/main.css?v=16.25.6" />\n</head>');
-        cleanHtml = cleanHtml.replace('</body>', '    <script src="./js/core.js?v=16.25.6"></script>\n</body>');
-
-        downloadTextFile('main.css', cssChunks.join('\n\n/* --- */\n\n'), 'text/css;charset=utf-8');
-        setTimeout(() => downloadTextFile('core.js', jsChunks.join('\n\n// ---\n\n'), 'application/javascript;charset=utf-8'), 400);
-        setTimeout(() => downloadTextFile('index.html', cleanHtml, 'text/html;charset=utf-8'), 800);
-
-        statusEl.innerHTML = `<span style="color:#6ee7b7;">✓ Concluído!</span> Suba <code>main.css</code> na pasta <code>styles/</code>, <code>core.js</code> na pasta <code>js/</code> e substitua o <code>index.html</code> na raiz de <code>metrologia-voith</code>.`;
-      } catch (err) {
-        statusEl.innerHTML = `<span style="color:#fca5a5;">Erro ao processar: ${escapeHtml(err.message)}</span>`;
-      }
-    });
+    openOverlay({ id: 'vu-audit-modal', element: backdrop });
+    mountAuditView(backdrop.querySelector('#vu-audit-standalone'));
   }
 
-  async function openRbacAdminModal(isRefresh = false, activeTab = 'roles') {
-    if (!state.profile) await loadSessionProfile();
-    if (!state.profile) {
-      return alert('Não foi possível validar sua sessão no Supabase. Verifique se você está logado.');
-    }
-    if (!hasPerm('manage_users') && !hasPerm('manage_roles')) {
-      return alert('Seu perfil não possui permissão para gerenciar logins ou hierarquia.');
-    }
-    closeModals({ keepHistory: true });
-    if (!isRefresh) pushModalHistory(true);
+  /* -------------------------------------------------------------------------
+   * 13. Gestão de Logins & Hierarquia (Inline no Admin — sem modal empilhado)
+   * ------------------------------------------------------------------------- */
+  async function mountRbacView(container, activeTab = 'roles') {
+    container.innerHTML = `
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Gestão de Logins, Permissões e Hierarquia</h3>
+      ${skeletonCardsHtml(2, 5)}
+    `;
 
     const token = state.cfg.getSessionToken ? state.cfg.getSessionToken() : '';
     let roles = [];
@@ -1274,39 +1972,20 @@
         if (uRes.ok) users = uRes.users || [];
       }
     } catch (err) {
-      closeModals({ reopenAdmin: true });
-      return alert('Erro ao carregar perfis/usuários: ' + err.message);
+      container.innerHTML = `<div class="vu-alert-danger">Erro ao carregar perfis/usuários: ${escapeHtml(err.message)}</div>`;
+      return;
     }
 
-    const backdrop = document.createElement('div');
-    backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
-    backdrop.innerHTML = `
-      <div class="vu-modal">
-        <div class="vu-header">
-          <div class="vu-header-left">
-            <button type="button" class="vu-btn vu-btn-sm vu-back-admin">&larr; Voltar</button>
-            <h3>Gestão de Logins, Permissões e Hierarquia</h3>
-          </div>
-          <button type="button" class="vu-close" aria-label="Fechar">&times;</button>
-        </div>
-        <div class="vu-body">
-          <div class="vu-tabs">
-            <button type="button" class="vu-tab ${activeTab === 'roles' ? 'active' : ''}" data-tab="roles">Tipos de Login & Hierarquia</button>
-            <button type="button" class="vu-tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
-          </div>
-          <div id="vu-rbac-content"></div>
-        </div>
+    container.innerHTML = `
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Gestão de Logins, Permissões e Hierarquia</h3>
+      <div class="vu-tabs">
+        <button type="button" class="vu-tab ${activeTab === 'roles' ? 'active' : ''}" data-tab="roles">Tipos de Login & Hierarquia</button>
+        <button type="button" class="vu-tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
       </div>
+      <div id="vu-rbac-content"></div>
     `;
 
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeModals({ reopenAdmin: true });
-    });
-    backdrop.querySelector('.vu-back-admin').addEventListener('click', () => closeModals({ reopenAdmin: true }));
-    document.body.appendChild(backdrop);
-
-    const content = backdrop.querySelector('#vu-rbac-content');
+    const content = container.querySelector('#vu-rbac-content');
     const callerLevel = Number(state.profile?.hierarchy_level || 10);
 
     function renderUsersTab() {
@@ -1317,7 +1996,7 @@
 
       content.innerHTML = `
         <div class="vu-card" style="margin-bottom:14px;">
-          <h4 style="margin:0 0 10px;font-weight:700;">Cadastrar / Editar Usuário</h4>
+          <h4 style="margin:0 0 10px;font-weight:700;font-size:13.5px;">Cadastrar / Editar Usuário</h4>
           <form id="vu-user-form" autocomplete="off" style="display:flex;flex-direction:column;gap:10px;">
             <div class="vu-grid-3">
               <input class="vu-input" name="username" autocomplete="off" placeholder="Login (ex: joao.silva)" required />
@@ -1359,11 +2038,11 @@
         const payload = Object.fromEntries(fd.entries());
         try {
           const res = await rpc('voith_upsert_user_profile', { p_token: token, p_user: payload });
-          if (!res.ok) return alert(res.error || 'Erro ao salvar usuário.');
-          alert('Usuário salvo com sucesso!');
-          openRbacAdminModal(true, 'users');
+          if (!res.ok) return showToast(res.error || 'Erro ao salvar usuário.', 'error');
+          showToast('Usuário salvo com sucesso!', 'success');
+          mountRbacView(container, 'users');
         } catch (err) {
-          alert('Erro ao salvar usuário: ' + err.message);
+          showToast('Erro ao salvar usuário: ' + err.message, 'error');
         }
       });
     }
@@ -1373,12 +2052,12 @@
       content.innerHTML = `
         ${canManageRoles ? `
         <div class="vu-card" style="margin-bottom:14px;">
-          <h4 style="margin:0 0 10px;font-weight:700;">Criar / Editar Tipo de Login</h4>
+          <h4 style="margin:0 0 10px;font-weight:700;font-size:13.5px;">Criar / Editar Tipo de Login</h4>
           <form id="vu-role-form" style="display:flex;flex-direction:column;gap:10px;">
             <div class="vu-grid-3">
               <input class="vu-input" name="code" placeholder="Código (ex: LIDER_USINAGEM)" required />
               <input class="vu-input" name="name" placeholder="Nome de Exibição" required />
-              <input class="vu-input" name="hierarchy_level" type="number" min="1" max="${callerLevel >= 100 ? 99 : callerLevel - 1}" value="20" placeholder="Hierarquia (1-99)" required />
+              <input class="vu-input" name="hierarchy_level" type="number" min="1" max="${callerLevel >= 100 ? 99 : callerLevel - 1}" value="20" required />
             </div>
             <input class="vu-input" name="description" placeholder="Descrição breve das responsabilidades" />
             <div class="vu-perm-grid">
@@ -1393,7 +2072,7 @@
               <button class="vu-btn vu-btn-primary" type="submit">Salvar Tipo de Login</button>
             </div>
           </form>
-        </div>` : '<p style="color:#94a3b8;">Apenas perfis com permissão de gestão de papéis podem criar novos tipos de login.</p>'}
+        </div>` : '<p style="color:var(--vu-muted-text);">Apenas perfis autorizados podem criar novos tipos de login.</p>'}
         <div class="vu-table-wrap">
           <table class="vu-table">
             <thead><tr><th>Código</th><th>Nome</th><th>Hierarquia</th><th>Permissões Ativas</th></tr></thead>
@@ -1403,7 +2082,7 @@
                 return `
                   <tr>
                     <td><strong>${escapeHtml(r.code)}</strong></td>
-                    <td>${escapeHtml(r.name)}<div style="font-size:11px;color:#94a3b8;">${escapeHtml(r.description || '')}</div></td>
+                    <td>${escapeHtml(r.name)}<div style="font-size:11px;color:var(--vu-muted-text);">${escapeHtml(r.description || '')}</div></td>
                     <td><span class="vu-badge">Nível ${r.hierarchy_level}</span></td>
                     <td>${activePerms} permissões</td>
                   </tr>
@@ -1430,20 +2109,21 @@
           };
           try {
             const res = await rpc('voith_upsert_role', { p_token: token, p_role: payload });
-            if (!res.ok) return alert(res.error || 'Erro ao salvar tipo de login.');
-            alert('Tipo de login salvo com sucesso!');
-            openRbacAdminModal(true, 'roles');
+            if (!res.ok) return showToast(res.error || 'Erro ao salvar tipo de login.', 'error');
+            showToast('Tipo de login salvo com sucesso!', 'success');
+            mountRbacView(container, 'roles');
           } catch (err) {
-            alert('Erro ao salvar tipo de login: ' + err.message);
+            showToast('Erro ao salvar tipo de login: ' + err.message, 'error');
           }
         });
       }
     }
 
-    backdrop.querySelectorAll('.vu-tab').forEach((btn) => {
+    container.querySelectorAll('.vu-tab').forEach((btn) => {
       btn.addEventListener('click', () => {
-        backdrop.querySelectorAll('.vu-tab').forEach((b) => b.classList.remove('active'));
+        container.querySelectorAll('.vu-tab').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
+        haptic('light');
         if (btn.dataset.tab === 'users') renderUsersTab();
         else renderRolesTab();
       });
@@ -1453,50 +2133,194 @@
     else renderRolesTab();
   }
 
-  async function openQuickMenu() {
+  async function openRbacAdminModal(_isRefresh = false, activeTab = 'roles') {
     if (!state.profile) await loadSessionProfile();
-    closeModals({ keepHistory: true });
-    pushModalHistory(false);
-    const prof = state.profile;
+    if (!state.profile) return showToast('Não foi possível validar sua sessão no Supabase.', 'error');
+    if (!hasPerm('manage_users') && !hasPerm('manage_roles')) {
+      return showToast('Seu perfil não possui permissão para gerenciar logins ou hierarquia.', 'error');
+    }
+
+    if (document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabRbac', (stage) => {
+        if (stage) mountRbacView(stage, activeTab);
+      });
+      return;
+    }
+
     const backdrop = document.createElement('div');
     backdrop.className = 'vu-backdrop';
-    backdrop.dataset.vuModal = '1';
     backdrop.innerHTML = `
-      <div class="vu-modal vu-modal-sm">
+      <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
         <div class="vu-header">
-          <h3>Central Voith Metrologia</h3>
+          <div class="vu-header-left">
+            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
+            <h3>Logins, Permissões e Hierarquia</h3>
+          </div>
           <button type="button" class="vu-close">&times;</button>
         </div>
-        <div class="vu-body" style="display:flex;flex-direction:column;gap:10px;">
-          ${prof ? `
-            <div class="vu-card">
-              <strong>${escapeHtml(prof.display_name)}</strong>
-              <span class="vu-badge" style="margin-left:6px;">${escapeHtml(prof.role_name)} (Nível ${prof.hierarchy_level})</span>
-              <div style="font-size:12px;color:#94a3b8;margin-top:4px;">
-                Matrícula: ${escapeHtml(prof.matricula || '—')} • Setor: ${escapeHtml(prof.setor || '—')}
-              </div>
-            </div>
-          ` : '<div class="vu-card" style="font-size:12px;color:#fcd34d;">Sessão ainda não vinculada ao perfil RBAC.</div>'}
-          <button type="button" class="vu-btn vu-btn-primary" id="vu-act-cautela">📋 Nova Cautela (com Trava Metrológica)</button>
-          <button type="button" class="vu-btn vu-btn-warn" id="vu-act-nc">⚠️ Análise de Impacto Retroativo (Reprovados)</button>
-          ${hasPerm('view_sla_costs') ? '<button type="button" class="vu-btn" id="vu-act-sla">📊 SLA, Custos & Tendência de Deriva</button>' : ''}
-          ${(hasPerm('manage_users') || hasPerm('manage_roles')) ? '<button type="button" class="vu-btn" id="vu-act-rbac">🔐 Logins, Permissões e Hierarquia</button>' : ''}
-          <button type="button" class="vu-btn" id="vu-act-audit">🛡️ Trilha de Auditoria Imutável</button>
-        </div>
+        <div class="vu-body" id="vu-rbac-standalone"></div>
       </div>
     `;
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop || e.target.classList.contains('vu-close')) closeModals();
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-rbac-modal');
     });
-    document.body.appendChild(backdrop);
+    openOverlay({ id: 'vu-rbac-modal', element: backdrop });
+    mountRbacView(backdrop.querySelector('#vu-rbac-standalone'), activeTab);
+  }
 
-    backdrop.querySelector('#vu-act-cautela').onclick = () => openCautelaModal('');
-    backdrop.querySelector('#vu-act-nc').onclick = () => openRetroactiveImpactModal('');
-    const slaBtn = backdrop.querySelector('#vu-act-sla');
-    if (slaBtn) slaBtn.onclick = openLabSlaModal;
-    const rbacBtn = backdrop.querySelector('#vu-act-rbac');
-    if (rbacBtn) rbacBtn.onclick = () => openRbacAdminModal(false, 'roles');
-    backdrop.querySelector('#vu-act-audit').onclick = () => openAuditLogsModal(false);
+  /* -------------------------------------------------------------------------
+   * 14. Extrator Modular HTML (Inline no Admin)
+   * ------------------------------------------------------------------------- */
+  function mountModularizerView(container) {
+    container.innerHTML = `
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Modularização Progressiva do index.html</h3>
+      <div class="vu-card" style="font-size:13px;line-height:1.55;margin-bottom:14px;">
+        Extrai automaticamente o CSS e o JavaScript interno do <code>index.html</code> em 3 arquivos prontos:
+        <ul style="margin:8px 0 0 18px;color:var(--vu-muted-text);">
+          <li><strong>styles/main.css</strong></li>
+          <li><strong>js/core.js</strong></li>
+          <li><strong>index.html</strong> (enxuto)</li>
+        </ul>
+      </div>
+      <button type="button" id="vu-run-split" class="vu-btn vu-btn-primary">Gerar e Baixar Pacote Modular</button>
+      <div id="vu-split-status" style="font-size:12.5px;color:var(--vu-muted-text);margin-top:12px;"></div>
+    `;
+
+    function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+
+    container.querySelector('#vu-run-split').addEventListener('click', async () => {
+      const ok = await showConfirm({
+        title: 'Gerar arquivos modulares?',
+        message: 'O navegador fará o download de 3 arquivos (main.css, core.js e index.html) para você revisar antes de publicar.',
+        confirmText: 'Baixar agora'
+      });
+      if (!ok) return;
+
+      const statusEl = container.querySelector('#vu-split-status');
+      statusEl.textContent = 'Lendo index.html atual...';
+      try {
+        const res = await fetch('./index.html', { cache: 'no-store' });
+        const html = await res.text();
+        const cssChunks = [];
+        let cleanHtml = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (full, inner) => {
+          if (full.includes('voith-upgrade-styles')) return '';
+          cssChunks.push(inner.trim());
+          return '';
+        });
+        const jsChunks = [];
+        cleanHtml = cleanHtml.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs, inner) => {
+          if (/\bsrc\s*=/.test(attrs) || inner.includes('VoithUpgrade.init')) return full;
+          jsChunks.push(inner.trim());
+          return '';
+        });
+        cleanHtml = cleanHtml.replace('</head>', '    <link rel="stylesheet" href="./styles/main.css" />\n</head>');
+        cleanHtml = cleanHtml.replace('</body>', '    <script src="./js/core.js"></script>\n</body>');
+
+        downloadTextFile('main.css', cssChunks.join('\n\n/* --- */\n\n'), 'text/css;charset=utf-8');
+        setTimeout(() => downloadTextFile('core.js', jsChunks.join('\n\n// ---\n\n'), 'application/javascript;charset=utf-8'), 400);
+        setTimeout(() => downloadTextFile('index.html', cleanHtml, 'text/html;charset=utf-8'), 800);
+
+        statusEl.textContent = 'Download dos 3 arquivos iniciado com sucesso.';
+        showToast('Pacote modular gerado com sucesso!', 'success');
+      } catch (err) {
+        statusEl.textContent = 'Erro ao processar: ' + err.message;
+        showToast('Erro ao modularizar: ' + err.message, 'error');
+      }
+    });
+  }
+
+  function openModularizerModal(preferInline = true) {
+    if (preferInline && document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabSplit', (stage) => {
+        if (stage) mountModularizerView(stage);
+      });
+      return;
+    }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-modal vu-modal-sm">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-header">
+          <h3>Modularização do index.html</h3>
+          <button type="button" class="vu-close">&times;</button>
+        </div>
+        <div class="vu-body" id="vu-split-standalone"></div>
+      </div>
+    `;
+    backdrop.querySelector('.vu-close').onclick = () => closeOverlayById('vu-split-modal');
+    openOverlay({ id: 'vu-split-modal', element: backdrop });
+    mountModularizerView(backdrop.querySelector('#vu-split-standalone'));
+  }
+
+  /* -------------------------------------------------------------------------
+   * 15. Menu Rápido, Sync Pill, Offline e Telemetria
+   * ------------------------------------------------------------------------- */
+  async function openQuickMenu() {
+    openCommandPalette('>');
+  }
+
+  function renderSyncPill() {
+    let pill = document.getElementById('vu-sync-pill');
+    const online = navigator.onLine;
+    const count = state.pendingMutations;
+    const shouldShow = !online || state.syncing || count > 0;
+
+    if (!shouldShow) {
+      if (pill) pill.style.display = 'none';
+      return;
+    }
+    if (!pill) {
+      pill = document.createElement('div');
+      pill.id = 'vu-sync-pill';
+      pill.title = 'Clique para abrir a Command Palette (Ctrl + K)';
+      pill.addEventListener('click', () => openCommandPalette('>'));
+      document.body.appendChild(pill);
+    }
+    pill.style.display = 'inline-flex';
+    if (!online) {
+      pill.className = 'vu-sync-pill vu-sync-offline';
+      pill.innerHTML = `<span class="vu-dot"></span> Offline — ${count} pendente(s)`;
+    } else {
+      pill.className = 'vu-sync-pill vu-sync-busy';
+      pill.innerHTML = `<span class="vu-dot"></span> Sincronizando (${count})...`;
+    }
+  }
+
+  function setPendingMutations(count, isSyncing = false) {
+    state.pendingMutations = Math.max(0, Number(count) || 0);
+    state.syncing = Boolean(isSyncing);
+    renderSyncPill();
+  }
+
+  function setupOfflineMonitors() {
+    window.addEventListener('online', () => {
+      renderSyncPill();
+      showToast('Conexão restabelecida. Sincronizando dados...', 'success', 2600);
+      if (typeof state.cfg.onReconnect === 'function') state.cfg.onReconnect();
+    });
+    window.addEventListener('offline', () => {
+      renderSyncPill();
+      showToast('Modo offline ativo. Suas alterações serão sincronizadas ao reconectar.', 'warn', 3600);
+    });
+    window.addEventListener('beforeunload', (e) => {
+      if (state.pendingMutations > 0) {
+        e.preventDefault();
+        e.returnValue = 'Existem alterações pendentes de sincronização.';
+      }
+    });
+    renderSyncPill();
   }
 
   function sendTelemetryError(eventType, message, stack) {
@@ -1554,9 +2378,12 @@
 
   function init(config = {}) {
     state.cfg = config;
+    ensureMobileMeta();
     injectStyles();
+    installFriendlyAlert();
     injectAppHooks();
-    setupHistoryBackHandler();
+    setupBackNavigation();
+    setupCommandPaletteTriggers();
     setupOfflineMonitors();
     setupErrorTelemetry();
     loadSessionProfile();
@@ -1568,6 +2395,10 @@
     hasPerm,
     getProfile: () => state.profile,
     setPendingMutations,
+    toast: showToast,
+    confirm: showConfirm,
+    haptic,
+    openCommandPalette,
     openCautelaModal,
     openRetroactiveImpactModal,
     openRbacAdminModal,
