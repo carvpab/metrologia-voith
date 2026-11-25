@@ -195,14 +195,12 @@
   };
 
   const handleBackAction = () => {
-    // 1. Fecha tela de download
     const dl = document.getElementById("vu-dl-voith");
     if (dl && isVisible(dl)) {
       dl.remove();
       return "handled";
     }
 
-    // 2. Fecha modal administrativo se aberto
     const admInner = document.getElementById("vu-adm-inner");
     if (admInner && isVisible(admInner)) {
       const closeAdm = findCloseBtn(admInner);
@@ -212,7 +210,6 @@
       }
     }
 
-    // 3. Fecha qualquer outro modal/dialog visível
     const openOverlays = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0")).filter((el) => {
       if (!isVisible(el) || el.id === "vu-dl-voith") return false;
       const t = String(el.textContent || "");
@@ -226,7 +223,6 @@
       }
     }
 
-    // 4. Fecha o menu lateral mobile (drawer) se aberto
     const drawer = Array.from(document.querySelectorAll("aside, div")).find((el) => {
       if (!isVisible(el)) return false;
       const r = el.getBoundingClientRect();
@@ -241,7 +237,6 @@
       }
     }
 
-    // 5. Volta para a aba anterior do histórico
     while (tabHistory.length > 0) {
       const prev = tabHistory.pop();
       if (prev && prev !== currentTab && clickTabByKey(prev)) {
@@ -249,7 +244,6 @@
       }
     }
 
-    // 6. Se não estiver no Painel principal, volta para o Painel
     if (currentTab !== "painel" && clickTabByKey("painel")) {
       return "handled";
     }
@@ -343,26 +337,36 @@
     d.querySelector("#vu-dl-login-cta").onclick = focusLogin;
   };
 
-  const addDownloadBtn = () => {
-    let b = document.getElementById("vu-dl-btn");
-    const isMobile = window.innerWidth <= 768;
-    if (!b) {
-      b = document.createElement("button");
-      b.id = "vu-dl-btn";
-      b.type = "button";
-      b.textContent = "Baixar App";
-      b.onclick = openDownloadPage;
-      document.body.appendChild(b);
-    }
-    b.style.cssText = "position:fixed;" + (isMobile ? "bottom:82px;right:12px;padding:6px 11px;font-size:11px;" : "bottom:14px;right:14px;padding:8px 14px;font-size:12px;") + "z-index:35;border-radius:8px;border:1px solid #93c5fd;background:linear-gradient(90deg,#002466,#0055b8);color:#fff;font-weight:800;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.35);cursor:pointer;";
-  };
-
-  /* -------------------- ESTILOS SEGUROS (SEM FORCAR DISPLAY NO MODAL) -------------------- */
-  const ensureAdminStyles = () => {
+  /* -------------------- ESTILOS VIA CSS PURO (SEM LOOP DE STYLE) -------------------- */
+  const ensureStyles = () => {
     if (document.getElementById("vu-admin-sidebar-css")) return;
     const st = document.createElement("style");
     st.id = "vu-admin-sidebar-css";
     st.textContent = `
+      #vu-dl-btn {
+        position: fixed;
+        bottom: 14px;
+        right: 14px;
+        padding: 8px 14px;
+        font-size: 12px;
+        z-index: 35;
+        border-radius: 8px;
+        border: 1px solid #93c5fd;
+        background: linear-gradient(90deg, #002466, #0055b8);
+        color: #ffffff;
+        font-weight: 800;
+        font-family: system-ui, -apple-system, sans-serif;
+        box-shadow: 0 8px 20px rgba(0, 51, 153, .35);
+        cursor: pointer;
+      }
+      @media (max-width: 768px) {
+        #vu-dl-btn {
+          bottom: 82px;
+          right: 12px;
+          padding: 6px 11px;
+          font-size: 11px;
+        }
+      }
       .vu-adm-card-host {
         max-width: 1080px !important;
         width: 95vw !important;
@@ -469,6 +473,16 @@
       }
     `;
     document.head.appendChild(st);
+  };
+
+  const addDownloadBtnOnce = () => {
+    if (document.getElementById("vu-dl-btn")) return;
+    const b = document.createElement("button");
+    b.id = "vu-dl-btn";
+    b.type = "button";
+    b.textContent = "Baixar App";
+    b.onclick = openDownloadPage;
+    document.body.appendChild(b);
   };
 
   /* -------------------- RENDERIZADORES DAS ABAS EXTRAS -------------------- */
@@ -690,7 +704,7 @@
 
   /* -------------------- TRANSFORMA SOMENTE O MODAL QUANDO VISIVEL -------------------- */
   const upgradeAdminModal = () => {
-    ensureAdminStyles();
+    if (document.getElementById("vu-adm-inner")) return;
 
     const titleEl = Array.from(document.querySelectorAll("h1, h2, h3, h4, span, p, div")).find((el) => {
       if (!isVisible(el)) return false;
@@ -837,15 +851,37 @@
     });
   };
 
-  const boot = () => {
-    addDownloadBtn();
-    upgradeAdminModal();
-    const obs = new MutationObserver(() => {
-      addDownloadBtn();
+  let upgradeTimer = null;
+  const scheduleUpgrade = (delay = 120) => {
+    if (upgradeTimer || document.getElementById("vu-adm-inner")) return;
+    upgradeTimer = setTimeout(() => {
+      upgradeTimer = null;
       upgradeAdminModal();
+    }, delay);
+  };
+
+  const boot = () => {
+    ensureStyles();
+    addDownloadBtnOnce();
+    scheduleUpgrade(150);
+
+    document.addEventListener("click", () => {
+      scheduleUpgrade(100);
+      setTimeout(() => scheduleUpgrade(280), 280);
+    }, true);
+
+    window.addEventListener("hashchange", () => scheduleUpgrade(120));
+
+    const obs = new MutationObserver((mutations) => {
+      if (document.getElementById("vu-adm-inner")) return;
+      for (let i = 0; i < mutations.length; i++) {
+        const tgt = mutations[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        scheduleUpgrade(140);
+        break;
+      }
     });
-    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
-    window.addEventListener("resize", addDownloadBtn);
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
