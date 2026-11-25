@@ -1,8 +1,10 @@
 /**
  * ============================================================================
- * VOITH METROLOGIA — Upgrade Suite v6.1 (UX & Ergonomia Edition)
- * - Fix: Botão "Tipos de Login & Hierarquia" sempre renderiza a tela no painel
- *   direito do Admin (com fallback de sessão/RPC e cadastro local/nuvem)
+ * VOITH METROLOGIA — Upgrade Suite v6.2 (Operação de Campo & Planejamento)
+ * - Pré-cadastro de Lote para Envio Externo & Romaneio (totais, setores, armários)
+ * - Alerta de Proximidade de Vencimento por Janela de Dias (7, 15, 30, 60 dias)
+ * - Painel de Pendências do Colaborador (cautelas abertas, prazos e troca de turno)
+ * - Mantém Menu Lateral PC / Bottom Sheet Mobile, Toasts, Command Palette e RBAC
  * ============================================================================
  */
 (function (global) {
@@ -209,11 +211,28 @@
       return global.VoithDB.state.instruments;
     }
     if (Array.isArray(global.instruments)) return global.instruments;
+    if (Array.isArray(global.DB)) return global.DB;
     return [];
   }
 
   function getInstrumentCode(i) {
     return String(i?.code || i?.tag || i?.codigo || i?.Instrumento || i?.id || '').trim().toUpperCase();
+  }
+
+  function getInstrumentDesc(i) {
+    return String(i?.desc || i?.descricao || i?.['Descrição'] || i?.instrumentDesc || i?.nome || 'Sem descrição').trim();
+  }
+
+  function getInstrumentSector(i) {
+    return String(i?.sector || i?.setor || i?.Setor || i?.area || 'Sem setor').trim();
+  }
+
+  function getInstrumentCabinet(i) {
+    return String(i?.armario || i?.cabinet || i?.local || i?.Armário || i?.location || 'Sem armário').trim();
+  }
+
+  function getInstrumentDueRaw(i) {
+    return i?.proxCal || i?.proxima_calibracao || i?.dueDate || i?.['Data da Próxima Calibração'] || i?.vencimento || '';
   }
 
   function findInstrumentByTag(tag) {
@@ -237,7 +256,7 @@
     if (!inst) return { blocked: false, reason: '', statusLabel: 'Não localizado' };
     const rawStatus = String(inst.status || inst.Status || inst.situacao || '').trim();
     const nStatus = normText(rawStatus);
-    const dueRaw = inst.proxCal || inst.proxima_calibracao || inst.dueDate || inst['Data da Próxima Calibração'] || '';
+    const dueRaw = getInstrumentDueRaw(inst);
     const dueDate = parseFlexDate(dueRaw);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -270,6 +289,29 @@
     return 'Outros';
   }
 
+  function getOpenCustodies() {
+    let rawList = [];
+    if (typeof state.cfg.getCustodies === 'function') {
+      const c = state.cfg.getCustodies();
+      if (Array.isArray(c)) rawList = c;
+    }
+    if (!rawList.length && global.VoithDB && global.VoithDB.state && Array.isArray(global.VoithDB.state.custodies)) {
+      rawList = global.VoithDB.state.custodies;
+    }
+    if (!rawList.length && Array.isArray(global.custodies)) rawList = global.custodies;
+
+    return rawList.filter((item) => {
+      if (!item) return false;
+      if (item.returned === true || item.returned_at || item.data_retorno || item.return_date) return false;
+      const st = normText(item.status || item.situacao || item.estado || '');
+      if (st.includes('devolvid') || st.includes('encerrad') || st.includes('finalizad') || st.includes('fechad')) return false;
+      return true;
+    });
+  }
+
+  /* -------------------------------------------------------------------------
+   * Toasts, Confirmação e Skeleton Loaders
+   * ------------------------------------------------------------------------- */
   function showToast(message, type = 'info', duration = 3800) {
     let box = document.getElementById('vu-toast-stack');
     if (!box) {
@@ -384,6 +426,9 @@
     `;
   }
 
+  /* -------------------------------------------------------------------------
+   * Estilos
+   * ------------------------------------------------------------------------- */
   function injectStyles() {
     let style = document.getElementById('voith-upgrade-styles');
     if (!style) {
@@ -432,16 +477,15 @@
 
       @media (min-width: 769px) {
         #adminUsersModal > div {
-          max-width: 1080px !important;
-          width: min(94vw, 1080px) !important;
-          transition: transform 0.22s var(--vu-ease), opacity 0.22s ease;
+          max-width: 1120px !important;
+          width: min(95vw, 1120px) !important;
         }
         .vu-admin-workspace {
           display: flex !important;
           flex-direction: row !important;
           align-items: stretch !important;
-          min-height: 520px !important;
-          max-height: 76vh !important;
+          min-height: 540px !important;
+          max-height: 78vh !important;
           padding: 0 !important;
           gap: 0 !important;
         }
@@ -449,8 +493,8 @@
           display: flex !important;
           flex-direction: column !important;
           flex-wrap: nowrap !important;
-          width: 242px !important;
-          min-width: 242px !important;
+          width: 248px !important;
+          min-width: 248px !important;
           flex-shrink: 0 !important;
           padding: 14px 10px !important;
           gap: 4px !important;
@@ -473,11 +517,9 @@
           font-size: 13px !important;
           line-height: 1.3 !important;
           white-space: normal !important;
-          transition: background 0.16s ease, color 0.16s ease, transform 0.12s ease !important;
+          transition: background 0.16s ease, color 0.16s ease !important;
         }
-        .vu-admin-sidebar > button:hover {
-          background: rgba(2, 132, 199, 0.12) !important;
-        }
+        .vu-admin-sidebar > button:hover { background: rgba(2, 132, 199, 0.12) !important; }
         .vu-admin-sidebar > button.vu-sidebar-active {
           background: rgba(2, 132, 199, 0.18) !important;
           color: #0284c7 !important;
@@ -578,7 +620,7 @@
       .vu-backdrop.vu-open { opacity: 1; }
 
       .vu-modal {
-        width: 100%; max-width: 900px;
+        width: 100%; max-width: 960px;
         background: var(--vu-bg); color: var(--vu-text);
         border: 1px solid var(--vu-border); border-radius: 16px;
         overflow: hidden;
@@ -588,7 +630,7 @@
         transition: transform 0.22s var(--vu-ease);
       }
       .vu-backdrop.vu-open .vu-modal { transform: translateY(0) scale(1); }
-      .vu-modal-sm { max-width: 640px; }
+      .vu-modal-sm { max-width: 660px; }
       .vu-modal-xs { max-width: 440px; }
       .vu-sheet-handle { display: none; }
 
@@ -647,12 +689,15 @@
       .vu-btn-sm { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
       .vu-btn-primary { background: #0284c7; border-color: #0284c7; color: #fff; }
       .vu-btn-primary:hover { background: #0369a1; }
+      .vu-btn-success { background: #059669; border-color: #059669; color: #fff; }
       .vu-btn-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
       .vu-btn-warn { background: #d97706; border-color: #d97706; color: #fff; }
 
       .vu-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .vu-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-      @media (max-width: 640px) { .vu-grid-2, .vu-grid-3, .vu-perm-grid { grid-template-columns: 1fr; } }
+      .vu-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+      @media (max-width: 768px) { .vu-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 640px) { .vu-grid-2, .vu-grid-3, .vu-grid-4, .vu-perm-grid { grid-template-columns: 1fr; } }
 
       .vu-card {
         background: var(--vu-surface); border: 1px solid var(--vu-border);
@@ -689,9 +734,15 @@
       .vu-tab {
         background: transparent; border: none; color: var(--vu-muted-text); font-weight: 600;
         padding: 7px 13px; cursor: pointer; border-radius: 8px; white-space: nowrap; flex-shrink: 0;
-        transition: background 0.15s ease, color 0.15s ease;
       }
       .vu-tab.active { background: #0284c7; color: #fff; }
+
+      .vu-window-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+      .vu-win-pill {
+        padding: 6px 12px; border-radius: 999px; border: 1px solid var(--vu-border);
+        background: var(--vu-input-bg); color: var(--vu-text); font-size: 12px; font-weight: 700; cursor: pointer;
+      }
+      .vu-win-pill.active { background: #0284c7; border-color: #0284c7; color: #fff; }
 
       .vu-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
       .vu-perm-item {
@@ -700,7 +751,7 @@
         border: 1px solid var(--vu-border); cursor: pointer;
       }
       .vu-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
+      .vu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 560px; }
       .vu-table th, .vu-table td { padding: 9px 10px; border-bottom: 1px solid var(--vu-border); text-align: left; }
       .vu-table th { color: var(--vu-muted-text); font-weight: 600; }
 
@@ -708,23 +759,15 @@
       .vu-bar-fill { height: 100%; border-radius: 999px; transition: width 0.35s var(--vu-ease); }
 
       #vu-toast-stack {
-        position: fixed;
-        top: calc(16px + var(--vu-safe-top));
-        right: calc(16px + var(--vu-safe-right));
-        z-index: 10500;
-        display: flex; flex-direction: column; gap: 8px;
-        width: min(370px, calc(100vw - 28px));
-        pointer-events: none;
+        position: fixed; top: calc(16px + var(--vu-safe-top)); right: calc(16px + var(--vu-safe-right));
+        z-index: 10500; display: flex; flex-direction: column; gap: 8px;
+        width: min(370px, calc(100vw - 28px)); pointer-events: none;
       }
       .vu-toast {
-        pointer-events: auto;
-        display: flex; align-items: flex-start; gap: 10px;
-        padding: 11px 13px; border-radius: 12px;
-        font: 600 13px/1.38 system-ui, sans-serif;
-        background: var(--vu-bg); color: var(--vu-text);
-        border: 1px solid var(--vu-border);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
-        opacity: 0; transform: translateY(-10px) scale(0.97);
+        pointer-events: auto; display: flex; align-items: flex-start; gap: 10px;
+        padding: 11px 13px; border-radius: 12px; font: 600 13px/1.38 system-ui, sans-serif;
+        background: var(--vu-bg); color: var(--vu-text); border: 1px solid var(--vu-border);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28); opacity: 0; transform: translateY(-10px) scale(0.97);
         transition: opacity 0.2s ease, transform 0.22s var(--vu-ease);
       }
       .vu-toast.vu-toast-in { opacity: 1; transform: translateY(0) scale(1); }
@@ -740,55 +783,31 @@
       .vu-toast-error { border-left: 4px solid #ef4444; }
       .vu-toast-error .vu-toast-ico { background: #ef4444; }
       .vu-toast-msg { flex: 1; min-width: 0; word-break: break-word; }
-      .vu-toast-x {
-        background: transparent; border: none; color: var(--vu-muted-text);
-        font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px;
-      }
+      .vu-toast-x { background: transparent; border: none; color: var(--vu-muted-text); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 
       .vu-skel {
         border-radius: 6px;
         background: linear-gradient(90deg, var(--vu-skel-a) 25%, var(--vu-skel-b) 50%, var(--vu-skel-a) 75%);
-        background-size: 200% 100%;
-        animation: vuShimmer 1.25s infinite linear;
+        background-size: 200% 100%; animation: vuShimmer 1.25s infinite linear;
       }
-      @keyframes vuShimmer {
-        from { background-position: 200% 0; }
-        to { background-position: -200% 0; }
-      }
+      @keyframes vuShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
       .vu-cmd-box {
-        width: 100%; max-width: 620px;
-        background: var(--vu-bg); color: var(--vu-text);
-        border: 1px solid var(--vu-border); border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52);
-        transform: translateY(-8px) scale(0.985);
+        width: 100%; max-width: 620px; background: var(--vu-bg); color: var(--vu-text);
+        border: 1px solid var(--vu-border); border-radius: 16px; overflow: hidden;
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52); transform: translateY(-8px) scale(0.985);
         transition: transform 0.18s var(--vu-ease);
       }
       .vu-backdrop.vu-open .vu-cmd-box { transform: translateY(0) scale(1); }
-      .vu-cmd-head {
-        display: flex; align-items: center; gap: 10px;
-        padding: 12px 16px; border-bottom: 1px solid var(--vu-border);
-        background: var(--vu-surface);
-      }
-      .vu-cmd-input {
-        flex: 1; border: none; outline: none; background: transparent;
-        color: var(--vu-text); font-size: 14.5px; font-weight: 500;
-      }
-      .vu-cmd-kbd {
-        font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
-        border: 1px solid var(--vu-border); color: var(--vu-muted-text);
-      }
+      .vu-cmd-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--vu-border); background: var(--vu-surface); }
+      .vu-cmd-input { flex: 1; border: none; outline: none; background: transparent; color: var(--vu-text); font-size: 14.5px; font-weight: 500; }
+      .vu-cmd-kbd { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--vu-border); color: var(--vu-muted-text); }
       .vu-cmd-list { max-height: 390px; overflow-y: auto; padding: 8px; }
-      .vu-cmd-group {
-        font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-        color: var(--vu-muted-text); padding: 8px 10px 4px;
-      }
+      .vu-cmd-group { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vu-muted-text); padding: 8px 10px 4px; }
       .vu-cmd-item {
         width: 100%; border: none; background: transparent; color: var(--vu-text);
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        padding: 10px 12px; border-radius: 10px; cursor: pointer; text-align: left;
-        font-size: 13.5px; transition: background 0.12s ease;
+        padding: 10px 12px; border-radius: 10px; cursor: pointer; text-align: left; font-size: 13.5px;
       }
       .vu-cmd-item.selected, .vu-cmd-item:hover { background: rgba(2, 132, 199, 0.15); }
       .vu-cmd-item-sub { font-size: 11.5px; color: var(--vu-muted-text); }
@@ -799,14 +818,10 @@
       }
 
       .vu-sync-pill, #vu-sync-pill {
-        position: fixed !important;
-        bottom: calc(18px + var(--vu-safe-bottom)) !important;
-        right: calc(18px + var(--vu-safe-right)) !important;
-        z-index: 9500 !important;
-        display: inline-flex; align-items: center; gap: 8px;
+        position: fixed !important; bottom: calc(18px + var(--vu-safe-bottom)) !important; right: calc(18px + var(--vu-safe-right)) !important;
+        z-index: 9500 !important; display: inline-flex; align-items: center; gap: 8px;
         padding: 7px 13px; border-radius: 999px; font: 600 12px/1.2 system-ui, sans-serif;
-        box-shadow: 0 6px 18px rgba(0,0,0,.28); backdrop-filter: blur(8px);
-        user-select: none; cursor: pointer;
+        box-shadow: 0 6px 18px rgba(0,0,0,.28); backdrop-filter: blur(8px); user-select: none; cursor: pointer;
       }
       .vu-sync-busy { background: #0f2540; color: #93c5fd; border: 1px solid #1d4ed8; }
       .vu-sync-offline { background: #3b2208; color: #fcd34d; border: 1px solid #d97706; }
@@ -814,6 +829,9 @@
     `;
   }
 
+  /* -------------------------------------------------------------------------
+   * Navegação / Overlays / Voltar Android
+   * ------------------------------------------------------------------------- */
   function openOverlay({ id, element, onClose = null, closeOnBackdrop = true }) {
     closeOverlayById(id, true);
     const z = 9700 + state.modalStack.length * 10;
@@ -920,6 +938,9 @@
     setTimeout(bindCap, 3500);
   }
 
+  /* -------------------------------------------------------------------------
+   * Painel Administrativo (Sidebar PC / Bottom Sheet Celular)
+   * ------------------------------------------------------------------------- */
   function showNativeAdminPanes() {
     state.activeInlineTab = null;
     const nativeWrap = document.getElementById('vu-admin-native-panes');
@@ -1021,18 +1042,675 @@
       adminTabsBar.appendChild(btn);
     };
 
+    addSidebarTab('admTabBatchDraft', '📦 Lote & Romaneio Externo', 'text-cyan-600 dark:text-cyan-300', () => openBatchDraftModal(true));
+    addSidebarTab('admTabDueWindow', '⏳ Vencimentos (7/15/30/60d)', 'text-rose-600 dark:text-rose-300', () => openDueWindowModal(true));
+    addSidebarTab('admTabHolderPend', '👷 Pendências Colaborador', 'text-teal-600 dark:text-teal-300', () => openHolderPendenciesModal(true));
     addSidebarTab('admTabRbac', '🔐 Tipos de Login & Hierarquia', 'text-amber-600 dark:text-amber-300', () => openRbacAdminModal(false, 'roles'));
     addSidebarTab('admTabSlaInline', '📊 SLA, Custos & Deriva', 'text-indigo-600 dark:text-indigo-300', () => openLabSlaModal(true));
     addSidebarTab('admTabAudit', '🛡️ Auditoria & Governança', 'text-sky-600 dark:text-sky-300', () => openAuditLogsModal(true));
     addSidebarTab('admTabSplit', '🧩 Modularizar HTML', 'text-emerald-600 dark:text-emerald-300', () => openModularizerModal(true));
   }
 
+  /* -------------------------------------------------------------------------
+   * FUNCIONALIDADE 1: Pré-cadastro de Lote para Envio Externo & Romaneio
+   * ------------------------------------------------------------------------- */
+  const BATCH_STORAGE_KEY = 'voith_external_batch_draft_v1';
+
+  function loadBatchDraft() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(BATCH_STORAGE_KEY) || 'null');
+      if (raw && Array.isArray(raw.tags)) {
+        return {
+          loteName: String(raw.loteName || `LOTE-${new Date().toISOString().slice(0, 10)}`),
+          labName: String(raw.labName || ''),
+          expectedReturn: String(raw.expectedReturn || ''),
+          tags: Array.from(new Set(raw.tags.map((t) => String(t || '').trim().toUpperCase()).filter(Boolean)))
+        };
+      }
+    } catch (_) {}
+    return {
+      loteName: `LOTE-${new Date().toISOString().slice(0, 10)}`,
+      labName: '',
+      expectedReturn: '',
+      tags: []
+    };
+  }
+
+  function saveBatchDraft(draft) {
+    try { localStorage.setItem(BATCH_STORAGE_KEY, JSON.stringify(draft)); } catch (_) {}
+  }
+
+  function buildRomaneioText(draft, items) {
+    const sectors = Array.from(new Set(items.map((x) => x.sector).filter(Boolean)));
+    const cabinets = Array.from(new Set(items.map((x) => x.cabinet).filter(Boolean)));
+    const lines = [
+      'ROMANEIO DE SEPARAÇÃO — ENVIO PARA CALIBRAÇÃO EXTERNA (VOITH)',
+      `Lote: ${draft.loteName || '—'}`,
+      `Laboratório: ${draft.labName || 'A definir'}`,
+      `Previsão de Retorno: ${draft.expectedReturn || '—'}`,
+      `Total de Instrumentos: ${items.length}`,
+      `Setores de Origem: ${sectors.join(', ') || '—'}`,
+      `Armários / Locais: ${cabinets.join(', ') || '—'}`,
+      '------------------------------------------------------------',
+      ...items.map((x, idx) => `${idx + 1}. [${x.code}] ${x.desc} | Setor: ${x.sector} | Armário: ${x.cabinet} | Validade: ${x.due || '—'}`)
+    ];
+    return lines.join('\n');
+  }
+
+  function mountBatchDraftView(container) {
+    let draft = loadBatchDraft();
+    const allInsts = getAllInstruments();
+
+    function enrichTags(tags) {
+      return tags.map((code) => {
+        const inst = findInstrumentByTag(code);
+        return {
+          code,
+          desc: inst ? getInstrumentDesc(inst) : 'Instrumento não localizado no cadastro',
+          sector: inst ? getInstrumentSector(inst) : '—',
+          cabinet: inst ? getInstrumentCabinet(inst) : '—',
+          due: inst ? getInstrumentDueRaw(inst) : '—'
+        };
+      });
+    }
+
+    function render() {
+      const items = enrichTags(draft.tags);
+      const sectors = Array.from(new Set(items.map((x) => x.sector).filter((s) => s && s !== '—')));
+      const cabinets = Array.from(new Set(items.map((x) => x.cabinet).filter((c) => c && c !== '—')));
+
+      container.innerHTML = `
+        <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Pré-cadastro de Lote para Envio Externo & Romaneio</h3>
+        <div class="vu-card" style="margin-bottom:14px;">
+          <div class="vu-grid-3" style="margin-bottom:10px;">
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Identificação do Lote</label>
+              <input id="vu-batch-name" class="vu-input" value="${escapeHtml(draft.loteName)}" placeholder="Ex: LOTE-TURBO-01" />
+            </div>
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Laboratório de Destino</label>
+              <input id="vu-batch-lab" class="vu-input" value="${escapeHtml(draft.labName)}" placeholder="Ex: Laboratório RBC / Voith" />
+            </div>
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Previsão de Retorno</label>
+              <input id="vu-batch-ret" type="date" class="vu-input" value="${escapeHtml(draft.expectedReturn)}" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input id="vu-batch-tag-input" list="vu-batch-inst-datalist" class="vu-input" style="flex:1;min-width:200px;" placeholder="Digite ou escolha uma TAG para adicionar ao lote..." />
+            <datalist id="vu-batch-inst-datalist">
+              ${allInsts.slice(0, 500).map((i) => `<option value="${escapeHtml(getInstrumentCode(i))}">${escapeHtml(getInstrumentDesc(i))} (${escapeHtml(getInstrumentSector(i))})</option>`).join('')}
+            </datalist>
+            <button type="button" id="vu-batch-add-btn" class="vu-btn vu-btn-primary">+ Adicionar ao Lote</button>
+            <button type="button" id="vu-batch-due30-btn" class="vu-btn vu-btn-warn">Incluir Vencendo em 30d</button>
+          </div>
+        </div>
+
+        <div class="vu-grid-3" style="margin-bottom:14px;">
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Quantidade no Lote</div>
+            <div style="font-size:22px;font-weight:700;color:#0284c7;">${items.length}</div>
+          </div>
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Setores de Origem (${sectors.length})</div>
+            <div style="font-size:12.5px;font-weight:700;margin-top:4px;">${sectors.length ? escapeHtml(sectors.join(', ')) : '—'}</div>
+          </div>
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Armários / Locais (${cabinets.length})</div>
+            <div style="font-size:12.5px;font-weight:700;margin-top:4px;">${cabinets.length ? escapeHtml(cabinets.join(', ')) : '—'}</div>
+          </div>
+        </div>
+
+        <div class="vu-table-wrap" style="margin-bottom:14px;">
+          <table class="vu-table">
+            <thead><tr><th>TAG</th><th>Descrição</th><th>Setor</th><th>Armário / Local</th><th>Validade</th><th>Ação</th></tr></thead>
+            <tbody>
+              ${items.length ? items.map((x) => `
+                <tr>
+                  <td><strong>${escapeHtml(x.code)}</strong></td>
+                  <td>${escapeHtml(x.desc)}</td>
+                  <td><span class="vu-badge">${escapeHtml(x.sector)}</span></td>
+                  <td>${escapeHtml(x.cabinet)}</td>
+                  <td>${escapeHtml(x.due || '—')}</td>
+                  <td><button type="button" class="vu-btn vu-btn-sm vu-btn-danger vu-batch-rm" data-code="${escapeHtml(x.code)}">Remover</button></td>
+                </tr>
+              `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--vu-muted-text);">Nenhum instrumento adicionado ao lote ainda.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="vu-batch-copy-rom" class="vu-btn">📋 Copiar Romaneio</button>
+            <button type="button" id="vu-batch-print-rom" class="vu-btn">🖨️ Imprimir Romaneio</button>
+            <button type="button" id="vu-batch-clear-btn" class="vu-btn vu-btn-danger">Limpar Lote</button>
+          </div>
+          <button type="button" id="vu-batch-send-btn" class="vu-btn vu-btn-success">🚀 Enviar Lote para Calibração</button>
+        </div>
+      `;
+
+      const syncMetaFields = () => {
+        draft.loteName = container.querySelector('#vu-batch-name')?.value.trim() || draft.loteName;
+        draft.labName = container.querySelector('#vu-batch-lab')?.value.trim() || '';
+        draft.expectedReturn = container.querySelector('#vu-batch-ret')?.value || '';
+        saveBatchDraft(draft);
+      };
+
+      container.querySelector('#vu-batch-name')?.addEventListener('change', syncMetaFields);
+      container.querySelector('#vu-batch-lab')?.addEventListener('change', syncMetaFields);
+      container.querySelector('#vu-batch-ret')?.addEventListener('change', syncMetaFields);
+
+      container.querySelector('#vu-batch-add-btn')?.addEventListener('click', () => {
+        syncMetaFields();
+        const inp = container.querySelector('#vu-batch-tag-input');
+        const code = String(inp?.value || '').trim().toUpperCase();
+        if (!code) return showToast('Informe ou selecione uma TAG para adicionar.', 'warn');
+        if (!draft.tags.includes(code)) draft.tags.push(code);
+        saveBatchDraft(draft);
+        render();
+        showToast(`TAG ${code} adicionada ao lote.`, 'success', 2000);
+      });
+
+      container.querySelector('#vu-batch-due30-btn')?.addEventListener('click', () => {
+        syncMetaFields();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const limit = new Date(today.getTime() + 30 * 86400000);
+        let added = 0;
+        for (const inst of getAllInstruments()) {
+          const d = parseFlexDate(getInstrumentDueRaw(inst));
+          if (d && d <= limit) {
+            const c = getInstrumentCode(inst);
+            if (c && !draft.tags.includes(c)) {
+              draft.tags.push(c);
+              added += 1;
+            }
+          }
+        }
+        saveBatchDraft(draft);
+        render();
+        showToast(added ? `${added} instrumento(s) incluído(s) no lote.` : 'Nenhum instrumento vencendo em até 30 dias encontrado.', added ? 'success' : 'info');
+      });
+
+      container.querySelectorAll('.vu-batch-rm').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const c = btn.dataset.code;
+          draft.tags = draft.tags.filter((t) => t !== c);
+          saveBatchDraft(draft);
+          render();
+        });
+      });
+
+      container.querySelector('#vu-batch-clear-btn')?.addEventListener('click', async () => {
+        if (!draft.tags.length) return;
+        const ok = await showConfirm({
+          title: 'Limpar pré-cadastro de lote?',
+          message: `Remover os ${draft.tags.length} instrumento(s) desta lista de separação?`,
+          confirmText: 'Limpar',
+          danger: true
+        });
+        if (!ok) return;
+        draft.tags = [];
+        saveBatchDraft(draft);
+        render();
+        showToast('Lista de separação limpa.', 'info', 2000);
+      });
+
+      container.querySelector('#vu-batch-copy-rom')?.addEventListener('click', () => {
+        syncMetaFields();
+        const text = buildRomaneioText(draft, enrichTags(draft.tags));
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => showToast('Romaneio copiado para a área de transferência!', 'success'));
+        } else {
+          showToast('Romaneio preparado.', 'info');
+        }
+      });
+
+      container.querySelector('#vu-batch-print-rom')?.addEventListener('click', () => {
+        syncMetaFields();
+        const text = buildRomaneioText(draft, enrichTags(draft.tags));
+        const win = global.open('', '_blank', 'width=760,height=640');
+        if (win) {
+          win.document.write(`<pre style="font:13px/1.5 monospace;padding:24px;white-space:pre-wrap;">${escapeHtml(text)}</pre>`);
+          win.document.close();
+          win.print();
+        } else {
+          showToast('Permita popups para imprimir o romaneio.', 'warn');
+        }
+      });
+
+      container.querySelector('#vu-batch-send-btn')?.addEventListener('click', async () => {
+        syncMetaFields();
+        if (!draft.tags.length) return showToast('Adicione ao menos um instrumento antes de enviar o lote.', 'warn');
+        const ok = await showConfirm({
+          title: 'Confirmar envio do lote externo?',
+          message: `Enviar ${draft.tags.length} instrumento(s) do lote "${draft.loteName}" para calibração externa${draft.labName ? ` (${draft.labName})` : ''}?`,
+          confirmText: 'Confirmar envio'
+        });
+        if (!ok) return;
+
+        if (typeof global.openBatchSendModal === 'function') {
+          global.openBatchSendModal(draft.tags.slice());
+          return;
+        }
+
+        // Atualiza status local caso a função nativa de envio em lote não tenha assinatura com array
+        let updatedCount = 0;
+        for (const tag of draft.tags) {
+          const inst = findInstrumentByTag(tag);
+          if (inst) {
+            if ('status' in inst) inst.status = 'EM CALIBRAÇÃO';
+            if ('Status' in inst) inst.Status = 'EM CALIBRAÇÃO';
+            updatedCount += 1;
+          }
+        }
+        if (typeof global.saveDB === 'function') global.saveDB();
+        if (typeof global.renderAll === 'function') global.renderAll();
+        if (typeof global.scheduleCloudSync === 'function') global.scheduleCloudSync();
+
+        draft.tags = [];
+        saveBatchDraft(draft);
+        render();
+        showToast(`Lote processado (${updatedCount} instrumento(s) atualizado(s)).`, 'success');
+      });
+    }
+
+    render();
+  }
+
+  function openBatchDraftModal(preferInline = true) {
+    if (preferInline && document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabBatchDraft', (stage) => {
+        if (stage) mountBatchDraftView(stage);
+      });
+      return;
+    }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-header">
+          <div class="vu-header-left">
+            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
+            <h3>Pré-cadastro de Lote & Romaneio Externo</h3>
+          </div>
+          <button type="button" class="vu-close">&times;</button>
+        </div>
+        <div class="vu-body" id="vu-batch-standalone"></div>
+      </div>
+    `;
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-batch-modal');
+    });
+    openOverlay({ id: 'vu-batch-modal', element: backdrop });
+    mountBatchDraftView(backdrop.querySelector('#vu-batch-standalone'));
+  }
+
+  /* -------------------------------------------------------------------------
+   * FUNCIONALIDADE 2: Alerta de Proximidade de Vencimento por Janela (7/15/30/60d)
+   * ------------------------------------------------------------------------- */
+  function mountDueWindowView(container, defaultDays = 30) {
+    let selectedDays = defaultDays;
+    let sectorFilter = '';
+    let cabinetFilter = '';
+
+    const allInsts = getAllInstruments();
+    const sectors = Array.from(new Set(allInsts.map(getInstrumentSector).filter((s) => s && s !== 'Sem setor'))).sort();
+    const cabinets = Array.from(new Set(allInsts.map(getInstrumentCabinet).filter((c) => c && c !== 'Sem armário'))).sort();
+
+    function computeFiltered() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const rows = [];
+
+      for (const inst of allInsts) {
+        const sec = getInstrumentSector(inst);
+        const cab = getInstrumentCabinet(inst);
+        if (sectorFilter && sec !== sectorFilter) continue;
+        if (cabinetFilter && cab !== cabinetFilter) continue;
+
+        const dueDate = parseFlexDate(getInstrumentDueRaw(inst));
+        if (!dueDate) continue;
+        dueDate.setHours(0, 0, 0, 0);
+
+        const diffDays = Math.round((dueDate.getTime() - today.getTime()) / 86400000);
+        if (diffDays <= selectedDays) {
+          rows.push({
+            code: getInstrumentCode(inst),
+            desc: getInstrumentDesc(inst),
+            sector: sec,
+            cabinet: cab,
+            dueDate,
+            dueFmt: dueDate.toLocaleDateString('pt-BR'),
+            diffDays
+          });
+        }
+      }
+
+      return rows.sort((a, b) => a.diffDays - b.diffDays);
+    }
+
+    function render() {
+      const rows = computeFiltered();
+      const vencidos = rows.filter((r) => r.diffDays < 0).length;
+      const urgentes7 = rows.filter((r) => r.diffDays >= 0 && r.diffDays <= 7).length;
+
+      container.innerHTML = `
+        <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Alerta de Proximidade de Vencimento</h3>
+        <div class="vu-card" style="margin-bottom:14px;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <div style="font-size:11.5px;color:var(--vu-muted-text);margin-bottom:6px;">Janela de Dias</div>
+            <div class="vu-window-pills">
+              ${[7, 15, 30, 60].map((d) => `
+                <button type="button" class="vu-win-pill ${selectedDays === d ? 'active' : ''}" data-days="${d}">Próximos ${d} dias</button>
+              `).join('')}
+            </div>
+          </div>
+          <div class="vu-grid-2">
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Filtrar por Setor</label>
+              <select id="vu-due-sector" class="vu-select">
+                <option value="">Todos os setores</option>
+                ${sectors.map((s) => `<option value="${escapeHtml(s)}" ${sectorFilter === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Filtrar por Armário / Local</label>
+              <select id="vu-due-cabinet" class="vu-select">
+                <option value="">Todos os armários</option>
+                ${cabinets.map((c) => `<option value="${escapeHtml(c)}" ${cabinetFilter === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="vu-grid-3" style="margin-bottom:14px;">
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Na Janela (≤ ${selectedDays}d)</div>
+            <div style="font-size:22px;font-weight:700;color:#0284c7;">${rows.length}</div>
+          </div>
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Vencidos</div>
+            <div style="font-size:22px;font-weight:700;color:#dc2626;">${vencidos}</div>
+          </div>
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Críticos (0 a 7 dias)</div>
+            <div style="font-size:22px;font-weight:700;color:#d97706;">${urgentes7}</div>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+          <button type="button" id="vu-due-to-batch" class="vu-btn vu-btn-primary vu-btn-sm">+ Enviar Selecionados (${rows.length}) ao Pré-Lote</button>
+        </div>
+
+        <div class="vu-table-wrap">
+          <table class="vu-table">
+            <thead><tr><th>Prazo</th><th>TAG</th><th>Descrição</th><th>Setor</th><th>Armário</th><th>Validade</th></tr></thead>
+            <tbody>
+              ${rows.length ? rows.map((r) => {
+                const badge = r.diffDays < 0
+                  ? `<span class="vu-badge vu-badge-red">Vencido há ${Math.abs(r.diffDays)}d</span>`
+                  : (r.diffDays <= 7
+                    ? `<span class="vu-badge vu-badge-amber">Em ${r.diffDays}d</span>`
+                    : `<span class="vu-badge">Em ${r.diffDays}d</span>`);
+                return `
+                  <tr>
+                    <td>${badge}</td>
+                    <td><strong>${escapeHtml(r.code)}</strong></td>
+                    <td>${escapeHtml(r.desc)}</td>
+                    <td>${escapeHtml(r.sector)}</td>
+                    <td>${escapeHtml(r.cabinet)}</td>
+                    <td>${escapeHtml(r.dueFmt)}</td>
+                  </tr>
+                `;
+              }).join('') : `<tr><td colspan="6" style="text-align:center;color:var(--vu-muted-text);">Nenhum instrumento vencendo nos próximos ${selectedDays} dias para este filtro.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.querySelectorAll('.vu-win-pill').forEach((p) => {
+        p.addEventListener('click', () => {
+          selectedDays = Number(p.dataset.days);
+          haptic('light');
+          render();
+        });
+      });
+
+      container.querySelector('#vu-due-sector')?.addEventListener('change', (e) => {
+        sectorFilter = e.target.value;
+        render();
+      });
+
+      container.querySelector('#vu-due-cabinet')?.addEventListener('change', (e) => {
+        cabinetFilter = e.target.value;
+        render();
+      });
+
+      container.querySelector('#vu-due-to-batch')?.addEventListener('click', () => {
+        if (!rows.length) return showToast('Nenhum instrumento listado para enviar ao lote.', 'info');
+        const draft = loadBatchDraft();
+        let added = 0;
+        for (const r of rows) {
+          if (r.code && !draft.tags.includes(r.code)) {
+            draft.tags.push(r.code);
+            added += 1;
+          }
+        }
+        saveBatchDraft(draft);
+        showToast(`${added} instrumento(s) adicionado(s) ao pré-lote externo.`, 'success');
+        openBatchDraftModal(true);
+      });
+    }
+
+    render();
+  }
+
+  function openDueWindowModal(preferInline = true, defaultDays = 30) {
+    if (preferInline && document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabDueWindow', (stage) => {
+        if (stage) mountDueWindowView(stage, defaultDays);
+      });
+      return;
+    }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-header">
+          <div class="vu-header-left">
+            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
+            <h3>Alerta de Proximidade de Vencimento</h3>
+          </div>
+          <button type="button" class="vu-close">&times;</button>
+        </div>
+        <div class="vu-body" id="vu-due-standalone"></div>
+      </div>
+    `;
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-due-modal');
+    });
+    openOverlay({ id: 'vu-due-modal', element: backdrop });
+    mountDueWindowView(backdrop.querySelector('#vu-due-standalone'), defaultDays);
+  }
+
+  /* -------------------------------------------------------------------------
+   * FUNCIONALIDADE 3: Painel de Pendências do Colaborador
+   * ------------------------------------------------------------------------- */
+  function mountHolderPendenciesView(container) {
+    let query = '';
+    let sectorFilter = '';
+
+    function buildGroups() {
+      const openList = getOpenCustodies();
+      const map = new Map();
+      const now = Date.now();
+
+      for (const c of openList) {
+        const holderName = String(c.requester_name || c.holder_name || c.responsavel || c.colaborador || c.user || 'Colaborador não identificado').trim();
+        const matricula = String(c.requester_matricula || c.matricula || c.holder_matricula || '—').trim();
+        const sector = String(c.requester_setor || c.setor || c.holder_setor || '—').trim();
+        const tag = String(c.instrument_tag || c.code || c.tag || c.codigo || '—').trim().toUpperCase();
+        const inst = findInstrumentByTag(tag);
+        const desc = inst ? getInstrumentDesc(inst) : String(c.desc || c.descricao || 'Instrumento em cautela');
+        const dueRaw = c.due_date || c.prazo || c.expected_return || c.data_prevista || c.created_at || c.data || '';
+        const dueDate = parseFlexDate(dueRaw);
+        const isOverdue = Boolean(dueDate && dueDate.getTime() < now);
+
+        const key = `${holderName.toLowerCase()}|${matricula.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, { holderName, matricula, sector, items: [], overdueCount: 0 });
+        }
+        const grp = map.get(key);
+        if (grp.sector === '—' && sector !== '—') grp.sector = sector;
+        if (isOverdue) grp.overdueCount += 1;
+        grp.items.push({
+          tag,
+          desc,
+          sector,
+          dueFmt: dueDate ? dueDate.toLocaleDateString('pt-BR') : (dueRaw || 'Em aberto'),
+          isOverdue
+        });
+      }
+
+      const groups = Array.from(map.values());
+      const allSectors = Array.from(new Set(groups.map((g) => g.sector).filter((s) => s && s !== '—'))).sort();
+
+      const filtered = groups.filter((g) => {
+        if (sectorFilter && g.sector !== sectorFilter) return false;
+        if (!query) return true;
+        const q = normText(query);
+        const hay = normText(`${g.holderName} ${g.matricula} ${g.sector} ${g.items.map((i) => `${i.tag} ${i.desc}`).join(' ')}`);
+        return hay.includes(q);
+      }).sort((a, b) => b.items.length - a.items.length);
+
+      return { filtered, allSectors, totalOpen: openList.length };
+    }
+
+    function render() {
+      const { filtered, allSectors, totalOpen } = buildGroups();
+
+      container.innerHTML = `
+        <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Painel de Pendências do Colaborador</h3>
+        <div class="vu-card" style="margin-bottom:14px;">
+          <div class="vu-grid-2">
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Buscar Técnico / Matrícula / TAG</label>
+              <input id="vu-pend-search" class="vu-input" value="${escapeHtml(query)}" placeholder="Ex: Pablo, matrícula ou TAG..." />
+            </div>
+            <div>
+              <label style="font-size:11.5px;color:var(--vu-muted-text);display:block;margin-bottom:4px;">Filtrar por Setor</label>
+              <select id="vu-pend-sector" class="vu-select">
+                <option value="">Todos os setores</option>
+                ${allSectors.map((s) => `<option value="${escapeHtml(s)}" ${sectorFilter === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="vu-grid-2" style="margin-bottom:14px;">
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Colaboradores com Pendências</div>
+            <div style="font-size:22px;font-weight:700;color:#0284c7;">${filtered.length}</div>
+          </div>
+          <div class="vu-card">
+            <div style="font-size:11px;color:var(--vu-muted-text);">Cautelas em Aberto</div>
+            <div style="font-size:22px;font-weight:700;color:#d97706;">${totalOpen}</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${filtered.length ? filtered.map((g) => `
+            <div class="vu-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                <div>
+                  <strong style="font-size:14px;">${escapeHtml(g.holderName)}</strong>
+                  <span class="vu-badge" style="margin-left:6px;">Mat. ${escapeHtml(g.matricula)}</span>
+                  <span style="font-size:12px;color:var(--vu-muted-text);margin-left:6px;">• ${escapeHtml(g.sector)}</span>
+                </div>
+                <div>
+                  <span class="vu-badge ${g.overdueCount > 0 ? 'vu-badge-red' : 'vu-badge-amber'}">${g.items.length} instrumento(s)</span>
+                </div>
+              </div>
+              <div class="vu-table-wrap">
+                <table class="vu-table" style="min-width:420px;">
+                  <thead><tr><th>TAG</th><th>Instrumento</th><th>Prazo / Registro</th></tr></thead>
+                  <tbody>
+                    ${g.items.map((it) => `
+                      <tr>
+                        <td><strong>${escapeHtml(it.tag)}</strong></td>
+                        <td>${escapeHtml(it.desc)}</td>
+                        <td>${it.isOverdue ? `<span class="vu-badge vu-badge-red">${escapeHtml(it.dueFmt)}</span>` : escapeHtml(it.dueFmt)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `).join('') : `<div class="vu-card" style="text-align:center;color:var(--vu-muted-text);padding:24px;">Nenhuma cautela em aberto encontrada para este filtro.</div>`}
+        </div>
+      `;
+
+      const sInp = container.querySelector('#vu-pend-search');
+      if (sInp) {
+        sInp.addEventListener('input', debounce((e) => {
+          query = e.target.value;
+          render();
+        }, 140));
+      }
+
+      container.querySelector('#vu-pend-sector')?.addEventListener('change', (e) => {
+        sectorFilter = e.target.value;
+        render();
+      });
+    }
+
+    render();
+  }
+
+  function openHolderPendenciesModal(preferInline = true) {
+    if (preferInline && document.getElementById('adminUsersModal')) {
+      activateInlineAdminStage('admTabHolderPend', (stage) => {
+        if (stage) mountHolderPendenciesView(stage);
+      });
+      return;
+    }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'vu-backdrop';
+    backdrop.innerHTML = `
+      <div class="vu-modal">
+        <div class="vu-sheet-handle"></div>
+        <div class="vu-header">
+          <div class="vu-header-left">
+            <button type="button" class="vu-btn vu-btn-sm vu-close-btn">&larr; Voltar</button>
+            <h3>Painel de Pendências do Colaborador</h3>
+          </div>
+          <button type="button" class="vu-close">&times;</button>
+        </div>
+        <div class="vu-body" id="vu-pend-standalone"></div>
+      </div>
+    `;
+    backdrop.querySelectorAll('.vu-close, .vu-close-btn').forEach((b) => {
+      b.onclick = () => closeOverlayById('vu-pend-modal');
+    });
+    openOverlay({ id: 'vu-pend-modal', element: backdrop });
+    mountHolderPendenciesView(backdrop.querySelector('#vu-pend-standalone'));
+  }
+
+  /* -------------------------------------------------------------------------
+   * Command Palette (Ctrl + K)
+   * ------------------------------------------------------------------------- */
   function openInstrumentQuickCard(inst) {
     const code = getInstrumentCode(inst);
-    const desc = inst.desc || inst.descricao || inst['Descrição'] || 'Sem descrição';
-    const sector = inst.sector || inst.setor || inst.Setor || '—';
-    const cabinet = inst.armario || inst.cabinet || inst.local || inst.Armário || '—';
-    const due = inst.proxCal || inst.proxima_calibracao || inst.dueDate || inst['Data da Próxima Calibração'] || '—';
+    const desc = getInstrumentDesc(inst);
+    const sector = getInstrumentSector(inst);
+    const cabinet = getInstrumentCabinet(inst);
+    const due = getInstrumentDueRaw(inst) || '—';
     const check = evaluateInstrumentBlock(inst);
     const badgeCls = check.blocked ? (check.severity === 'warn' ? 'vu-badge-amber' : 'vu-badge-red') : 'vu-badge-green';
 
@@ -1059,7 +1737,7 @@
           </div>
           ${check.blocked ? `<div class="${check.severity === 'warn' ? 'vu-alert-warn' : 'vu-alert-danger'}">${escapeHtml(check.reason)}</div>` : ''}
           <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">
-            <button type="button" class="vu-btn" id="vu-qi-filter">🔎 Localizar no Inventário</button>
+            <button type="button" class="vu-btn" id="vu-qi-batch">+ Adicionar ao Pré-Lote</button>
             <button type="button" class="vu-btn vu-btn-warn" id="vu-qi-nc">⚠️ Impacto Retroativo</button>
             <button type="button" class="vu-btn vu-btn-primary" id="vu-qi-cautela">📋 Nova Cautela</button>
           </div>
@@ -1068,6 +1746,13 @@
     `;
 
     backdrop.querySelector('.vu-close').onclick = () => closeOverlayById('vu-quick-inst');
+    backdrop.querySelector('#vu-qi-batch').onclick = () => {
+      const draft = loadBatchDraft();
+      if (!draft.tags.includes(code)) draft.tags.push(code);
+      saveBatchDraft(draft);
+      closeOverlayById('vu-quick-inst');
+      showToast(`TAG ${code} adicionada ao pré-lote externo.`, 'success');
+    };
     backdrop.querySelector('#vu-qi-cautela').onclick = () => {
       closeOverlayById('vu-quick-inst', true);
       openCautelaModal(code);
@@ -1075,18 +1760,6 @@
     backdrop.querySelector('#vu-qi-nc').onclick = () => {
       closeOverlayById('vu-quick-inst', true);
       openRetroactiveImpactModal(code);
-    };
-    backdrop.querySelector('#vu-qi-filter').onclick = () => {
-      closeOverlayById('vu-quick-inst', true);
-      const searchInput = document.querySelector('input[placeholder*="Buscar código"], input[id*="search"], input[type="search"]');
-      if (searchInput) {
-        searchInput.value = code;
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      const invBtn = Array.from(document.querySelectorAll('button, a')).find((b) => normText(b.textContent).includes('abrir inventario') || normText(b.textContent).trim() === 'inventario');
-      if (invBtn) invBtn.click();
-      showToast(`Filtrando inventário por ${code}`, 'info', 2200);
     };
 
     openOverlay({ id: 'vu-quick-inst', element: backdrop });
@@ -1104,31 +1777,23 @@
 
   function toggleThemeAction() {
     const themeBtn = document.querySelector('button[onclick*="Theme"], button[onclick*="theme"], button[id*="theme"], button[title*="Tema"]');
-    if (themeBtn) {
-      themeBtn.click();
-    } else {
-      document.documentElement.classList.toggle('dark');
-    }
+    if (themeBtn) themeBtn.click();
+    else document.documentElement.classList.toggle('dark');
     haptic('light');
     showToast('Tema alternado com sucesso.', 'info', 1800);
   }
 
   function openCommandPalette(initialQuery = '') {
     const commands = [
+      { id: 'lote', label: 'Pré-cadastro de Lote & Romaneio Externo', kw: 'lote romaneio envio externo calibracao', tag: '> lote', run: () => openBatchDraftModal(false) },
+      { id: 'vencimentos', label: 'Alerta de Vencimentos (7, 15, 30 ou 60 dias)', kw: 'vencimento prazo janela dias proximo', tag: '> vencimentos', run: () => openDueWindowModal(false, 30) },
+      { id: 'pendencias', label: 'Painel de Pendências do Colaborador', kw: 'pendencias colaborador tecnico cautela turno', tag: '> pendencias', run: () => openHolderPendenciesModal(false) },
       { id: 'cautela', label: 'Nova Cautela (com Trava Metrológica)', kw: 'cautela retirada instrumento', tag: '> cautela', run: () => openCautelaModal('') },
       { id: 'sla', label: 'SLA, Custos & Tendência de Deriva', kw: 'sla custo laboratorio deriva', tag: '> sla', run: () => openLabSlaModal(false) },
       { id: 'impacto', label: 'Análise de Impacto Retroativo (Reprovados)', kw: 'impacto risco nc reprovado', tag: '> impacto', run: () => openRetroactiveImpactModal('') },
       { id: 'hierarquia', label: 'Tipos de Login, Usuários & Hierarquia', kw: 'hierarquia rbac login usuario admin', tag: '> hierarquia', run: () => openRbacAdminModal(false, 'roles') },
       { id: 'auditoria', label: 'Trilha de Auditoria Imutável (ISO / IATF)', kw: 'auditoria audit logs iso', tag: '> auditoria', run: () => openAuditLogsModal(true) },
       { id: 'pdf', label: 'Abrir Relatórios / Armário PDF', kw: 'pdf relatorio armario imprimir', tag: '> pdf', run: triggerLegacyPdfAction },
-      { id: 'admin', label: 'Abrir Painel Administrativo', kw: 'admin painel configuracoes', tag: '> admin', run: () => {
-        if (typeof global.openAdminUsersModal === 'function') global.openAdminUsersModal();
-        else {
-          const adm = document.getElementById('adminUsersModal');
-          if (adm) adm.classList.remove('hidden');
-        }
-        transformAdminModal();
-      } },
       { id: 'tema', label: 'Alternar Modo Claro / Escuro', kw: 'tema dark light escuro claro', tag: '> tema', run: toggleThemeAction }
     ];
 
@@ -1139,7 +1804,7 @@
         <div class="vu-sheet-handle"></div>
         <div class="vu-cmd-head">
           <span style="font-size:16px;opacity:.7;">⌘</span>
-          <input type="text" class="vu-cmd-input" value="${escapeHtml(initialQuery)}" placeholder="Digite uma TAG, setor ou '>' para comandos (ex: > cautela, > sla, > pdf)..." autocomplete="off" />
+          <input type="text" class="vu-cmd-input" value="${escapeHtml(initialQuery)}" placeholder="Digite uma TAG, setor ou '>' para comandos (ex: > lote, > vencimentos, > pendencias)..." autocomplete="off" />
           <span class="vu-cmd-kbd">ESC</span>
         </div>
         <div class="vu-cmd-list"></div>
@@ -1211,26 +1876,26 @@
 
       const insts = getAllInstruments();
       const matchedInsts = !qNorm
-        ? insts.slice(0, 6)
+        ? insts.slice(0, 5)
         : insts.filter((i) => {
             const hay = normText([
-              getInstrumentCode(i), i.desc, i.descricao, i['Descrição'],
-              i.sector, i.setor, i.Setor, i.armario, i.local, i.status
+              getInstrumentCode(i), getInstrumentDesc(i),
+              getInstrumentSector(i), getInstrumentCabinet(i), i.status, i.Status
             ].join(' '));
             return hay.includes(qNorm);
           }).slice(0, 14);
 
       const instItems = matchedInsts.map((i) => ({
         group: qNorm ? 'Instrumentos Encontrados' : 'Instrumentos Recentes',
-        title: `🔧 ${getInstrumentCode(i)} — ${i.desc || i.descricao || i['Descrição'] || 'Instrumento'}`,
-        sub: `${i.sector || i.setor || i.Setor || 'Sem setor'} • ${i.armario || i.local || 'Sem armário'}`,
+        title: `🔧 ${getInstrumentCode(i)} — ${getInstrumentDesc(i)}`,
+        sub: `${getInstrumentSector(i)} • ${getInstrumentCabinet(i)}`,
         tag: i.status || i.Status || 'EM DIA',
         run: () => openInstrumentQuickCard(i)
       }));
 
       const cmdItems = commands
         .filter((c) => !qNorm || normText(c.label).includes(qNorm) || c.kw.includes(qNorm))
-        .slice(0, qNorm ? 5 : 4)
+        .slice(0, qNorm ? 5 : 5)
         .map((c) => ({ group: 'Ações & Atalhos', title: `⚡ ${c.label}`, sub: '', tag: c.tag, run: c.run }));
 
       items = qNorm ? [...instItems, ...cmdItems] : [...cmdItems, ...instItems];
@@ -1283,6 +1948,9 @@
     }, true);
   }
 
+  /* -------------------------------------------------------------------------
+   * Hooks no App, Cautela, Devolução, Impacto, SLA, Auditoria e RBAC
+   * ------------------------------------------------------------------------- */
   function injectAppHooks() {
     transformAdminModal();
 
@@ -1368,17 +2036,13 @@
               Nova Data da Próxima Calibração (ao devolver)
             </label>
             <input id="vuReturnNextCalDate" type="date" class="vu-input" />
-            <div style="font-size:11px;color:var(--vu-muted-text);margin-top:4px;">
-              Atualiza a validade do instrumento automaticamente ao confirmar a devolução.
-            </div>
           `;
           confirmBtn.parentNode.insertBefore(box, confirmBtn);
         }
         box.style.display = 'block';
         const dateInp = box.querySelector('#vuReturnNextCalDate');
         if (dateInp && inst && !dateInp.dataset.vuTouched) {
-          const curDue = inst.proxCal || inst.proxima_calibracao || inst.dueDate || inst['Data da Próxima Calibração'] || '';
-          dateInp.value = toIsoDateStr(curDue);
+          dateInp.value = toIsoDateStr(getInstrumentDueRaw(inst));
           dateInp.addEventListener('input', () => { dateInp.dataset.vuTouched = '1'; });
         }
       }
@@ -1509,7 +2173,7 @@
         submitBtn.disabled = false;
         return { inst: null, check };
       }
-      const desc = escapeHtml(inst.desc || inst.descricao || inst['Descrição'] || '');
+      const desc = escapeHtml(getInstrumentDesc(inst));
       if (!check.blocked) {
         guardBox.innerHTML = `
           <div class="vu-card" style="padding:10px;font-size:12px;border-color:#10b981;">
@@ -1662,7 +2326,7 @@
           <div class="vu-card">
             <div style="font-size:11px;color:var(--vu-muted-text);">Instrumento</div>
             <div style="font-size:16px;font-weight:700;">${escapeHtml(tag.toUpperCase())}</div>
-            <div style="font-size:11.5px;color:var(--vu-muted-text);">${escapeHtml(inst ? (inst.desc || inst.descricao || '') : 'Não localizado no cadastro')}</div>
+            <div style="font-size:11.5px;color:var(--vu-muted-text);">${escapeHtml(inst ? getInstrumentDesc(inst) : 'Não localizado no cadastro')}</div>
           </div>
           <div class="vu-card">
             <div style="font-size:11px;color:var(--vu-muted-text);">Retiradas no Período</div>
@@ -1813,10 +2477,7 @@
     if (inlineInAdmin) {
       activateInlineAdminStage('admTabSlaInline', (stage) => {
         if (!stage) return openLabSlaModal(false);
-        stage.innerHTML = `
-          <h3 style="margin:0 0 14px;font-size:16px;font-weight:700;">SLA, Custos & Tendência de Deriva</h3>
-          ${buildLabSlaMarkup()}
-        `;
+        stage.innerHTML = `<h3 style="margin:0 0 14px;font-size:16px;font-weight:700;">SLA, Custos & Tendência de Deriva</h3>${buildLabSlaMarkup()}`;
       });
       return;
     }
@@ -1844,9 +2505,7 @@
 
   async function mountAuditView(container) {
     container.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-        <h3 style="margin:0;font-size:16px;font-weight:700;">Trilha de Auditoria Imutável (ISO / IATF)</h3>
-      </div>
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Trilha de Auditoria Imutável (ISO / IATF)</h3>
       <div style="display:flex;gap:8px;margin-bottom:14px;">
         <input id="vu-audit-search" class="vu-input" placeholder="Filtrar por TAG, usuário, tabela ou ação..." />
         <button type="button" id="vu-audit-reload" class="vu-btn vu-btn-primary">Buscar</button>
@@ -1954,30 +2613,22 @@
     const token = resolveSessionToken();
     let roles = getCachedRoles();
     let users = [];
-    let offlineModeNotice = '';
 
     try {
       const rRes = await rpc('voith_list_roles', { p_token: token });
       if (rRes && rRes.ok && Array.isArray(rRes.roles) && rRes.roles.length) {
         roles = rRes.roles;
         saveCachedRoles(roles);
-      } else if (rRes && rRes.error) {
-        offlineModeNotice = rRes.error;
       }
-    } catch (err) {
-      offlineModeNotice = err.message;
-    }
+    } catch (_) {}
 
     try {
       const uRes = await rpc('voith_list_users', { p_token: token });
-      if (uRes && uRes.ok && Array.isArray(uRes.users)) {
-        users = uRes.users;
-      }
+      if (uRes && uRes.ok && Array.isArray(uRes.users)) users = uRes.users;
     } catch (_) {}
 
     container.innerHTML = `
       <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;">Gestão de Logins, Permissões e Hierarquia</h3>
-      ${offlineModeNotice ? `<div class="vu-alert-warn" style="margin-bottom:12px;">Modo local/contingência ativo: ${escapeHtml(offlineModeNotice)}</div>` : ''}
       <div class="vu-tabs">
         <button type="button" class="vu-tab ${activeTab === 'roles' ? 'active' : ''}" data-tab="roles">Tipos de Login & Hierarquia</button>
         <button type="button" class="vu-tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Usuários (Nome, Matrícula, Setor)</button>
@@ -2116,7 +2767,7 @@
           try {
             const res = await rpc('voith_upsert_role', { p_token: token, p_role: payload });
             if (res && res.ok) showToast('Tipo de login salvo na nuvem e localmente!', 'success');
-            else showToast('Tipo de login salvo localmente (nuvem retornou aviso).', 'warn');
+            else showToast('Tipo de login salvo localmente.', 'warn');
           } catch (_) {
             showToast('Tipo de login salvo localmente na hierarquia.', 'success');
           }
@@ -2141,7 +2792,6 @@
 
   async function openRbacAdminModal(_isRefresh = false, activeTab = 'roles') {
     if (!state.profile) await loadSessionProfile();
-
     if (document.getElementById('adminUsersModal')) {
       activateInlineAdminStage('admTabRbac', (stage) => {
         if (stage) mountRbacView(stage, activeTab);
@@ -2395,6 +3045,9 @@
     confirm: showConfirm,
     haptic,
     openCommandPalette,
+    openBatchDraftModal,
+    openDueWindowModal,
+    openHolderPendenciesModal,
     openCautelaModal,
     openRetroactiveImpactModal,
     openRbacAdminModal,
