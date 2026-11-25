@@ -1,76 +1,69 @@
 (() => {
-  const APK = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia.apk";
-  const EXE = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia-setup.exe";
-
-  const focusLogin = () => {
-    const m = document.getElementById("vu-dl-rave");
-    if (m) m.remove();
-    const inp = document.querySelector("input[type=text], input[name*=user], input[id*=user]");
-    if (inp) {
-      inp.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => inp.focus(), 150);
+  const fixAdminHierarchyTab = () => {
+    const styleId = 'vu-fix-admin-tabs-style';
+    if (!document.getElementById(styleId)) {
+      const st = document.createElement('style');
+      st.id = styleId;
+      st.textContent = `
+        [role="tablist"], .vu-tabs, .admin-tabs {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          gap: 6px !important;
+          overflow-x: auto !important;
+          max-width: 100% !important;
+        }
+        [role="tab"], .vu-tab, .admin-tab {
+          white-space: normal !important;
+          text-align: center !important;
+          line-height: 1.2 !important;
+          min-width: 72px !important;
+          flex: 1 1 auto !important;
+        }
+      `;
+      document.head.appendChild(st);
     }
+
+    const tabs = Array.from(document.querySelectorAll('button, [role="tab"], a')).filter((el) => {
+      const t = String(el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      return t.includes('hierarqu') || t.includes('tipos de login');
+    });
+
+    tabs.forEach((tab) => {
+      if (tab.dataset.vuHierBound) return;
+      tab.dataset.vuHierBound = '1';
+      tab.addEventListener('click', (ev) => {
+        setTimeout(() => {
+          const modal = tab.closest('[role="dialog"], .modal, .vu-modal, .admin-panel') || document.body;
+          const bodyArea = modal.querySelector('.modal-body, .vu-panel-body, .admin-content') || modal;
+          const alreadyRendered = bodyArea.querySelector('#vu-hierarchy-box');
+          if (alreadyRendered) return;
+
+          const box = document.createElement('div');
+          box.id = 'vu-hierarchy-box';
+          box.style.cssText = 'margin-top:16px;padding:14px;border-radius:12px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;font-size:13px;';
+          box.innerHTML = `
+            <div style="font-weight:800;font-size:14px;margin-bottom:8px;color:#0f172a;">Hierarquia de Acessos &amp; Perfis</div>
+            <div style="display:grid;gap:8px;">
+              <div style="padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;"><strong>ADMIN</strong> — Controle total, usuários, configurações globais e auditoria.</div>
+              <div style="padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;"><strong>GESTOR / LÍDER</strong> — Aprovação de lotes/romaneios, alertas de vencimento e pendências da equipe.</div>
+              <div style="padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;"><strong>METROLOGISTA / TÉCNICO</strong> — Execução de calibrações, registro de certificados e movimentação de instrumentos.</div>
+              <div style="padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;"><strong>OPERADOR / CONSULTA</strong> — Consulta de status, cautela e leitura do painel.</div>
+            </div>
+          `;
+          bodyArea.appendChild(box);
+        }, 80);
+      });
+    });
   };
 
-  const openPage = async () => {
-    if (document.getElementById("vu-dl-rave")) return;
-    let tag = "Latest", apkUrl = APK, exeUrl = EXE;
-    try {
-      const r = await fetch("https://api.github.com/repos/carvpab/voith-metrologia-app/releases/latest");
-      if (r.ok) {
-        const j = await r.json();
-        tag = j.tag_name || tag;
-        const a = j.assets || [];
-        apkUrl = (a.find(x => /\.apk$/i.test(x.name)) || {}).browser_download_url || APK;
-        exeUrl = (a.find(x => /\.exe$/i.test(x.name)) || {}).browser_download_url || EXE;
-      }
-    } catch (_) {}
-
-    const d = document.createElement("div");
-    d.id = "vu-dl-rave";
-    d.style.cssText = "position:fixed;inset:0;z-index:10600;background:linear-gradient(135deg,#091124,#141b4d,#1d1147);color:#fff;overflow:auto;padding:28px 16px;font-family:system-ui,sans-serif";
-    d.innerHTML =
-      "<div style=\"max-width:860px;margin:0 auto\">" +
-        "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;gap:10px;flex-wrap:wrap\">" +
-          "<strong>VOITH METROLOGIA &bull; " + tag + "</strong>" +
-          "<div style=\"display:flex;gap:8px\">" +
-            "<button id=\"vu-go-login\" style=\"padding:8px 14px;border-radius:10px;border:1px solid #64748b;background:#1e293b;color:#fff;font-weight:700;cursor:pointer\">Op&ccedil;&otilde;es de Login</button>" +
-            "<button id=\"vu-close-dl\" style=\"padding:8px 12px;border-radius:10px;border:1px solid #64748b;background:#1e293b;color:#fff;font-weight:700;cursor:pointer\">&times;</button>" +
-          "</div>" +
-        "</div>" +
-        "<h1 style=\"text-align:center;margin:0 0 24px;font-size:32px\">BAIXAR APLICATIVO</h1>" +
-        "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px\">" +
-          "<div style=\"background:#0f172a;border:1px solid #334155;border-radius:16px;padding:22px;text-align:center\">" +
-            "<h3>Android (.APK)</h3>" +
-            "<p style=\"color:#94a3b8;font-size:13px\">Tablets e celulares</p>" +
-            "<a href=\"" + apkUrl + "\" target=\"_blank\" style=\"display:block;padding:12px;border-radius:10px;background:#0284c7;color:#fff;font-weight:800;text-decoration:none\">Baixar APK</a>" +
-          "</div>" +
-          "<div style=\"background:#0f172a;border:1px solid #334155;border-radius:16px;padding:22px;text-align:center\">" +
-            "<h3>Windows (.EXE)</h3>" +
-            "<p style=\"color:#94a3b8;font-size:13px\">PCs e esta&ccedil;&otilde;es</p>" +
-            "<a href=\"" + exeUrl + "\" target=\"_blank\" style=\"display:block;padding:12px;border-radius:10px;background:#0284c7;color:#fff;font-weight:800;text-decoration:none\">Baixar EXE</a>" +
-          "</div>" +
-        "</div>" +
-      "</div>";
-
-    document.body.appendChild(d);
-    d.querySelector("#vu-close-dl").onclick = () => d.remove();
-    d.querySelector("#vu-go-login").onclick = focusLogin;
-  };
-
-  const addBtn = () => {
-    if (document.getElementById("vu-dl-btn")) return;
-    const b = document.createElement("button");
-    b.id = "vu-dl-btn";
-    b.type = "button";
-    b.textContent = "Baixar App";
-    b.style.cssText = "position:fixed;top:12px;right:12px;z-index:9900;padding:7px 12px;border-radius:999px;border:1px solid #38bdf8;background:#0b1628;color:#fff;font:700 12px system-ui,sans-serif;cursor:pointer";
-    b.onclick = openPage;
-    document.body.appendChild(b);
-  };
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBtn);
-  else addBtn();
-
-  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade, { openDownloadPage: openPage });
+  const obs = new MutationObserver(fixAdminHierarchyTab);
+  if (document.body) {
+    obs.observe(document.body, { childList: true, subtree: true });
+    fixAdminHierarchyTab();
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      obs.observe(document.body, { childList: true, subtree: true });
+      fixAdminHierarchyTab();
+    });
+  }
 })();
