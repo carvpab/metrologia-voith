@@ -1,80 +1,57 @@
 (() => {
   const APK = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia.apk";
   const EXE = "https://github.com/carvpab/voith-metrologia-app/releases/latest/download/voith-metrologia-setup.exe";
-  const HIER_STORAGE_KEY = "voith_user_hierarchy_v1";
+  const PERM_KEY = "voith_user_permissions_matrix_v1";
 
-  const HIERARCHIES = [
-    { id: "ADMIN", label: "ADMIN", desc: "Acesso total: usuários, logins, OTA, setores e auditoria." },
-    { id: "GESTOR", label: "GESTOR / LÍDER", desc: "Aprova romaneios externos, acompanha vencimentos e pendências." },
-    { id: "METROLOGISTA", label: "TÉCNICO / METROLOGISTA", desc: "Calibrações, inventário, certificados e movimentação." },
-    { id: "OPERADOR", label: "OPERADOR / CONSULTA", desc: "Consulta de frota, status de calibração e cautela." }
+  const PERMISSIONS = [
+    { id: "view_dashboard", label: "Ver Dashboard & KPIs", group: "Leitura" },
+    { id: "view_inventory", label: "Consultar Inventário (441)", group: "Leitura" },
+    { id: "view_cautela", label: "Consultar Cautela & Campo", group: "Leitura" },
+    { id: "edit_instrument", label: "Editar / Cadastrar Instrumentos", group: "Operação" },
+    { id: "delete_instrument", label: "Excluir Instrumentos", group: "Operação" },
+    { id: "register_calib", label: "Registrar Calibrações & Certificados", group: "Operação" },
+    { id: "batch_external", label: "Criar / Enviar Lote & Romaneio Externo", group: "Operação" },
+    { id: "mark_lost_deact", label: "Marcar Perdido / Baixar Equipamento", group: "Operação" },
+    { id: "export_reports", label: "Gerar PDF / Relatórios / Backup", group: "Gestão" },
+    { id: "sync_cloud_ota", label: "Sincronizar Nuvem & Atualizações OTA", group: "Gestão" },
+    { id: "manage_users", label: "Criar / Gerenciar Usuários & Logins", group: "Admin" },
+    { id: "manage_hierarchy", label: "Configurar Hierarquia & Permissões", group: "Admin" }
   ];
 
-  const getSavedHierarchies = () => {
-    try {
-      return JSON.parse(localStorage.getItem(HIER_STORAGE_KEY) || "{}");
-    } catch (_) {
-      return {};
-    }
+  const PRESETS = {
+    ADMIN: PERMISSIONS.map(p => p.id),
+    GESTOR: ["view_dashboard", "view_inventory", "view_cautela", "edit_instrument", "register_calib", "batch_external", "export_reports", "sync_cloud_ota"],
+    METROLOGISTA: ["view_dashboard", "view_inventory", "view_cautela", "edit_instrument", "register_calib", "batch_external", "export_reports"],
+    OPERADOR: ["view_dashboard", "view_inventory", "view_cautela"]
   };
 
-  const setSavedHierarchies = (map) => {
-    try {
-      localStorage.setItem(HIER_STORAGE_KEY, JSON.stringify(map));
-    } catch (_) {}
+  const loadMatrix = () => {
+    try { return JSON.parse(localStorage.getItem(PERM_KEY) || "{}"); } catch (_) { return {}; }
+  };
+
+  const saveMatrix = (data) => {
+    try { localStorage.setItem(PERM_KEY, JSON.stringify(data)); } catch (_) {}
   };
 
   const discoverUsers = () => {
-    const found = [];
+    const list = [];
     const seen = new Set();
-
-    // Tenta ler linhas de tabelas existentes no modal/página (ex: login pablo | Pablo Carvalho | ADMIN)
     document.querySelectorAll("table tbody tr").forEach((tr) => {
-      const cells = Array.from(tr.querySelectorAll("td")).map(td => String(td.textContent || "").trim()).filter(Boolean);
-      if (cells.length >= 2) {
-        const login = cells[0].toLowerCase();
-        const name = cells[1];
-        const currentRole = (cells.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|TÉCNICO|TECNICO|USER|LÍDER|LIDER)/i.test(c)) || "ADMIN").toUpperCase();
+      const tds = Array.from(tr.querySelectorAll("td")).map(c => String(c.textContent || "").trim()).filter(Boolean);
+      if (tds.length >= 2) {
+        const login = tds[0].toLowerCase();
+        const name = tds[1];
+        const role = (tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|TÉCNICO|TECNICO)/i.test(c)) || "OPERADOR").toUpperCase();
         if (login && !seen.has(login)) {
           seen.add(login);
-          found.push({ login, name, role: currentRole });
+          list.push({ login, name, role });
         }
       }
     });
-
-    // Tenta ler listas/objetos no localStorage caso existam
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i) || "";
-        if (/user|login|auth|session|voith/i.test(k) && k !== HIER_STORAGE_KEY) {
-          const raw = localStorage.getItem(k);
-          if (!raw || raw.length > 20000) continue;
-          const parsed = JSON.parse(raw);
-          const list = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.users) ? parsed.users : []);
-          list.forEach((u) => {
-            if (u && (u.login || u.usuario || u.user || u.nome || u.name)) {
-              const login = String(u.login || u.usuario || u.user || u.nome || u.name).trim().toLowerCase();
-              const name = String(u.nome || u.name || u.login || u.usuario || "").trim();
-              const role = String(u.perfil || u.role || u.hierarquia || "OPERADOR").toUpperCase();
-              if (login && !seen.has(login)) {
-                seen.add(login);
-                found.push({ login, name: name || login, role });
-              }
-            }
-          });
-        }
-      }
-    } catch (_) {}
-
-    if (!found.length) {
-      found.push({ login: "pablo", name: "Pablo Carvalho", role: "ADMIN" });
+    if (!list.length) {
+      list.push({ login: "pablo", name: "Pablo Carvalho", role: "ADMIN" });
     }
-
-    const saved = getSavedHierarchies();
-    return found.map((u) => ({
-      ...u,
-      role: saved[u.login] || u.role || "OPERADOR"
-    }));
+    return list;
   };
 
   const focusLogin = () => {
@@ -92,7 +69,6 @@
     let tag = "Latest", apkUrl = APK, exeUrl = EXE;
     let apkMeta = "Pacote Android (.apk) • Campo e cautela";
     let exeMeta = "Instalador Windows (.exe) • Estações e lab";
-
     try {
       const r = await fetch("https://api.github.com/repos/carvpab/voith-metrologia-app/releases/latest");
       if (r.ok) {
@@ -103,83 +79,34 @@
         const exeAsset = a.find(x => /\.exe$/i.test(x.name));
         if (apkAsset) {
           apkUrl = apkAsset.browser_download_url;
-          if (apkAsset.size) apkMeta = "APK Android • " + (apkAsset.size / (1024 * 1024)).toFixed(1) + " MB • Coleta e cautela";
+          if (apkAsset.size) apkMeta = "APK Android • " + (apkAsset.size / (1024 * 1024)).toFixed(1) + " MB";
         }
         if (exeAsset) {
           exeUrl = exeAsset.browser_download_url;
-          if (exeAsset.size) exeMeta = "Windows EXE • " + (exeAsset.size / (1024 * 1024)).toFixed(1) + " MB • PC e laboratório";
+          if (exeAsset.size) exeMeta = "Windows EXE • " + (exeAsset.size / (1024 * 1024)).toFixed(1) + " MB";
         }
       }
     } catch (_) {}
 
     const d = document.createElement("div");
     d.id = "vu-dl-voith";
-    d.style.cssText = [
-      "position:fixed;inset:0;z-index:10600;overflow:auto;padding:28px 16px;",
-      "background-image:linear-gradient(rgba(148,163,184,.06) 1px, transparent 1px),linear-gradient(90deg, rgba(148,163,184,.06) 1px, transparent 1px),radial-gradient(circle at 20% 15%, rgba(0,102,204,.35), transparent 45%),linear-gradient(145deg,#061021 0%,#0a1d3d 55%,#071329 100%);",
-      "background-size:32px 32px, 32px 32px, 100% 100%, 100% 100%;",
-      "color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;"
-    ].join("");
-
+    d.style.cssText = "position:fixed;inset:0;z-index:10600;overflow:auto;padding:24px 16px;background-image:linear-gradient(rgba(148,163,184,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.06) 1px,transparent 1px),linear-gradient(145deg,#061021 0%,#0a1d3d 55%,#071329 100%);background-size:32px 32px,32px 32px,100% 100%;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;";
     d.innerHTML =
-      "<div style=\"max-width:940px;margin:0 auto;background:rgba(255,255,255,.98);color:#0f172a;border-radius:18px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.55);border:1px solid rgba(147,197,253,.45);\">" +
-        "<div style=\"background:linear-gradient(90deg,#002466 0%,#004899 55%,#0066cc 100%);color:#ffffff;padding:20px 26px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:3px solid #38bdf8;\">" +
-          "<div style=\"display:flex;align-items:center;gap:14px;flex-wrap:wrap;\">" +
-            "<span style=\"background:#ffffff;color:#003399;font-weight:900;font-size:14px;padding:6px 12px;border-radius:8px;letter-spacing:.08em;\">VOITH</span>" +
-            "<div>" +
-              "<div style=\"font-weight:800;font-size:17px;\">Voith Metrologia &bull; Portal de Downloads</div>" +
-              "<div style=\"font-size:12px;color:#bfdbfe;margin-top:2px;\">Release ativa: <strong style=\"color:#ffffff;\">" + tag + "</strong> &bull; GitHub Releases</div>" +
-            "</div>" +
-          "</div>" +
-          "<div style=\"display:flex;align-items:center;gap:8px;\">" +
-            "<button type=\"button\" id=\"vu-go-login\" style=\"padding:9px 15px;border-radius:9px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.16);color:#ffffff;font-weight:700;font-size:12.5px;cursor:pointer;\">Op&ccedil;&otilde;es de Login</button>" +
-            "<button type=\"button\" id=\"vu-close-dl\" aria-label=\"Fechar\" style=\"width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.16);color:#ffffff;font-size:20px;line-height:1;cursor:pointer;\">&times;</button>" +
-          "</div>" +
+      "<div style=\"max-width:920px;margin:0 auto;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5);border:1px solid #cbd5e1;\">" +
+        "<div style=\"background:linear-gradient(90deg,#002466 0%,#0055b8 100%);color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;\">" +
+          "<div style=\"display:flex;align-items:center;gap:12px;\"><span style=\"background:#fff;color:#003399;font-weight:900;font-size:13px;padding:5px 10px;border-radius:6px;\">VOITH</span><div><div style=\"font-weight:800;font-size:16px;\">Voith Metrologia &bull; Downloads</div><div style=\"font-size:12px;color:#dbeafe;\">Release: " + tag + "</div></div></div>" +
+          "<div style=\"display:flex;gap:8px;\"><button type=\"button\" id=\"vu-go-login\" style=\"padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-weight:700;font-size:12px;cursor:pointer;\">Op&ccedil;&otilde;es de Login</button><button type=\"button\" id=\"vu-close-dl\" style=\"width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:18px;line-height:1;cursor:pointer;\">&times;</button></div>" +
         "</div>" +
-        "<div style=\"padding:28px 26px;background:linear-gradient(180deg,#f8fafc 0%,#eef4fb 100%);\">" +
-          "<div style=\"margin-bottom:22px;\">" +
-            "<div style=\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:#004899;margin-bottom:4px;\">Metrologia &bull; Voith Turbo</div>" +
-            "<h1 style=\"margin:0 0 6px;font-size:25px;font-weight:900;color:#0f172a;\">Escolha o instalador do seu dispositivo</h1>" +
-            "<p style=\"margin:0;font-size:13.5px;color:#475569;\">Baixe o pacote oficial para Android ou Windows e acesse o sistema.</p>" +
-          "</div>" +
-          "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:20px;\">" +
-            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:5px solid #0055b8;border-radius:14px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;box-shadow:0 10px 24px rgba(15,23,42,.06);\">" +
-              "<div>" +
-                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;\">" +
-                  "<span style=\"font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:#eff6ff;color:#004899;border:1px solid #bfdbfe;\">ANDROID &bull; TABLET / CELULAR</span>" +
-                  "<span style=\"font-size:12px;font-weight:800;color:#0055b8;\">.APK</span>" +
-                "</div>" +
-                "<div style=\"font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px;\">Voith Metrologia Android</div>" +
-                "<div style=\"font-size:13px;color:#475569;line-height:1.45;\">" + apkMeta + "</div>" +
-              "</div>" +
-              "<a href=\"" + apkUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,#004899,#0066cc);color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;\">Baixar APK (.apk)</a>" +
-            "</div>" +
-            "<div style=\"background:#ffffff;border:1px solid #cbd5e1;border-top:5px solid #002466;border-radius:14px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;box-shadow:0 10px 24px rgba(15,23,42,.06);\">" +
-              "<div>" +
-                "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;\">" +
-                  "<span style=\"font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e2e8f0;color:#0f172a;border:1px solid #cbd5e1;\">WINDOWS &bull; DESKTOP / PC</span>" +
-                  "<span style=\"font-size:12px;font-weight:800;color:#002466;\">.EXE</span>" +
-                "</div>" +
-                "<div style=\"font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px;\">Voith Metrologia Windows</div>" +
-                "<div style=\"font-size:13px;color:#475569;line-height:1.45;\">" + exeMeta + "</div>" +
-              "</div>" +
-              "<a href=\"" + exeUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,#002466,#004899);color:#ffffff;font-weight:800;font-size:13.5px;text-decoration:none;\">Baixar Instalador (.exe)</a>" +
-            "</div>" +
-          "</div>" +
-          "<div style=\"margin-top:22px;padding-top:16px;border-top:1px solid #cbd5e1;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;\">" +
-            "<span style=\"font-size:12.5px;color:#334155;\">Pronto para entrar no sistema? Abra as op&ccedil;&otilde;es de autentica&ccedil;&atilde;o.</span>" +
-            "<button type=\"button\" id=\"vu-dl-login-cta\" style=\"padding:10px 18px;border-radius:9px;border:1px solid #004899;background:#ffffff;color:#004899;font-weight:800;font-size:12.5px;cursor:pointer;\">Ir para Op&ccedil;&otilde;es de Login &rarr;</button>" +
-          "</div>" +
+        "<div style=\"padding:24px;background:#f8fafc;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;\">" +
+          "<div style=\"background:#fff;border:1px solid #cbd5e1;border-top:4px solid #0055b8;border-radius:12px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;\"><div><div style=\"font-weight:800;font-size:18px;color:#0f172a;\">Android (.APK)</div><div style=\"font-size:12.5px;color:#475569;margin-top:4px;\">" + apkMeta + "</div></div><a href=\"" + apkUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:11px;border-radius:8px;background:#0055b8;color:#fff;font-weight:800;font-size:13px;text-decoration:none;\">Baixar APK</a></div>" +
+          "<div style=\"background:#fff;border:1px solid #cbd5e1;border-top:4px solid #002466;border-radius:12px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;\"><div><div style=\"font-weight:800;font-size:18px;color:#0f172a;\">Windows (.EXE)</div><div style=\"font-size:12.5px;color:#475569;margin-top:4px;\">" + exeMeta + "</div></div><a href=\"" + exeUrl + "\" target=\"_blank\" rel=\"noopener\" style=\"display:block;text-align:center;padding:11px;border-radius:8px;background:#002466;color:#fff;font-weight:800;font-size:13px;text-decoration:none;\">Baixar Instalador EXE</a></div>" +
         "</div>" +
       "</div>";
-
     document.body.appendChild(d);
     d.querySelector("#vu-close-dl").onclick = () => d.remove();
     d.querySelector("#vu-go-login").onclick = focusLogin;
-    d.querySelector("#vu-dl-login-cta").onclick = focusLogin;
   };
 
-  // Posição segura no mobile: acima da barra inferior para não cobrir ícones
   const addBtn = () => {
     if (document.getElementById("vu-dl-btn")) return;
     const b = document.createElement("button");
@@ -187,178 +114,168 @@
     b.type = "button";
     b.textContent = "Baixar App";
     const isMobile = window.innerWidth <= 768;
-    b.style.cssText = [
-      "position:fixed;",
-      isMobile ? "bottom:78px;right:12px;padding:6px 11px;font-size:11px;" : "bottom:14px;right:14px;padding:8px 14px;font-size:12px;",
-      "z-index:9950;border-radius:8px;border:1px solid #93c5fd;",
-      "background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;",
-      "font-weight:800;font-family:system-ui,-apple-system,sans-serif;",
-      "box-shadow:0 8px 20px rgba(0,51,153,.38);cursor:pointer;"
-    ].join("");
+    b.style.cssText = "position:fixed;" + (isMobile ? "bottom:84px;right:12px;padding:6px 11px;font-size:11px;" : "bottom:14px;right:14px;padding:8px 14px;font-size:12px;") + "z-index:9950;border-radius:8px;border:1px solid #93c5fd;background:linear-gradient(90deg,#002466,#0055b8);color:#fff;font-weight:800;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,51,153,.35);cursor:pointer;";
     b.onclick = openDownloadPage;
     document.body.appendChild(b);
   };
 
-  const getTabContainer = (tabEl) => {
-    let cur = tabEl.parentElement;
-    for (let i = 0; i < 4 && cur; i++) {
-      if (cur.parentElement && cur.parentElement.children.length >= 2) {
-        return cur.parentElement;
-      }
-      cur = cur.parentElement;
-    }
-    return tabEl.parentElement ? tabEl.parentElement.parentElement : document.body;
+  const findContentArea = (tabEl) => {
+    const modal = tabEl.closest("[role=dialog], .modal, [class*='modal' i], [class*='admin' i]") || document.body;
+    const candidates = Array.from(modal.querySelectorAll("div, section")).filter((el) => {
+      if (el.id === "vu-rbac-matrix-box") return false;
+      const hasFormOrTable = el.querySelector("input, select, table, form");
+      const notSidebar = !el.closest("aside, nav, [class*='sidebar' i]");
+      return Boolean(hasFormOrTable && notSidebar);
+    });
+    return candidates[0] || modal;
   };
 
-  const clearHierarchyView = (root) => {
-    if (!root) return;
-    const panel = root.querySelector("#vu-hierarchy-view");
-    if (panel) panel.remove();
-    Array.from(root.querySelectorAll("[data-vu-hidden-by-hier='1']")).forEach((el) => {
-      el.style.display = el.dataset.vuPrevDisplay || "";
-      delete el.dataset.vuHiddenByHier;
-      delete el.dataset.vuPrevDisplay;
+  const hideRbacBox = () => {
+    const box = document.getElementById("vu-rbac-matrix-box");
+    if (box) box.style.display = "none";
+    document.querySelectorAll("[data-vu-rbac-hidden='1']").forEach((el) => {
+      el.style.display = el.dataset.vuPrevDisp || "";
+      delete el.dataset.vuRbacHidden;
+      delete el.dataset.vuPrevDisp;
     });
   };
 
-  const showHierarchyView = (tabEl) => {
-    const root = getTabContainer(tabEl);
-    if (!root) return;
+  const openRbacMatrix = (tabEl) => {
+    const area = findContentArea(tabEl);
+    if (!area) return;
 
-    // Mantém barra de abas visível, esconde apenas o conteúdo da aba anterior dentro do container
-    const tabBar = tabEl.closest("[role=tablist]") || tabEl.parentElement;
-    Array.from(root.children).forEach((child) => {
-      if (child === tabBar || child.id === "vu-hierarchy-view") return;
-      if (!child.dataset.vuHiddenByHier) {
-        child.dataset.vuPrevDisplay = child.style.display || "";
-        child.dataset.vuHiddenByHier = "1";
+    Array.from(area.children).forEach((child) => {
+      if (child.id === "vu-rbac-matrix-box") return;
+      if (!child.dataset.vuRbacHidden) {
+        child.dataset.vuPrevDisp = child.style.display || "";
+        child.dataset.vuRbacHidden = "1";
       }
       child.style.display = "none";
     });
 
-    let panel = root.querySelector("#vu-hierarchy-view");
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.id = "vu-hierarchy-view";
-      panel.style.cssText = "margin-top:14px;display:grid;gap:12px;color:#0f172a;";
-      document.body.appendChild;
-      root.appendChild(panel);
+    let box = document.getElementById("vu-rbac-matrix-box");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "vu-rbac-matrix-box";
+      box.style.cssText = "display:grid;gap:12px;color:#0f172a;font-family:system-ui,-apple-system,sans-serif;";
+      area.appendChild(box);
     }
 
     const users = discoverUsers();
-    const saved = getSavedHierarchies();
+    const matrix = loadMatrix();
 
-    const userRowsHtml = users.map((u) => {
-      const optionsHtml = HIERARCHIES.map((h) =>
-        `<option value="${h.id}" ${u.role === h.id ? "selected" : ""}>${h.label}</option>`
-      ).join("");
+    const getUserPerms = (u) => {
+      if (Array.isArray(matrix[u.login])) return new Set(matrix[u.login]);
+      const base = PRESETS[u.role] || PRESETS.OPERADOR;
+      return new Set(base);
+    };
+
+    const userCardsHtml = users.map((u) => {
+      const activeSet = getUserPerms(u);
+      const checksHtml = PERMISSIONS.map((p) => {
+        const checked = activeSet.has(p.id) ? "checked" : "";
+        return (
+          `<label style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:7px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11.5px;color:#1e293b;cursor:pointer;">` +
+            `<input type="checkbox" data-login="${u.login}" data-perm="${p.id}" ${checked} style="width:14px;height:14px;accent-color:#0055b8;cursor:pointer;">` +
+            `<span>${p.label}</span>` +
+          `</label>`
+        );
+      }).join("");
 
       return (
-        `<div data-user-login="${u.login}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:#ffffff;border:1px solid #cbd5e1;">` +
-          `<div>` +
-            `<div style="font-weight:800;font-size:13px;color:#0f172a;">${u.name} <span style="font-weight:600;color:#64748b;">(${u.login})</span></div>` +
-            `<div style="font-size:11.5px;color:#475569;">Perfil atual: <strong class="vu-cur-role-txt" style="color:#004899;">${u.role}</strong></div>` +
+        `<div data-user-card="${u.login}" style="padding:12px 14px;border-radius:12px;background:#ffffff;border:1px solid #cbd5e1;display:grid;gap:10px;">` +
+          `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
+            `<div>` +
+              `<span style="font-weight:800;font-size:13.5px;color:#0f172a;">${u.name}</span> ` +
+              `<span style="font-size:12px;color:#64748b;">(${u.login})</span>` +
+            `</div>` +
+            `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+              `<span style="font-size:11px;font-weight:700;color:#475569;">Modelo rápido:</span>` +
+              `<button type="button" data-preset="${u.login}:ADMIN" style="padding:3px 8px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;color:#003399;font-size:11px;font-weight:700;cursor:pointer;">Admin</button>` +
+              `<button type="button" data-preset="${u.login}:GESTOR" style="padding:3px 8px;border-radius:6px;border:1px solid #bae6fd;background:#f0f9ff;color:#0369a1;font-size:11px;font-weight:700;cursor:pointer;">Gestor</button>` +
+              `<button type="button" data-preset="${u.login}:METROLOGISTA" style="padding:3px 8px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;font-size:11px;font-weight:700;cursor:pointer;">Metrologista</button>` +
+              `<button type="button" data-preset="${u.login}:OPERADOR" style="padding:3px 8px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:11px;font-weight:700;cursor:pointer;">Operador</button>` +
+            `</div>` +
           `</div>` +
-          `<div style="display:flex;align-items:center;gap:8px;">` +
-            `<select class="vu-user-role-select" style="padding:7px 10px;border-radius:8px;border:1px solid #94a3b8;background:#f8fafc;color:#0f172a;font-weight:700;font-size:12px;cursor:pointer;">${optionsHtml}</select>` +
-          `</div>` +
+          `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:6px;">${checksHtml}</div>` +
         `</div>`
       );
     }).join("");
 
-    const legendHtml = HIERARCHIES.map((h) =>
-      `<div style="padding:9px 12px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;">` +
-        `<strong style="color:#003399;">${h.label}</strong> &mdash; ${h.desc}` +
-      `</div>`
-    ).join("");
-
-    panel.innerHTML =
-      `<div style="padding:12px 14px;border-radius:10px;background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #93c5fd;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    box.innerHTML =
+      `<div style="padding:12px 14px;border-radius:12px;background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #93c5fd;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
         `<div>` +
-          `<div style="font-weight:800;font-size:14px;color:#002466;">Configurar Hierarquia por Pessoa</div>` +
-          `<div style="font-size:12px;color:#334155;">Selecione a hierarquia de cada usuário e clique em Salvar Hierarquias.</div>` +
+          `<div style="font-weight:800;font-size:14px;color:#002466;">Tipos de Login &amp; Permissões por Pessoa</div>` +
+          `<div style="font-size:12px;color:#334155;">Marque ou desmarque as caixas do que cada pessoa pode ou não fazer.</div>` +
         `</div>` +
-        `<button type="button" id="vu-save-hier-btn" style="padding:8px 14px;border-radius:8px;border:none;background:#004899;color:#ffffff;font-weight:800;font-size:12px;cursor:pointer;">Salvar Hierarquias</button>` +
+        `<button type="button" id="vu-save-perms-btn" style="padding:8px 16px;border-radius:8px;border:none;background:#0055b8;color:#ffffff;font-weight:800;font-size:12px;cursor:pointer;">Salvar Permissões</button>` +
       `</div>` +
-      `<div id="vu-hier-users-list" style="display:grid;gap:8px;">${userRowsHtml}</div>` +
-      `<div style="display:grid;gap:6px;margin-top:4px;">` +
-        `<div style="font-size:11.5px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.05em;">Referência de Perfis</div>` +
-        legendHtml +
-      `</div>` +
-      `<div id="vu-hier-feedback" style="font-size:12px;font-weight:700;color:#15803d;min-height:16px;"></div>`;
+      `<div style="display:grid;gap:10px;">${userCardsHtml}</div>` +
+      `<div id="vu-perms-msg" style="font-size:12px;font-weight:700;color:#15803d;min-height:16px;"></div>`;
 
-    panel.querySelectorAll(".vu-user-role-select").forEach((sel) => {
-      sel.addEventListener("change", (ev) => {
-        const row = ev.target.closest("[data-user-login]");
-        const login = row ? row.getAttribute("data-user-login") : "";
-        const txtEl = row ? row.querySelector(".vu-cur-role-txt") : null;
-        if (txtEl) txtEl.textContent = ev.target.value;
-        if (login) {
-          saved[login] = ev.target.value;
-          setSavedHierarchies(saved);
-        }
+    box.querySelectorAll("[data-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [login, presetKey] = String(btn.getAttribute("data-preset") || "").split(":");
+        const allowed = new Set(PRESETS[presetKey] || []);
+        box.querySelectorAll(`input[type=checkbox][data-login="${login}"]`).forEach((cb) => {
+          cb.checked = allowed.has(cb.getAttribute("data-perm"));
+        });
       });
     });
 
-    const saveBtn = panel.querySelector("#vu-save-hier-btn");
-    if (saveBtn) {
-      saveBtn.onclick = () => {
-        const nextMap = { ...getSavedHierarchies() };
-        panel.querySelectorAll("[data-user-login]").forEach((row) => {
-          const login = row.getAttribute("data-user-login");
-          const sel = row.querySelector(".vu-user-role-select");
-          if (login && sel) nextMap[login] = sel.value;
-        });
-        setSavedHierarchies(nextMap);
-
-        // Atualiza células visíveis na tabela de usuários se ela existir no DOM
-        document.querySelectorAll("table tbody tr").forEach((tr) => {
-          const cells = Array.from(tr.querySelectorAll("td"));
-          if (cells.length >= 3) {
-            const login = String(cells[0].textContent || "").trim().toLowerCase();
-            if (nextMap[login]) {
-              const badge = cells[2].querySelector("span, button") || cells[2];
-              badge.textContent = nextMap[login];
-            }
-          }
-        });
-
-        const fb = panel.querySelector("#vu-hier-feedback");
-        if (fb) fb.textContent = "Hierarquias salvas com sucesso!";
-      };
-    }
-
-    panel.style.display = "grid";
-  };
-
-  const bindAdminTabs = () => {
-    addBtn();
-    const allTabs = Array.from(document.querySelectorAll("button, [role=tab], a")).filter((el) => {
-      const modal = el.closest("[role=dialog], .modal, [class*='modal' i], [class*='panel' i]");
-      return Boolean(modal);
-    });
-
-    allTabs.forEach((el) => {
-      if (el.dataset.vuTabBound) return;
-      el.dataset.vuTabBound = "1";
-      const txt = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const isHier = txt.includes("hierarqu") || txt.includes("tipos de login");
-      el.addEventListener("click", () => {
-        const root = getTabContainer(el);
-        if (isHier) setTimeout(() => showHierarchyView(el), 60);
-        else clearHierarchyView(root);
+    box.querySelector("#vu-save-perms-btn").onclick = () => {
+      const next = loadMatrix();
+      users.forEach((u) => {
+        const checkedIds = Array.from(box.querySelectorAll(`input[type=checkbox][data-login="${u.login}"]:checked`))
+          .map(cb => cb.getAttribute("data-perm"));
+        next[u.login] = checkedIds;
       });
+      saveMatrix(next);
+      const msg = box.querySelector("#vu-perms-msg");
+      if (msg) msg.textContent = "Permissões salvas para cada pessoa!";
+    };
+
+    box.style.display = "grid";
+  };
+
+  const hookTabs = () => {
+    addBtn();
+    const candidates = Array.from(document.querySelectorAll("button, a, [role=tab]")).filter((el) => {
+      const t = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      return t.includes("hierarqu") || t.includes("tipos de login") || el.id === "admTabRbac";
+    });
+
+    candidates.forEach((tab) => {
+      if (tab.dataset.vuRbacHooked) return;
+      tab.dataset.vuRbacHooked = "1";
+      tab.addEventListener("click", () => setTimeout(() => openRbacMatrix(tab), 60));
+    });
+
+    const otherTabs = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, [role=tab], [id^='admTab']")).filter((el) => {
+      const t = String(el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      return !t.includes("hierarqu") && !t.includes("tipos de login") && el.id !== "admTabRbac";
+    });
+
+    otherTabs.forEach((ot) => {
+      if (ot.dataset.vuOtherHooked) return;
+      ot.dataset.vuOtherHooked = "1";
+      ot.addEventListener("click", () => hideRbacBox());
     });
   };
 
-  const obs = new MutationObserver(bindAdminTabs);
-  const start = () => {
+  const obs = new MutationObserver(hookTabs);
+  const boot = () => {
     addBtn();
-    bindAdminTabs();
+    hookTabs();
     obs.observe(document.body, { childList: true, subtree: true });
   };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
-  else start();
 
-  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade, { openDownloadPage, focusLoginScreen: focusLogin });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade, {
+    openDownloadPage,
+    focusLoginScreen: focusLogin,
+    getUserPermissions: () => loadMatrix()
+  });
 })();
