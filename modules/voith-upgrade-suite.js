@@ -96,7 +96,7 @@
     return [];
   };
 
-  const discoverUsers = () => {
+  const discoverUsers = (scopeEl) => {
     const stored = loadProfiles();
     const map = new Map();
     Object.entries(stored).forEach(([k, p]) => {
@@ -110,11 +110,12 @@
       });
     });
 
-    document.querySelectorAll("table tbody tr").forEach((tr) => {
+    const root = scopeEl || document;
+    root.querySelectorAll("table tbody tr").forEach((tr) => {
       const tds = Array.from(tr.querySelectorAll("td")).map(td => String(td.textContent || "").trim()).filter(Boolean);
       if (tds.length >= 2) {
         const login = tds[0].toLowerCase();
-        if (!login || login.includes(" ")) return;
+        if (!login || login.includes(" ") || login.length > 30) return;
         const name = tds[1];
         const roleCell = tds.find(c => /^(ADMIN|GESTOR|METROLOGISTA|OPERADOR|T\u00c9CNICO|TECNICO)/i.test(c));
         const role = roleCell ? roleCell.toUpperCase() : "OPERADOR";
@@ -229,7 +230,7 @@
     const st = document.createElement("style");
     st.id = "vu-admin-sidebar-css";
     st.textContent = `
-      .vu-adm-shell {
+      .vu-adm-shell:not(.hidden):not([hidden]) {
         display: flex !important;
         flex-direction: row !important;
         max-width: 1080px !important;
@@ -296,7 +297,7 @@
         padding-right: 4px;
       }
       @media (max-width: 768px) {
-        .vu-adm-shell {
+        .vu-adm-shell:not(.hidden):not([hidden]) {
           flex-direction: column !important;
           width: 96vw !important;
           max-height: 92vh !important;
@@ -327,12 +328,12 @@
   };
 
   /* -------------------- RENDERIZADORES DAS ABAS EXTRAS -------------------- */
-  const renderRbacView = (container) => {
-    let selectedLogin = discoverUsers()[0].login;
+  const renderRbacView = (container, modalScope) => {
+    let selectedLogin = discoverUsers(modalScope)[0].login;
     let lastMsg = "";
 
     const draw = () => {
-      const users = discoverUsers();
+      const users = discoverUsers(modalScope);
       const active = users.find(u => u.login === selectedLogin) || users[0];
       const permSet = new Set(active.perms || []);
 
@@ -433,12 +434,12 @@
     draw();
   };
 
-  const renderExtraTabView = (tabId, container) => {
+  const renderExtraTabView = (tabId, container, modalScope) => {
     const items = readLiveInstruments();
     const totalCount = items.length || 441;
 
     if (tabId === "admTabRbac") {
-      renderRbacView(container);
+      renderRbacView(container, modalScope);
       return;
     }
 
@@ -486,7 +487,7 @@
     }
 
     if (tabId === "admTabHolderPend") {
-      const profiles = discoverUsers();
+      const profiles = discoverUsers(modalScope);
       const rows = profiles.map(u => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #cbd5e1;"><div><strong>${u.name}</strong> <span style="color:#64748b;font-size:12px;">(${u.login})</span><div style="font-size:11.5px;color:#475569;">Setor: ${u.sector} &bull; Matr&iacute;cula: ${u.matricula || "\u2014"}</div></div><span style="padding:4px 10px;border-radius:999px;background:#f0fdfa;color:#0f766e;font-size:11.5px;font-weight:700;border:1px solid #99f6e4;">Regular / Sem Atrasos</span></div>`).join("");
       container.innerHTML =
         `<div style="display:grid;gap:12px;color:#0f172a;">` +
@@ -543,35 +544,47 @@
     }
   };
 
-  /* -------------------- TRANSFORMA MODAL EM SIDEBAR -------------------- */
+  /* -------------------- TRANSFORMA SOMENTE O CARD DO MODAL -------------------- */
   const upgradeAdminModal = () => {
     ensureAdminStyles();
 
-    const headerEl = Array.from(document.querySelectorAll("div, header, h2, h3")).find(el => {
-      if (el.children.length > 4) return false;
-      return String(el.textContent || "").includes("Painel Administrativo (Voith)");
+    // 1. Localiza exclusivamente o elemento folha do título do modal (<= 80 caracteres)
+    const titleEl = Array.from(document.querySelectorAll("h1, h2, h3, h4, span, p, div")).find((el) => {
+      const txt = String(el.textContent || "").trim();
+      if (!txt.includes("Painel Administrativo (Voith)") || txt.length > 80) return false;
+      return !Array.from(el.children).some(ch => String(ch.textContent || "").includes("Painel Administrativo (Voith)"));
     });
-    if (!headerEl) return;
+    if (!titleEl) return;
 
-    // Encontra o card branco raiz do modal
-    let modalCard = headerEl.parentElement;
-    for (let i = 0; i < 4 && modalCard; i++) {
+    // 2. Sobe apenas até o card interno do modal que contém as abas administrativas
+    let modalCard = titleEl.parentElement;
+    while (modalCard && modalCard !== document.body && modalCard !== document.documentElement) {
       const txt = String(modalCard.textContent || "");
       if (txt.includes("Usu\u00e1rios & Logins") && txt.includes("OTA & Telemetria")) break;
       modalCard = modalCard.parentElement;
     }
-    if (!modalCard || modalCard.dataset.vuSidebarDone === "1") return;
+
+    // 3. Travas de segurança: nunca tocar no body, no backdrop nem no cockpit principal
+    if (!modalCard || modalCard === document.body || modalCard === document.documentElement) return;
+    if (modalCard.dataset.vuSidebarDone === "1") return;
+    const cardTxt = String(modalCard.textContent || "");
+    if (
+      cardTxt.includes("Monitoramento de Frota") ||
+      cardTxt.includes("WORKSPACES") ||
+      modalCard.classList.contains("inset-0")
+    ) {
+      return;
+    }
+
     modalCard.dataset.vuSidebarDone = "1";
     modalCard.classList.add("vu-adm-shell");
 
-    // Localiza a barra original de abas horizontais
     const nativeTabBtns = Array.from(modalCard.querySelectorAll("button, [role=tab]")).filter(btn => {
       const t = String(btn.textContent || "").replace(/\s+/g, " ").trim();
       return /^(Usu\u00e1rios & Logins|Locais & Setores Oficiais|Risco & SLA Lab|OTA & Telemetria|Tipos de Login & Hierarquia)$/i.test(t);
     });
     const origTabBar = nativeTabBtns[0] ? nativeTabBtns[0].parentElement : null;
 
-    // Cria Sidebar esquerda e coluna principal direita
     const sidebar = document.createElement("aside");
     sidebar.id = "vu-admin-sidebar";
 
@@ -585,8 +598,7 @@
     customView.id = "vu-custom-tab-view";
     customView.style.display = "none";
 
-    // Identifica cabeçalho escuro para fixar no topo do mainCol
-    let darkHeader = headerEl;
+    let darkHeader = titleEl;
     while (darkHeader.parentElement && darkHeader.parentElement !== modalCard) {
       darkHeader = darkHeader.parentElement;
     }
@@ -626,7 +638,7 @@
       nativeBodyBlocks.forEach(b => { b.style.display = "none"; });
       customView.style.display = "block";
       setActiveSideBtn(btn);
-      renderExtraTabView(tabId, customView);
+      renderExtraTabView(tabId, customView, modalCard);
       scrollArea.scrollTop = 0;
     };
 
@@ -650,7 +662,7 @@
       }
     });
 
-    if (origTabBar && origTabBar !== modalCard) {
+    if (origTabBar && origTabBar !== modalCard && origTabBar !== scrollArea && !origTabBar.querySelector("input, table, form")) {
       origTabBar.style.display = "none";
     }
 
