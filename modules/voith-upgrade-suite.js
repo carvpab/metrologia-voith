@@ -1768,6 +1768,1936 @@
   });
 })();
 
+
+
+/* VOITH_SMART_RANGE_SEARCH_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setInputVal = (el, val) => {
+    if (!el) return;
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    if (desc && desc.set) desc.set.call(el, String(val));
+    else el.value = String(val);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const parseNum = (v) => {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    const cleaned = String(v).trim().replace(/\s+/g, "").replace(",", ".");
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const parseRangeFromText = (txt) => {
+    const s = String(txt || "");
+    if (!s) return { min: null, max: null };
+    const noDates = s.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, " ");
+    const m = noDates.match(/(-?\d+(?:[.,]\d+)?)\s*(?:~|\u2013|\u2014|-|\ba\b|\bat[\u00e9e]\b)\s*(-?\d+(?:[.,]\d+)?)/i);
+    if (m) {
+      const a = parseNum(m[1]);
+      const b = parseNum(m[2]);
+      if (a !== null && b !== null) {
+        return { min: Math.min(a, b), max: Math.max(a, b) };
+      }
+    }
+    return { min: null, max: null };
+  };
+
+  /* -------------------- CAPTURA DE INSTRUMENTOS COM FAIXA MIN/MAX -------------------- */
+  let fetchedPool = [];
+  let cacheItems = [];
+  let lastScanAt = 0;
+
+  const normalizeRecord = (obj) => {
+    if (!obj || typeof obj !== "object") return null;
+    const code = String(
+      obj.code || obj.codigo || obj.cod || obj.tag || obj.patrimonio || obj.instrument_code || ""
+    ).trim();
+    if (!code || code.length < 3 || code.length > 35 || /^\d{2}:\d{2}/.test(code)) return null;
+
+    const name = String(
+      obj.name || obj.instrumento || obj.descricao || obj.description || obj.desc || obj.nome || obj.equipamento || obj.tipo || ""
+    ).trim();
+    const sector = String(obj.sector || obj.setor || obj.area || "").trim();
+    const local = String(obj.local || obj.armario || obj.location || obj.localizacao || obj.posse || "").trim();
+    const resp = String(obj.responsavel || obj.responsible || obj.tecnico || obj.owner || obj.holder || "").trim();
+    const status = String(obj.status || obj.situacao || "").trim();
+    const unit = String(obj.unidade || obj.unit || obj.un || obj.medida_un || "").trim();
+
+    let min = null;
+    let max = null;
+    const minKeys = ["faixa_min", "faixaMin", "faixa_inicial", "faixaInicial", "min", "minimo", "range_min", "rangeMin", "cap_min", "medida_min", "faixaMinima"];
+    const maxKeys = ["faixa_max", "faixaMax", "faixa_final", "faixaFinal", "max", "maximo", "range_max", "rangeMax", "cap_max", "medida_max", "faixaMaxima"];
+
+    for (let i = 0; i < minKeys.length; i++) {
+      const n = parseNum(obj[minKeys[i]]);
+      if (n !== null) { min = n; break; }
+    }
+    for (let i = 0; i < maxKeys.length; i++) {
+      const n = parseNum(obj[maxKeys[i]]);
+      if (n !== null) { max = n; break; }
+    }
+
+    const rangeStr = String(
+      obj.faixa || obj.range || obj.capacidade || obj.capacity || obj.escala || obj.medida || obj.faixa_medicao || ""
+    ).trim();
+
+    if (min === null || max === null) {
+      const parsed = parseRangeFromText(rangeStr || name);
+      if (min === null) min = parsed.min;
+      if (max === null) max = parsed.max;
+    }
+
+    if (min !== null && max !== null && min > max) {
+      const tmp = min;
+      min = max;
+      max = tmp;
+    }
+
+    const rangeLabel =
+      min !== null && max !== null
+        ? `${String(min).replace(".", ",")} ~ ${String(max).replace(".", ",")}${unit ? " " + unit : ""}`
+        : rangeStr;
+
+    return { code, name, sector, local, resp, status, unit, min, max, rangeLabel };
+  };
+
+  const mergeRecords = (arr, map) => {
+    if (!Array.isArray(arr) || arr.length < 2) return;
+    for (let i = 0; i < arr.length; i++) {
+      const rec = normalizeRecord(arr[i]);
+      if (!rec) continue;
+      const key = rec.code.toUpperCase();
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, rec);
+      } else {
+        map.set(key, {
+          code: prev.code || rec.code,
+          name: prev.name || rec.name,
+          sector: prev.sector || rec.sector,
+          local: prev.local || rec.local,
+          resp: prev.resp || rec.resp,
+          status: prev.status || rec.status,
+          unit: prev.unit || rec.unit,
+          min: prev.min !== null ? prev.min : rec.min,
+          max: prev.max !== null ? prev.max : rec.max,
+          rangeLabel: prev.rangeLabel || rec.rangeLabel
+        });
+      }
+    }
+  };
+
+  // Intercepta respostas JSON do Supabase de forma passiva para manter a frota completa com faixas
+  if (!window.__vuSmartFetchWrapped && typeof window.fetch === "function") {
+    window.__vuSmartFetchWrapped = true;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = function (...args) {
+      const p = origFetch(...args);
+      try {
+        const reqUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        if (reqUrl.includes("/rest/v1/") && !reqUrl.includes("audit_logs")) {
+          p.then((res) => {
+            if (!res || !res.ok) return;
+            const ct = String(res.headers && res.headers.get("content-type") || "");
+            if (!ct.includes("json")) return;
+            res.clone().json().then((data) => {
+              if (Array.isArray(data) && data.length >= 5 && typeof data[0] === "object") {
+                const probe = normalizeRecord(data[0]);
+                if (probe) {
+                  fetchedPool = data;
+                  lastScanAt = 0;
+                }
+              }
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      } catch (_) {}
+      return p;
+    };
+  }
+
+  const getAllInstrumentsWithRange = () => {
+    const now = Date.now();
+    if (cacheItems.length >= 10 && now - lastScanAt < 4000) return cacheItems;
+
+    const map = new Map();
+    if (fetchedPool.length) mergeRecords(fetchedPool, map);
+
+    [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.db && window.db.instruments,
+      window.state && window.state.instruments,
+      window.state && window.state.items,
+      window.appState && window.appState.instruments
+    ].forEach((src) => mergeRecords(src, map));
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        if (/voith_detailed_user|voith_admin_audit/i.test(k)) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw.length < 40 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) mergeRecords(parsed, map);
+          else if (parsed && typeof parsed === "object") {
+            ["instruments", "items", "data", "list", "rows", "frota", "equipamentos"].forEach((sub) => {
+              if (Array.isArray(parsed[sub])) mergeRecords(parsed[sub], map);
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    if (map.size < 10) {
+      try {
+        const keys = Object.keys(window);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator)/i.test(k)) continue;
+          let v;
+          try { v = window[k]; } catch (_) { continue; }
+          if (Array.isArray(v) && v.length >= 10 && v[0] && typeof v[0] === "object") {
+            mergeRecords(v, map);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: extrai tambem da tabela visivel do Inventario (incluindo "Faixa: 20 ~ 120")
+    document.querySelectorAll("table tbody tr").forEach((tr) => {
+      const rowTxt = String(tr.textContent || "");
+      const cm = rowTxt.match(/\b([A-Z]{1,4}\d{4,}[A-Z0-9-]*)\b/);
+      if (!cm) return;
+      const code = cm[1];
+      const key = code.toUpperCase();
+      const fm = rowTxt.match(/Faixa:\s*([^\n]+)/i);
+      const parsed = parseRangeFromText(fm ? fm[1] : "");
+      const tds = Array.from(tr.querySelectorAll("td"));
+      const existing = map.get(key);
+      if (!existing) {
+        const nameTxt = String((tds[2] && tds[2].textContent) || "").replace(/Faixa:.*$/i, "").replace(/\s+/g, " ").trim();
+        const sectorTxt = String((tds[3] && tds[3].textContent) || "").replace(/\s+/g, " ").trim();
+        const localTxt = String((tds[4] && tds[4].textContent) || "").replace(/\s+/g, " ").trim();
+        map.set(key, {
+          code,
+          name: nameTxt,
+          sector: sectorTxt,
+          local: localTxt,
+          resp: "",
+          status: "",
+          unit: "",
+          min: parsed.min,
+          max: parsed.max,
+          rangeLabel: parsed.min !== null && parsed.max !== null ? `${parsed.min} ~ ${parsed.max}` : ""
+        });
+      } else if (existing.min === null && parsed.min !== null) {
+        existing.min = parsed.min;
+        existing.max = parsed.max;
+        existing.rangeLabel = `${parsed.min} ~ ${parsed.max}`;
+      }
+    });
+
+    if (map.size > 0) {
+      cacheItems = Array.from(map.values());
+      lastScanAt = now;
+    }
+    return cacheItems;
+  };
+
+  /* -------------------- PARSER DE CONSULTA POR MEDIDA / FAIXA -------------------- */
+  const STOPWORDS = new Set([
+    "de", "da", "do", "das", "dos", "que", "meca", "medir", "mede", "medida", "medidas",
+    "com", "uma", "um", "uns", "umas", "para", "pra", "ate", "entre", "faixa", "escala",
+    "capacidade", "especifica", "especifico", "em", "no", "na", "nos", "nas", "por",
+    "a", "e", "o", "os", "as", "ou", "ao", "aos", "alcance", "intervalo", "valor", "valores", "tipo"
+  ]);
+
+  const LOCATION_PREFIXES = new Set([
+    "armario", "bancada", "prateleira", "gaveta", "setor", "sala", "box", "cc", "nf", "rps", "lote", "dia", "dias", "mes", "meses"
+  ]);
+
+  const UNIT_REGEX = /\b(n\s*\.?\s*m|nm|kgf\s*\.?\s*m|kgf\s*\.?\s*cm|kgf|lbf\s*\.?\s*ft|lbf\s*\.?\s*pol|lbf|mm|cm|pol|polegadas?|in|bar|psi|mpa|kpa|graus?|v|kv|mv|ma|ohm|kg|mg|ml)\b/gi;
+
+  const detectUnitCategory = (qNorm) => {
+    if (/\b(n\s*\.?\s*m|nm|kgf\s*\.?\s*m|kgf\s*\.?\s*cm|lbf)\b/i.test(qNorm)) return "torque";
+    if (/\b(mm|cm|pol|polegadas?|in)\b/i.test(qNorm)) return "dim";
+    if (/\b(bar|psi|mpa|kpa)\b/i.test(qNorm)) return "press";
+    if (/\b(graus?|celsius|temp)\b/i.test(qNorm)) return "temp";
+    return "";
+  };
+
+  const parseSmartRangeQuery = (rawQuery) => {
+    const raw = String(rawQuery || "").trim();
+    if (raw.length < 3) return null;
+
+    // Ignora codigos puros (ex: 9981, AC409981)
+    if (/^[a-z]{0,4}\d{3,}$/i.test(raw.replace(/\s+/g, ""))) return null;
+
+    let q = norm(raw);
+    // Remove datas para nao confundir com medidas
+    q = q.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, " ");
+
+    const unitCat = detectUnitCategory(q);
+    const hasUnit = Boolean(unitCat) || UNIT_REGEX.test(q);
+    UNIT_REGEX.lastIndex = 0;
+
+    const hasMeasureCue = /\b(meca|medir|mede|medida|faixa|escala|capacidade|ate|entre)\b/.test(q);
+
+    let mode = null;
+    let reqMin = null;
+    let reqMax = null;
+    let reqVal = null;
+    let cleaned = q;
+
+    // 1. Tenta detectar intervalo (ex: "200 a 500", "200-500", "200 ~ 500", "entre 200 e 500")
+    const rangeMatch = q.match(/(?:^|[\s(])(-?\d+(?:[.,]\d+)?)\s*(?:a|ate|~|-|\u2013|\u2014|\be\b)\s*(-?\d+(?:[.,]\d+)?)(?=$|[\s),.;a-z])/i);
+    if (rangeMatch) {
+      const a = parseNum(rangeMatch[1]);
+      const b = parseNum(rangeMatch[2]);
+      if (a !== null && b !== null) {
+        mode = "range";
+        reqMin = Math.min(a, b);
+        reqMax = Math.max(a, b);
+        cleaned = q.slice(0, rangeMatch.index) + " " + q.slice(rangeMatch.index + rangeMatch[0].length);
+      }
+    }
+
+    // 2. Se nao for intervalo, tenta detectar medida unica (ex: "paquimetro que meca 300 mm" ou "paquimetro 300")
+    if (!mode) {
+      const singleMatch = q.match(/(?:^|[\s(])(-?\d+(?:[.,]\d+)?)(?=$|[\s),.;a-z])/);
+      if (singleMatch) {
+        const before = q.slice(0, singleMatch.index).trim().split(/\s+/).pop() || "";
+        const val = parseNum(singleMatch[1]);
+        if (val !== null && !LOCATION_PREFIXES.has(before)) {
+          cleaned = q.slice(0, singleMatch.index) + " " + q.slice(singleMatch.index + singleMatch[0].length);
+          mode = "single";
+          reqVal = val;
+        }
+      }
+    }
+
+    if (!mode) return null;
+
+    // Remove unidades, pontuacao e palavras de ligacao para extrair o tipo de instrumento
+    cleaned = cleaned.replace(UNIT_REGEX, " ").replace(/[^a-z0-9\s]/g, " ");
+    const keywords = cleaned
+      .split(/\s+/)
+      .map((w) => w.trim())
+      .filter((w) => w.length >= 3 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+
+    // Evita falso positivo em buscas soltas sem unidade/dica nem tipo de instrumento (ex: "4311 F")
+    if (mode === "single" && !hasUnit && !hasMeasureCue && keywords.length === 0) {
+      return null;
+    }
+
+    // Remove plural simples em portugues para ajudar match (ex: "torquimetros" -> "torquimetro")
+    const normKeywords = keywords.map((w) => (w.length > 5 && w.endsWith("s") ? w.slice(0, -1) : w));
+
+    return { mode, reqMin, reqMax, reqVal, keywords: normKeywords, unitCat, raw };
+  };
+
+  const searchBySmartRange = (parsed) => {
+    const all = getAllInstrumentsWithRange();
+    const results = [];
+
+    for (let i = 0; i < all.length; i++) {
+      const it = all[i];
+      if (it.min === null || it.max === null) continue;
+
+      const hay = norm(`${it.name} ${it.code} ${it.sector} ${it.local} ${it.resp} ${it.unit}`);
+
+      // Todas as palavras-chave do instrumento devem bater (ex: "torquimetro", "paquimetro")
+      let kwOk = true;
+      for (let k = 0; k < parsed.keywords.length; k++) {
+        if (!hay.includes(parsed.keywords[k])) {
+          kwOk = false;
+          break;
+        }
+      }
+      if (!kwOk) continue;
+
+      let matchType = "";
+      let score = 0;
+
+      if (parsed.mode === "range") {
+        const coversAll = it.min <= parsed.reqMin + 1e-6 && it.max >= parsed.reqMax - 1e-6;
+        const overlaps = it.min <= parsed.reqMax && it.max >= parsed.reqMin;
+        if (!coversAll && !overlaps) continue;
+
+        if (Math.abs(it.min - parsed.reqMin) < 1e-6 && Math.abs(it.max - parsed.reqMax) < 1e-6) {
+          matchType = "Faixa exata";
+          score = 1000;
+        } else if (coversAll) {
+          matchType = "Atende a faixa";
+          const spanDiff = Math.max(0, (it.max - it.min) - (parsed.reqMax - parsed.reqMin));
+          score = 800 - Math.min(250, spanDiff * 0.15);
+        } else {
+          // Sobreposicao parcial: exige que cubra pelo menos 40% da faixa pedida
+          const ov = Math.min(it.max, parsed.reqMax) - Math.max(it.min, parsed.reqMin);
+          const reqSpan = Math.max(1, parsed.reqMax - parsed.reqMin);
+          if (ov / reqSpan < 0.4) continue;
+          matchType = "Faixa parcial";
+          score = 400 + Math.round((ov / reqSpan) * 100);
+        }
+      } else {
+        // Modo medida unica (ex: paquimetro que meca 300 mm)
+        if (!(it.min <= parsed.reqVal + 1e-6 && it.max >= parsed.reqVal - 1e-6)) continue;
+
+        if (Math.abs(it.max - parsed.reqVal) < 1e-6) {
+          matchType = "Limite exato";
+          score = 1000 - Math.min(50, it.min * 0.1);
+        } else {
+          matchType = "Atende medida";
+          const excess = Math.max(0, it.max - parsed.reqVal);
+          score = 800 - Math.min(250, excess * 0.2);
+        }
+      }
+
+      // Bonus leve por categoria de unidade (sem excluir registros que nao tem unidade salva)
+      if (parsed.unitCat === "torque" && /torquim/.test(hay)) score += 60;
+      if (parsed.unitCat === "dim" && /paquim|microm|relogio|trena|regua|subito|calibrador|altimetro/.test(hay)) score += 60;
+      if (parsed.unitCat === "press" && /manom|press/.test(hay)) score += 60;
+
+      results.push({ item: it, matchType, score });
+    }
+
+    results.sort((a, b) => b.score - a.score || a.item.code.localeCompare(b.item.code));
+    return results;
+  };
+
+  /* -------------------- DROPDOWN INTELIGENTE PARA TODAS AS BARRAS -------------------- */
+  let dropdownEl = null;
+  let activeInput = null;
+
+  const closeDropdown = () => {
+    if (dropdownEl) dropdownEl.style.display = "none";
+    activeInput = null;
+  };
+
+  const ensureDropdown = () => {
+    if (dropdownEl && dropdownEl.isConnected) return dropdownEl;
+    const d = document.createElement("div");
+    d.id = "vu-smart-range-dd";
+    d.style.cssText = "position:fixed;display:none;z-index:2147482000;background:#ffffff;border:1px solid #60a5fa;border-radius:12px;box-shadow:0 20px 50px rgba(15,23,42,.28);max-height:56vh;overflow-y:auto;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;";
+    document.body.appendChild(d);
+    dropdownEl = d;
+    return d;
+  };
+
+  const positionDropdown = (inp) => {
+    if (!dropdownEl || !inp || !isVisible(inp)) return;
+    const r = inp.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const w = Math.min(vw - 16, Math.max(320, r.width));
+    const left = Math.max(8, Math.min(r.left, vw - w - 8));
+    dropdownEl.style.left = left + "px";
+    dropdownEl.style.top = Math.min(window.innerHeight - 120, r.bottom + 6) + "px";
+    dropdownEl.style.width = w + "px";
+  };
+
+  const findAdjacentActionBtn = (inp) => {
+    let cur = inp.parentElement;
+    for (let i = 0; i < 3 && cur; i++) {
+      const btn = Array.from(cur.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b)) return false;
+        const t = norm(b.textContent);
+        return t === "buscar" || t === "localizar";
+      });
+      if (btn) return btn;
+      cur = cur.parentElement;
+    }
+    return null;
+  };
+
+  const applySelectedInstrument = (inp, item) => {
+    closeDropdown();
+    if (!inp || !item) return;
+
+    // Caso 1: Barra de busca da Cautela em Massa -> adiciona direto na lista
+    if (inp.id === "vu-bulk-search") {
+      setInputVal(inp, item.code);
+      const addBtn = document.getElementById("vu-bulk-add-list");
+      if (addBtn) addBtn.click();
+      return;
+    }
+
+    // Caso 2: Qualquer outra barra de pesquisa do site -> preenche codigo exato e dispara busca/localizar
+    setInputVal(inp, item.code);
+    const btn = findAdjacentActionBtn(inp);
+    if (btn) {
+      setTimeout(() => btn.click(), 40);
+    } else {
+      inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+    }
+  };
+
+  const renderSmartDropdown = (inp) => {
+    const parsed = parseSmartRangeQuery(inp.value);
+    if (!parsed) {
+      if (activeInput === inp) closeDropdown();
+      return false;
+    }
+
+    const hits = searchBySmartRange(parsed);
+    const dd = ensureDropdown();
+    activeInput = inp;
+
+    const rangeDesc =
+      parsed.mode === "range"
+        ? `${String(parsed.reqMin).replace(".", ",")} a ${String(parsed.reqMax).replace(".", ",")}`
+        : `medida ${String(parsed.reqVal).replace(".", ",")}`;
+    const kwDesc = parsed.keywords.length ? parsed.keywords.join(" ") + " \u2022 " : "";
+    const isBulk = inp.id === "vu-bulk-search";
+
+    const headerHtml =
+      `<div style="position:sticky;top:0;z-index:2;background:#eff6ff;border-bottom:1px solid #bfdbfe;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+        `<div>` +
+          `<div style="font-size:12px;font-weight:800;color:#002466;">Busca por Medida: ${kwDesc}${rangeDesc}</div>` +
+          `<div style="font-size:11px;color:#334155;">${hits.length} instrumento(s) compat\u00edvel(is) encontrado(s)</div>` +
+        `</div>` +
+        `<div style="display:flex;align-items:center;gap:6px;">` +
+          (isBulk && hits.length > 0
+            ? `<button type="button" id="vu-smart-add-all" style="padding:4px 9px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:800;cursor:pointer;">+ Incluir todos (${Math.min(hits.length, 30)})</button>`
+            : "") +
+          `<button type="button" id="vu-smart-close" style="border:none;background:transparent;color:#475569;font-size:16px;font-weight:800;cursor:pointer;padding:0 4px;">&times;</button>` +
+        `</div>` +
+      `</div>`;
+
+    if (!hits.length) {
+      dd.innerHTML =
+        headerHtml +
+        `<div style="padding:14px 12px;font-size:12px;color:#64748b;">Nenhum instrumento com faixa cadastrada compat\u00edvel com <strong>${rangeDesc}</strong>.</div>`;
+    } else {
+      const shown = hits.slice(0, 35);
+      const rowsHtml = shown.map((entry, idx) => {
+        const it = entry.item;
+        const badgeBg = entry.matchType === "Faixa parcial" ? "#fef3c7" : "#dcfce7";
+        const badgeCol = entry.matchType === "Faixa parcial" ? "#92400e" : "#166534";
+        const stNorm = norm(it.status);
+        const stBadge = it.status
+          ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:${stNorm.includes("venc") ? "#fee2e2" : "#e0f2fe"};color:${stNorm.includes("venc") ? "#b91c1c" : "#0369a1"};">${it.status}</span>`
+          : "";
+        const meta = [it.local, it.sector, it.resp].filter(Boolean).join(" \u2022 ");
+
+        return (
+          `<button type="button" data-smart-idx="${idx}" class="vu-smart-row" style="display:flex;flex-direction:column;gap:3px;width:100%;padding:9px 12px;border:none;border-bottom:1px solid #f1f5f9;background:#ffffff;text-align:left;cursor:pointer;">` +
+            `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;flex-wrap:wrap;">` +
+              `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+                `<span style="font-weight:800;font-size:13px;color:#004899;">${it.code}</span>` +
+                `<span style="font-size:12.5px;font-weight:700;color:#0f172a;">${it.name || "Instrumento"}</span>` +
+              `</div>` +
+              `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">` +
+                `<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px;background:${badgeBg};color:${badgeCol};">Faixa: ${it.rangeLabel} &bull; ${entry.matchType}</span>` +
+                stBadge +
+              `</div>` +
+            `</div>` +
+            (meta ? `<div style="font-size:11.5px;color:#64748b;">${meta}</div>` : "") +
+          `</button>`
+        );
+      }).join("");
+
+      dd.innerHTML = headerHtml + rowsHtml;
+
+      dd.querySelectorAll(".vu-smart-row").forEach((rowBtn) => {
+        rowBtn.addEventListener("mouseenter", () => { rowBtn.style.background = "#f0f9ff"; });
+        rowBtn.addEventListener("mouseleave", () => { rowBtn.style.background = "#ffffff"; });
+        rowBtn.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          const idx = Number(rowBtn.getAttribute("data-smart-idx"));
+          if (shown[idx]) applySelectedInstrument(inp, shown[idx].item);
+        });
+      });
+
+      const addAllBtn = dd.querySelector("#vu-smart-add-all");
+      if (addAllBtn) {
+        addAllBtn.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          const codes = shown.slice(0, 30).map((x) => x.item.code).join(", ");
+          closeDropdown();
+          setInputVal(inp, codes);
+          const addBtn = document.getElementById("vu-bulk-add-list");
+          if (addBtn) addBtn.click();
+        });
+      }
+    }
+
+    const closeBtn = dd.querySelector("#vu-smart-close");
+    if (closeBtn) closeBtn.addEventListener("mousedown", (ev) => { ev.preventDefault(); closeDropdown(); });
+
+    positionDropdown(inp);
+    dd.style.display = "block";
+    return true;
+  };
+
+  /* -------------------- IDENTIFICA E CONECTA TODAS AS BARRAS DE PESQUISA -------------------- */
+  const isSearchInput = (el) => {
+    if (!el || el.tagName !== "INPUT") return false;
+    const tp = String(el.type || "text").toLowerCase();
+    if (!["text", "search", ""].includes(tp)) return false;
+    if (el.closest("#vu-img-modal") || el.closest("#vu-adm-inner") || el.closest("#vu-dl-voith")) return false;
+    if (el.id === "vu-bulk-search") return true;
+
+    // Exclui campos internos de cadastro/edicao de instrumento
+    const hostCard = el.closest("[role=dialog], .fixed.inset-0, .modal, form");
+    if (hostCard) {
+      const hTxt = norm(hostCard.textContent || "");
+      const isItemForm = hTxt.includes("descricao do instrumento") || (hTxt.includes("faixa minima") && hTxt.includes("faixa maxima"));
+      if (isItemForm) return false;
+    }
+
+    if (tp === "search") return true;
+    const sig = norm([el.id, el.name, el.placeholder, el.getAttribute("aria-label")].filter(Boolean).join(" "));
+    if (/(buscar|pesquis|filtrar|search|codigo|ac4|9981)/.test(sig)) return true;
+    return Boolean(findAdjacentActionBtn(el));
+  };
+
+  const bindAllSearchBars = () => {
+    document.querySelectorAll("input").forEach((inp) => {
+      if (inp.dataset.vuSmartRangeBound === "1") return;
+      if (!isSearchInput(inp)) return;
+      inp.dataset.vuSmartRangeBound = "1";
+
+      let debounce = null;
+      const trigger = () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => renderSmartDropdown(inp), 120);
+      };
+
+      inp.addEventListener("input", trigger);
+      inp.addEventListener("focus", () => {
+        if (String(inp.value || "").trim().length >= 3) renderSmartDropdown(inp);
+      });
+
+      inp.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") {
+          closeDropdown();
+          return;
+        }
+        if (ev.key === "Enter" && parseSmartRangeQuery(inp.value)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          renderSmartDropdown(inp);
+        }
+      }, true);
+
+      const actionBtn = findAdjacentActionBtn(inp);
+      if (actionBtn && actionBtn.dataset.vuSmartBtnBound !== "1") {
+        actionBtn.dataset.vuSmartBtnBound = "1";
+        actionBtn.addEventListener("click", (ev) => {
+          if (parseSmartRangeQuery(inp.value)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            renderSmartDropdown(inp);
+          }
+        }, true);
+      }
+    });
+  };
+
+  document.addEventListener("mousedown", (ev) => {
+    if (!dropdownEl || dropdownEl.style.display === "none") return;
+    if (dropdownEl.contains(ev.target) || (activeInput && activeInput.contains(ev.target))) return;
+    closeDropdown();
+  });
+
+  window.addEventListener("scroll", () => {
+    if (activeInput && dropdownEl && dropdownEl.style.display === "block") {
+      positionDropdown(activeInput);
+    }
+  }, true);
+
+  window.addEventListener("resize", () => {
+    if (activeInput && dropdownEl && dropdownEl.style.display === "block") {
+      positionDropdown(activeInput);
+    }
+  });
+
+  let bindTimer = null;
+  const scheduleBind = (delay = 180) => {
+    if (bindTimer) return;
+    bindTimer = setTimeout(() => {
+      bindTimer = null;
+      bindAllSearchBars();
+    }, delay);
+  };
+
+  const init = () => {
+    scheduleBind(250);
+    document.addEventListener("click", () => scheduleBind(150), true);
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        scheduleBind(200);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_SMART_RANGE_SEARCH_V1_END */
+
+/* VOITH_FAMILY_SUBFILTERS_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setInputVal = (el, val) => {
+    if (!el) return;
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    if (desc && desc.set) desc.set.call(el, String(val));
+    else el.value = String(val);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const FAMILIES = [
+    {
+      id: "dimensional",
+      label: "Dimensional",
+      nativeMatch: /dimension/i,
+      subitems: [
+        { id: "paquimetro", label: "Paqu\u00edmetro", query: "Paqu\u00edmetro", re: /paquim/i },
+        { id: "micrometro", label: "Micr\u00f4metro", query: "Micr\u00f4metro", re: /microm/i },
+        { id: "relogio", label: "Rel\u00f3gio (Comp./Apalp.)", query: "Rel\u00f3gio", re: /relogio/i },
+        { id: "subito", label: "S\u00fabito", query: "S\u00fabito", re: /subito/i },
+        { id: "imicro", label: "Imicro", query: "Imicro", re: /imicro/i },
+        { id: "cal_folga", label: "Calibrador de Folga", query: "Calibrador de Folga", re: /calibrador.*folga|lamina.*folga|folga/i },
+        { id: "cal_chaveta", label: "Calibrador de Chaveta", query: "Chaveta", re: /chaveta/i },
+        { id: "cal_rosca", label: "Calibrador de Rosca", query: "Rosca", re: /calibrador.*rosca|anel\s+rosc|tampao\s+rosc|pente.*rosca/i },
+        { id: "cal_tampao", label: "Calibrador Tamp\u00e3o", query: "Tamp\u00e3o", re: /tampao/i },
+        { id: "cal_anel", label: "Calibrador Anel", query: "Anel", re: /\banel\b/i },
+        { id: "dinamometro", label: "Dinam\u00f4metro", query: "Dinam\u00f4metro", re: /dinamom/i },
+        { id: "trena", label: "Trena", query: "Trena", re: /\btrena\b/i },
+        { id: "regua", label: "R\u00e9gua", query: "R\u00e9gua", re: /\bregua\b/i },
+        { id: "escala", label: "Escala", query: "Escala", re: /\bescala\b/i },
+        { id: "esquadro", label: "Esquadro", query: "Esquadro", re: /esquadro/i },
+        { id: "nivel", label: "N\u00edvel", query: "N\u00edvel", re: /\bnivel\b/i },
+        { id: "goniometro", label: "Goni\u00f4metro", query: "Goni\u00f4metro", re: /goniom/i },
+        { id: "transferidor", label: "Transferidor", query: "Transferidor", re: /transferidor/i },
+        { id: "tracador", label: "Tra\u00e7ador de Altura", query: "Tra\u00e7ador", re: /tracador/i },
+        { id: "altimetro", label: "Alt\u00edmetro", query: "Alt\u00edmetro", re: /altimetro/i },
+        { id: "bloco", label: "Bloco Padr\u00e3o", query: "Bloco", re: /\bbloco\b/i },
+        { id: "rugosimetro", label: "Rugos\u00edmetro", query: "Rugos\u00edmetro", re: /rugos/i },
+        { id: "durometro", label: "Dur\u00f4metro", query: "Dur\u00f4metro", re: /durom/i },
+        { id: "espessura", label: "Medidor de Espessura", query: "Espessura", re: /espessura/i },
+        { id: "camada", label: "Medidor de Camada", query: "Camada", re: /camada/i },
+        { id: "desempeno", label: "Desempeno", query: "Desempeno", re: /desempeno/i },
+        { id: "compasso", label: "Compasso", query: "Compasso", re: /compasso/i },
+        { id: "calibrador_outros", label: "Calibrador (Geral)", query: "Calibrador", re: /calibrador/i }
+      ]
+    },
+    {
+      id: "torque",
+      label: "Torque & For\u00e7a",
+      nativeMatch: /torque|forca/i,
+      subitems: [
+        { id: "torquimetro", label: "Torqu\u00edmetro", query: "Torqu\u00edmetro", re: /torquim/i },
+        { id: "dinamometro_t", label: "Dinam\u00f4metro", query: "Dinam\u00f4metro", re: /dinamom/i },
+        { id: "multiplicador", label: "Multiplicador de Torque", query: "Multiplicador", re: /multiplicador/i },
+        { id: "celula", label: "C\u00e9lula de Carga", query: "C\u00e9lula", re: /celula\s+de\s+carga/i },
+        { id: "balanca", label: "Balan\u00e7a", query: "Balan\u00e7a", re: /balanca/i }
+      ]
+    },
+    {
+      id: "press_temp",
+      label: "Press\u00e3o & Temp.",
+      nativeMatch: /press|temp/i,
+      subitems: [
+        { id: "manometro", label: "Man\u00f4metro", query: "Man\u00f4metro", re: /manom/i },
+        { id: "vacuometro", label: "Vacu\u00f4metro", query: "Vacu\u00f4metro", re: /vacuom/i },
+        { id: "termometro", label: "Term\u00f4metro", query: "Term\u00f4metro", re: /termom/i },
+        { id: "pirometro", label: "Pir\u00f4metro", query: "Pir\u00f4metro", re: /pirom/i },
+        { id: "termohigro", label: "Termohigr\u00f4metro", query: "Termohigr", re: /termohigr|higrom/i },
+        { id: "transmissor", label: "Transmissor", query: "Transmissor", re: /transmissor/i }
+      ]
+    },
+    {
+      id: "eletrica",
+      label: "El\u00e9trica & Ensaios",
+      nativeMatch: /eletr|ensaio/i,
+      subitems: [
+        { id: "multimetro", label: "Mult\u00edmetro", query: "Mult\u00edmetro", re: /multim/i },
+        { id: "alicate", label: "Alicate Amper\u00edmetro", query: "Alicate", re: /alicate|amperim/i },
+        { id: "megohmetro", label: "Meg\u00f4hmetro", query: "Meg", re: /megoh|megom/i },
+        { id: "tacometro", label: "Tac\u00f4metro", query: "Tac\u00f4metro", re: /tacom/i },
+        { id: "brilho", label: "Medidor de Brilho", query: "Brilho", re: /brilho/i },
+        { id: "estrob", label: "Estrobosc\u00f3pio", query: "Estrob", re: /estrob/i },
+        { id: "vibracao", label: "Analisador / Vibra\u00e7\u00e3o", query: "Vibra", re: /vibra/i },
+        { id: "fonte", label: "Fonte", query: "Fonte", re: /\bfonte\b/i }
+      ]
+    }
+  ];
+
+  /* -------------------- LEITURA DA FROTA DE INSTRUMENTOS -------------------- */
+  let fetchedPool = [];
+  let cachedList = [];
+  let lastScan = 0;
+
+  const extractRec = (obj) => {
+    if (!obj || typeof obj !== "object") return null;
+    const code = String(obj.code || obj.codigo || obj.cod || obj.tag || obj.patrimonio || "").trim();
+    if (!code || code.length < 3 || code.length > 35 || /^\d{2}:\d{2}/.test(code)) return null;
+    const name = String(obj.name || obj.instrumento || obj.descricao || obj.description || obj.desc || obj.nome || obj.equipamento || obj.tipo || "").trim();
+    const family = String(obj.familia || obj.family || obj.categoria || obj.category || "").trim();
+    return { code, name, family };
+  };
+
+  const mergeList = (arr, map) => {
+    if (!Array.isArray(arr) || arr.length < 2) return;
+    for (let i = 0; i < arr.length; i++) {
+      const r = extractRec(arr[i]);
+      if (r && !map.has(r.code.toUpperCase())) map.set(r.code.toUpperCase(), r);
+    }
+  };
+
+  if (!window.__vuFamilyFetchWrapped && typeof window.fetch === "function") {
+    window.__vuFamilyFetchWrapped = true;
+    const prevFetch = window.fetch.bind(window);
+    window.fetch = function (...args) {
+      const p = prevFetch(...args);
+      try {
+        const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        if (url.includes("/rest/v1/") && !url.includes("audit_logs")) {
+          p.then((res) => {
+            if (!res || !res.ok) return;
+            const ct = String((res.headers && res.headers.get("content-type")) || "");
+            if (!ct.includes("json")) return;
+            res.clone().json().then((data) => {
+              if (Array.isArray(data) && data.length >= 5 && typeof data[0] === "object" && extractRec(data[0])) {
+                fetchedPool = data;
+                lastScan = 0;
+                scheduleRender(80);
+              }
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      } catch (_) {}
+      return p;
+    };
+  }
+
+  const getInventoryItems = () => {
+    const now = Date.now();
+    if (cachedList.length >= 10 && now - lastScan < 4500) return cachedList;
+
+    const map = new Map();
+    if (fetchedPool.length) mergeList(fetchedPool, map);
+
+    [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.db && window.db.instruments,
+      window.state && window.state.instruments,
+      window.state && window.state.items,
+      window.appState && window.appState.instruments
+    ].forEach((src) => mergeList(src, map));
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        if (/voith_detailed_user|voith_admin_audit/i.test(k)) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw.length < 40 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) mergeList(parsed, map);
+          else if (parsed && typeof parsed === "object") {
+            ["instruments", "items", "data", "list", "rows", "frota", "equipamentos"].forEach((sub) => {
+              if (Array.isArray(parsed[sub])) mergeList(parsed[sub], map);
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    if (map.size < 10) {
+      try {
+        const keys = Object.keys(window);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator)/i.test(k)) continue;
+          let v;
+          try { v = window[k]; } catch (_) { continue; }
+          if (Array.isArray(v) && v.length >= 10 && v[0] && typeof v[0] === "object") {
+            mergeList(v, map);
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (map.size > 0) {
+      cachedList = Array.from(map.values());
+      lastScan = now;
+    }
+    return cachedList;
+  };
+
+  /* -------------------- CALCULO DE FAMILIAS E SUBITENS REAIS -------------------- */
+  const buildFamilyStats = () => {
+    const items = getInventoryItems();
+    const hasData = items.length > 0;
+    const famMap = new Map();
+
+    FAMILIES.forEach((f) => {
+      famMap.set(f.id, {
+        id: f.id,
+        label: f.label,
+        nativeMatch: f.nativeMatch,
+        codes: new Set(),
+        subCounts: new Map(),
+        extraSubs: new Map()
+      });
+      f.subitems.forEach((s) => {
+        famMap.get(f.id).subCounts.set(s.id, { ...s, count: 0 });
+      });
+    });
+
+    items.forEach((it) => {
+      const nName = norm(it.name);
+      const nFam = norm(it.family);
+      let matchedAnyFamily = false;
+
+      FAMILIES.forEach((f) => {
+        const bucket = famMap.get(f.id);
+        let matchedSubInThisFamily = false;
+
+        for (let i = 0; i < f.subitems.length; i++) {
+          const sub = f.subitems[i];
+          // "calibrador_outros" so entra se nao bateu em calibrador especifico antes
+          if (sub.id === "calibrador_outros" && matchedSubInThisFamily) continue;
+          if (sub.re.test(nName)) {
+            bucket.subCounts.get(sub.id).count++;
+            bucket.codes.add(it.code);
+            matchedSubInThisFamily = true;
+            matchedAnyFamily = true;
+            break;
+          }
+        }
+
+        if (!matchedSubInThisFamily && nFam && f.nativeMatch.test(nFam)) {
+          bucket.codes.add(it.code);
+          matchedAnyFamily = true;
+          registerAutoSub(bucket, it.name);
+        }
+      });
+
+      // Itens nao classificados em Torque/Pressao/Eletrica entram em Dimensional com auto-subfiltro
+      if (!matchedAnyFamily && it.name) {
+        const dimBucket = famMap.get("dimensional");
+        dimBucket.codes.add(it.code);
+        registerAutoSub(dimBucket, it.name);
+      }
+    });
+
+    const out = [];
+    FAMILIES.forEach((f) => {
+      const bucket = famMap.get(f.id);
+      let subs = Array.from(bucket.subCounts.values());
+      if (hasData) {
+        subs = subs.filter((s) => s.count > 0);
+        bucket.extraSubs.forEach((ex) => {
+          if (ex.count >= 2) subs.push(ex);
+        });
+        subs.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+      }
+      out.push({
+        id: f.id,
+        label: f.label,
+        nativeMatch: f.nativeMatch,
+        total: bucket.codes.size,
+        hasData,
+        subitems: subs
+      });
+    });
+
+    return out;
+  };
+
+  const registerAutoSub = (bucket, rawName) => {
+    const clean = String(rawName || "").replace(/\(.*?\)/g, "").trim();
+    if (!clean) return;
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (!words.length) return;
+    let label = words[0];
+    if (/^(medidor|calibrador|chave|base|jogo|conjunto|pente)$/i.test(norm(words[0])) && words.length >= 3 && /^(de|do|da)$/i.test(norm(words[1]))) {
+      label = `${words[0]} ${words[1]} ${words[2]}`;
+    } else if (/^(medidor|calibrador|chave|pente)$/i.test(norm(words[0])) && words.length >= 2) {
+      label = `${words[0]} ${words[1]}`;
+    }
+    const key = norm(label);
+    if (key.length < 4) return;
+    const prev = bucket.extraSubs.get(key);
+    if (prev) prev.count++;
+    else bucket.extraSubs.set(key, { id: "auto_" + key.replace(/[^a-z0-9]/g, "_"), label, query: label, count: 1 });
+  };
+
+  /* -------------------- INTEGRACAO COM O INVENTARIO NATIVO -------------------- */
+  let activeFamilyId = null;
+  let activeSubId = null;
+  let activeSubQuery = "";
+
+  const findInventoryStatusBar = () => {
+    const allBtns = Array.from(document.querySelectorAll("button")).filter((b) => isVisible(b) && !b.closest("#vu-family-bar"));
+    const emDiaBtn = allBtns.find((b) => norm(b.textContent) === "em dia");
+    if (!emDiaBtn || !emDiaBtn.parentElement) return null;
+    const bar = emDiaBtn.parentElement;
+    const txt = norm(bar.textContent || "");
+    if (txt.includes("todos") && txt.includes("vencidos") && txt.includes("em dia")) {
+      return bar;
+    }
+    return null;
+  };
+
+  const findInventorySearchInput = () => {
+    const filtrosBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-family-bar")) return false;
+      const t = norm(b.textContent);
+      return t === "filtros" || t.startsWith("filtros ");
+    });
+    if (filtrosBtn) {
+      let cur = filtrosBtn.parentElement;
+      for (let i = 0; i < 4 && cur; i++) {
+        const inp = Array.from(cur.querySelectorAll("input")).find((el) => {
+          if (!isVisible(el)) return false;
+          const tp = String(el.type || "text").toLowerCase();
+          if (!["text", "search", ""].includes(tp)) return false;
+          return !String((el.parentElement && el.parentElement.textContent) || "").includes("Ctrl K");
+        });
+        if (inp) return inp;
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  };
+
+  const findNativeFamilySelect = () => {
+    const selects = Array.from(document.querySelectorAll("select")).filter((s) => {
+      if (s.closest("#vu-family-bar") || s.closest("#vu-adm-inner") || s.closest("#vu-bulk-modal") || s.closest("#vu-img-modal")) return false;
+      if (s.closest("[role=dialog], .fixed.inset-0")) return false;
+      const optsTxt = norm(Array.from(s.options || []).map((o) => o.textContent).join(" "));
+      let hits = 0;
+      if (optsTxt.includes("dimensional")) hits++;
+      if (optsTxt.includes("torque")) hits++;
+      if (optsTxt.includes("eletric")) hits++;
+      if (optsTxt.includes("press") || optsTxt.includes("temp")) hits++;
+      return hits >= 2;
+    });
+    return selects[0] || null;
+  };
+
+  const setNativeFamilySelect = (famObj) => {
+    const sel = findNativeFamilySelect();
+    if (!sel) return false;
+    const opts = Array.from(sel.options || []);
+    if (!famObj) {
+      const resetOpt = opts.find((o) => o.value === "" || /^(todas|todos|qualquer)/i.test(norm(o.textContent))) || opts[0];
+      if (resetOpt && sel.value !== resetOpt.value) {
+        sel.value = resetOpt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return true;
+    }
+    const matchOpt = opts.find((o) => famObj.nativeMatch.test(norm(o.textContent + " " + o.value)));
+    if (matchOpt) {
+      if (sel.value !== matchOpt.value) {
+        sel.value = matchOpt.value;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const applyFamilySelection = (famStats, famId) => {
+    const invInput = findInventorySearchInput();
+
+    if (!famId || activeFamilyId === famId && !activeSubId) {
+      activeFamilyId = null;
+      activeSubId = null;
+      activeSubQuery = "";
+      setNativeFamilySelect(null);
+      if (invInput && activeSubQuery) setInputVal(invInput, "");
+      renderBar();
+      return;
+    }
+
+    activeFamilyId = famId;
+    activeSubId = null;
+    if (invInput && activeSubQuery && norm(invInput.value) === norm(activeSubQuery)) {
+      setInputVal(invInput, "");
+    }
+    activeSubQuery = "";
+
+    const famObj = famStats.find((f) => f.id === famId);
+    if (famObj) setNativeFamilySelect(famObj);
+    renderBar();
+  };
+
+  const applySubitemSelection = (famObj, subObj) => {
+    const invInput = findInventorySearchInput();
+
+    // Clicar no mesmo subfiltro desmarca e volta para a familia inteira
+    if (activeSubId === subObj.id) {
+      activeSubId = null;
+      activeSubQuery = "";
+      if (invInput) setInputVal(invInput, "");
+      setNativeFamilySelect(famObj);
+      renderBar();
+      return;
+    }
+
+    activeFamilyId = famObj.id;
+    activeSubId = subObj.id;
+    activeSubQuery = subObj.query;
+
+    // Reseta select nativo de familia para evitar ocultar itens classificados em outra familia (ex: Dinamometro)
+    setNativeFamilySelect(null);
+    if (invInput) {
+      setInputVal(invInput, subObj.query);
+    }
+    renderBar();
+  };
+
+  const resetAllSubfilters = () => {
+    const invInput = findInventorySearchInput();
+    const hadQuery = activeSubQuery;
+    activeFamilyId = null;
+    activeSubId = null;
+    activeSubQuery = "";
+    setNativeFamilySelect(null);
+    if (invInput && hadQuery && norm(invInput.value) === norm(hadQuery)) {
+      setInputVal(invInput, "");
+    }
+    renderBar();
+  };
+
+  /* -------------------- RENDERIZACAO DA BARRA DE FAMILIAS + SUBFILTROS -------------------- */
+  const renderBar = () => {
+    const statusBar = findInventoryStatusBar();
+    const existing = document.getElementById("vu-family-bar");
+    if (!statusBar) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const stats = buildFamilyStats();
+    const isDark =
+      document.documentElement.classList.contains("dark") ||
+      document.body.classList.contains("dark");
+
+    let host = existing;
+    if (!host || host.previousElementSibling !== statusBar) {
+      if (host) host.remove();
+      host = document.createElement("div");
+      host.id = "vu-family-bar";
+      statusBar.insertAdjacentElement("afterend", host);
+    }
+
+    const bgMain = isDark ? "rgba(15,23,42,.65)" : "#f8fafc";
+    const bdMain = isDark ? "rgba(148,163,184,.25)" : "#e2e8f0";
+    const txtMuted = isDark ? "#94a3b8" : "#64748b";
+
+    host.style.cssText = `margin-top:10px;margin-bottom:6px;display:grid;gap:8px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;`;
+
+    const famBtnsHtml =
+      `<button type="button" data-vu-fam="" style="padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${!activeFamilyId ? "#004899" : bdMain};background:${!activeFamilyId ? "#004899" : (isDark ? "#1e293b" : "#ffffff")};color:${!activeFamilyId ? "#ffffff" : (isDark ? "#e2e8f0" : "#334155")};white-space:nowrap;">Todas Fam\u00edlias</button>` +
+      stats.map((f) => {
+        const isAct = activeFamilyId === f.id;
+        const countTag = f.hasData ? ` <span style="opacity:.82;font-weight:600;">(${f.total})</span>` : "";
+        const arrow = isAct ? " &#9662;" : " &#9656;";
+        return (
+          `<button type="button" data-vu-fam="${f.id}" style="padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${isAct ? "#004899" : bdMain};background:${isAct ? "#004899" : (isDark ? "#1e293b" : "#ffffff")};color:${isAct ? "#ffffff" : (isDark ? "#e2e8f0" : "#334155")};white-space:nowrap;transition:all .15s;">` +
+            `${f.label}${countTag}<span style="font-size:10px;">${arrow}</span>` +
+          `</button>`
+        );
+      }).join("");
+
+    const activeFam = stats.find((f) => f.id === activeFamilyId);
+    let subPanelHtml = "";
+
+    if (activeFam) {
+      const subBg = isDark ? "rgba(30,58,138,.28)" : "#eff6ff";
+      const subBd = isDark ? "rgba(96,165,250,.35)" : "#bfdbfe";
+      const subTitleCol = isDark ? "#93c5fd" : "#003399";
+
+      const allSubBtn =
+        `<button type="button" data-vu-sub="__ALL__" style="padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;border:1px solid ${!activeSubId ? "#0284c7" : subBd};background:${!activeSubId ? "#0284c7" : (isDark ? "#0f172a" : "#ffffff")};color:${!activeSubId ? "#ffffff" : (isDark ? "#e2e8f0" : "#1e3a8a")};white-space:nowrap;">` +
+          `Todos de ${activeFam.label}${activeFam.hasData ? " (" + activeFam.total + ")" : ""}` +
+        `</button>`;
+
+      const subBtns = activeFam.subitems.map((s) => {
+        const isSubAct = activeSubId === s.id;
+        const cTxt = activeFam.hasData && s.count ? ` (${s.count})` : "";
+        return (
+          `<button type="button" data-vu-sub="${s.id}" style="padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;border:1px solid ${isSubAct ? "#0284c7" : subBd};background:${isSubAct ? "#0284c7" : (isDark ? "#0f172a" : "#ffffff")};color:${isSubAct ? "#ffffff" : (isDark ? "#e2e8f0" : "#1e293b")};white-space:nowrap;">` +
+            `${s.label}${cTxt}` +
+          `</button>`
+        );
+      }).join("");
+
+      subPanelHtml =
+        `<div style="padding:9px 11px;border-radius:12px;background:${subBg};border:1px solid ${subBd};display:grid;gap:7px;">` +
+          `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+            `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${subTitleCol};">Subfiltros &bull; ${activeFam.label}</span>` +
+            (activeSubId ? `<button type="button" id="vu-sub-clear" style="border:none;background:transparent;color:${isDark ? "#fca5a5" : "#dc2626"};font-size:11.5px;font-weight:700;cursor:pointer;padding:0;">Limpar subfiltro</button>` : "") +
+          `</div>` +
+          `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${allSubBtn}${subBtns}</div>` +
+        `</div>`;
+    }
+
+    host.innerHTML =
+      `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;border-radius:12px;background:${bgMain};border:1px solid ${bdMain};">` +
+        `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${txtMuted};margin-right:2px;">Fam\u00edlias:</span>` +
+        famBtnsHtml +
+      `</div>` +
+      subPanelHtml;
+
+    host.querySelectorAll("[data-vu-fam]").forEach((btn) => {
+      btn.onclick = () => {
+        const fid = btn.getAttribute("data-vu-fam") || null;
+        if (!fid) resetAllSubfilters();
+        else applyFamilySelection(stats, fid);
+      };
+    });
+
+    if (activeFam) {
+      host.querySelectorAll("[data-vu-sub]").forEach((btn) => {
+        btn.onclick = () => {
+          const sid = btn.getAttribute("data-vu-sub");
+          if (sid === "__ALL__") {
+            activeSubId = null;
+            activeSubQuery = "";
+            const invInput = findInventorySearchInput();
+            if (invInput) setInputVal(invInput, "");
+            setNativeFamilySelect(activeFam);
+            renderBar();
+            return;
+          }
+          const subObj = activeFam.subitems.find((x) => x.id === sid);
+          if (subObj) applySubitemSelection(activeFam, subObj);
+        };
+      });
+
+      const clrBtn = host.querySelector("#vu-sub-clear");
+      if (clrBtn) {
+        clrBtn.onclick = () => {
+          activeSubId = null;
+          activeSubQuery = "";
+          const invInput = findInventorySearchInput();
+          if (invInput) setInputVal(invInput, "");
+          setNativeFamilySelect(activeFam);
+          renderBar();
+        };
+      }
+    }
+  };
+
+  /* -------------------- SINCRONIZACAO COM LIMPAR TUDO E SELECT NATIVO -------------------- */
+  let renderTimer = null;
+  const scheduleRender = (delay = 160) => {
+    if (renderTimer) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      renderBar();
+    }, delay);
+  };
+
+  document.addEventListener("change", (ev) => {
+    const tgt = ev.target;
+    if (!tgt || tgt.tagName !== "SELECT") return;
+    const natSel = findNativeFamilySelect();
+    if (tgt !== natSel) return;
+    const selectedOpt = tgt.options && tgt.options[tgt.selectedIndex];
+    const txt = norm((selectedOpt ? selectedOpt.textContent : "") + " " + tgt.value);
+    const matched = FAMILIES.find((f) => f.nativeMatch.test(txt));
+    if (matched && activeFamilyId !== matched.id) {
+      activeFamilyId = matched.id;
+      activeSubId = null;
+      activeSubQuery = "";
+      scheduleRender(60);
+    } else if (!matched && !activeSubId && activeFamilyId) {
+      activeFamilyId = null;
+      scheduleRender(60);
+    }
+  }, true);
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button, a") : null;
+    if (btn && !btn.closest("#vu-family-bar")) {
+      const t = norm(btn.textContent);
+      if (t === "limpar tudo" || t === "limpar filtros") {
+        activeFamilyId = null;
+        activeSubId = null;
+        activeSubQuery = "";
+      }
+    }
+    scheduleRender(140);
+  }, true);
+
+  document.addEventListener("input", (ev) => {
+    const tgt = ev.target;
+    if (!tgt || tgt.tagName !== "INPUT") return;
+    const invInput = findInventorySearchInput();
+    if (tgt === invInput && activeSubQuery && norm(tgt.value) !== norm(activeSubQuery)) {
+      activeSubId = null;
+      activeSubQuery = "";
+      scheduleRender(80);
+    }
+  }, true);
+
+  const init = () => {
+    scheduleRender(220);
+    window.addEventListener("hashchange", () => scheduleRender(140));
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        scheduleRender(180);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_FAMILY_SUBFILTERS_V1_END */
+
+/* VOITH_AUTOCOMPLETE_AUTOCORRECT_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const compact = (s) => norm(s).replace(/[^a-z0-9]/g, "");
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setInputVal = (el, val) => {
+    if (!el) return;
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    if (desc && desc.set) desc.set.call(el, String(val));
+    else el.value = String(val);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const getFieldHint = (el) => {
+    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label"), el.getAttribute("list"), el.dataset.vuOrigList];
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${el.id}"]`);
+      if (lbl) parts.push(lbl.textContent);
+    }
+    const closestLbl = el.closest("label");
+    if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.parentElement) {
+      const sib = el.parentElement.querySelector("label, span, p");
+      if (sib && sib !== el && String(sib.textContent || "").length < 80) parts.push(sib.textContent);
+    }
+    return norm(parts.filter(Boolean).join(" "));
+  };
+
+  const levenshtein = (a, b) => {
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = new Array(n + 1);
+    let curr = new Array(n + 1);
+    for (let j = 0; j <= n; j++) prev[j] = j;
+    for (let i = 1; i <= m; i++) {
+      curr[0] = i;
+      const ca = a.charCodeAt(i - 1);
+      for (let j = 1; j <= n; j++) {
+        const cost = ca === b.charCodeAt(j - 1) ? 0 : 1;
+        curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      }
+      const tmp = prev; prev = curr; curr = tmp;
+    }
+    return prev[n];
+  };
+
+  const similarity = (a, b) => {
+    const maxLen = Math.max(a.length, b.length);
+    if (!maxLen) return 1;
+    return 1 - levenshtein(a, b) / maxLen;
+  };
+
+  /* -------------------- COLETA DE VALORES OFICIAIS DA FROTA -------------------- */
+  let fetchedPool = [];
+  let cachedBuckets = { local: [], setor: [], resp: [], desc: [] };
+  let lastBucketScan = 0;
+
+  if (!window.__vuAutoFetchWrapped && typeof window.fetch === "function") {
+    window.__vuAutoFetchWrapped = true;
+    const prevFetch = window.fetch.bind(window);
+    window.fetch = function (...args) {
+      const p = prevFetch(...args);
+      try {
+        const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        if (url.includes("/rest/v1/") && !url.includes("audit_logs")) {
+          p.then((res) => {
+            if (!res || !res.ok) return;
+            const ct = String((res.headers && res.headers.get("content-type")) || "");
+            if (!ct.includes("json")) return;
+            res.clone().json().then((data) => {
+              if (Array.isArray(data) && data.length >= 5 && typeof data[0] === "object") {
+                fetchedPool = data;
+                lastBucketScan = 0;
+              }
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      } catch (_) {}
+      return p;
+    };
+  }
+
+  const addUnique = (map, val) => {
+    const v = String(val || "").replace(/\s+/g, " ").trim();
+    if (!v || v.length < 2 || v === "-" || /^[-–—]+$/.test(v)) return;
+    const key = norm(v);
+    if (!map.has(key)) {
+      map.set(key, { val: v, count: 1 });
+    } else {
+      const entry = map.get(key);
+      entry.count++;
+      // Prefere versao com acento ou inicial maiuscula
+      if (/[A-Z\u00c0-\u00dd]/.test(v) && !/[A-Z\u00c0-\u00dd]/.test(entry.val)) entry.val = v;
+    }
+  };
+
+  const scanRecordsIntoBuckets = (arr, maps) => {
+    if (!Array.isArray(arr) || arr.length < 2) return;
+    for (let i = 0; i < arr.length; i++) {
+      const o = arr[i];
+      if (!o || typeof o !== "object") continue;
+      addUnique(maps.local, o.local || o.armario || o.location || o.localizacao || o.local_fisico);
+      addUnique(maps.setor, o.sector || o.setor || o.area || o.setor_oficial);
+      addUnique(maps.resp, o.responsavel || o.responsible || o.tecnico || o.owner || o.holder);
+      addUnique(maps.desc, o.name || o.instrumento || o.descricao || o.description || o.desc || o.equipamento);
+    }
+  };
+
+  const getFleetBuckets = () => {
+    const now = Date.now();
+    if (now - lastBucketScan < 5000 && cachedBuckets.local.length > 0) return cachedBuckets;
+
+    const maps = { local: new Map(), setor: new Map(), resp: new Map(), desc: new Map() };
+
+    if (fetchedPool.length) scanRecordsIntoBuckets(fetchedPool, maps);
+
+    [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.db && window.db.instruments,
+      window.state && window.state.instruments,
+      window.state && window.state.items,
+      window.appState && window.appState.instruments
+    ].forEach((src) => scanRecordsIntoBuckets(src, maps));
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        if (/voith_admin_audit/i.test(k)) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw.length < 20 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            if (typeof parsed[0] === "string") {
+              if (/local|armar|location/i.test(k)) parsed.forEach((s) => addUnique(maps.local, s));
+              if (/setor|sector/i.test(k)) parsed.forEach((s) => addUnique(maps.setor, s));
+            } else {
+              scanRecordsIntoBuckets(parsed, maps);
+            }
+          } else if (parsed && typeof parsed === "object") {
+            ["instruments", "items", "data", "list", "rows", "frota"].forEach((sub) => {
+              if (Array.isArray(parsed[sub])) scanRecordsIntoBuckets(parsed[sub], maps);
+            });
+            ["locations", "locais", "officialLocations"].forEach((sub) => {
+              if (Array.isArray(parsed[sub])) parsed[sub].forEach((s) => addUnique(maps.local, typeof s === "string" ? s : (s && (s.name || s.nome))));
+            });
+            ["sectors", "setores", "officialSectors"].forEach((sub) => {
+              if (Array.isArray(parsed[sub])) parsed[sub].forEach((s) => addUnique(maps.setor, typeof s === "string" ? s : (s && (s.name || s.nome))));
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // Complementa com todos os <datalist> da pagina
+    document.querySelectorAll("datalist").forEach((dl) => {
+      const id = norm(dl.id || "");
+      const targetMap = /setor|sector/.test(id) ? maps.setor : /resp|colab|tecnic/.test(id) ? maps.resp : /desc|instrum/.test(id) ? maps.desc : maps.local;
+      dl.querySelectorAll("option").forEach((opt) => addUnique(targetMap, opt.value || opt.textContent));
+    });
+
+    const toSortedArray = (m) => Array.from(m.values()).sort((a, b) => b.count - a.count || a.val.localeCompare(b.val)).map((x) => x.val);
+    cachedBuckets = {
+      local: toSortedArray(maps.local),
+      setor: toSortedArray(maps.setor),
+      resp: toSortedArray(maps.resp),
+      desc: toSortedArray(maps.desc)
+    };
+    lastBucketScan = now;
+    return cachedBuckets;
+  };
+
+  const getOptionsForInput = (inp, fieldType) => {
+    const unique = new Map();
+    const origListId = inp.dataset.vuOrigList || inp.getAttribute("list");
+    if (origListId) {
+      const dl = document.getElementById(origListId);
+      if (dl) {
+        dl.querySelectorAll("option").forEach((opt) => {
+          const v = String(opt.value || opt.textContent || "").trim();
+          if (v && !unique.has(norm(v))) unique.set(norm(v), { val: v, official: true });
+        });
+      }
+    }
+
+    const buckets = getFleetBuckets();
+    const list = buckets[fieldType] || [];
+    list.forEach((v) => {
+      const k = norm(v);
+      if (!unique.has(k)) unique.set(k, { val: v, official: false });
+    });
+
+    return Array.from(unique.values());
+  };
+
+  /* -------------------- MOTOR DE BUSCA E CORRECAO FUZZY -------------------- */
+  const rankCandidates = (rawInput, options) => {
+    const qNorm = norm(rawInput);
+    const qComp = compact(rawInput);
+    if (!qComp) return [];
+
+    const qTokens = qNorm.split(/\s+/).filter(Boolean);
+    const qNums = qNorm.match(/\d+/g) || [];
+    const ranked = [];
+
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i];
+      const cNorm = norm(opt.val);
+      const cComp = compact(opt.val);
+      const cTokens = cNorm.split(/\s+/).filter(Boolean);
+      const cNums = cNorm.match(/\d+/g) || [];
+
+      let score = 0;
+      let kind = "";
+
+      if (cNorm === qNorm || cComp === qComp) {
+        score = 1000;
+        kind = "exact";
+      } else if (cNorm.startsWith(qNorm) || cComp.startsWith(qComp)) {
+        score = 880 - Math.min(80, (cComp.length - qComp.length) * 1.5);
+        kind = "prefix";
+      } else if (qTokens.length > 1 && qTokens.every((qt) => cTokens.some((ct) => ct.startsWith(qt) || ct.includes(qt)))) {
+        score = 820;
+        kind = "tokens";
+      } else if (cNorm.includes(qNorm) || (qComp.length >= 3 && cComp.includes(qComp))) {
+        score = 720;
+        kind = "contains";
+      } else if (qComp.length >= 4) {
+        // Similaridade contra o texto inteiro ou contra o prefixo do mesmo tamanho (corrige erros enquanto digita)
+        const fullSim = similarity(qComp, cComp);
+        const prefSlice = cComp.slice(0, Math.min(cComp.length, qComp.length + 1));
+        const prefSim = cComp.length >= qComp.length ? similarity(qComp, prefSlice) : 0;
+
+        // Tambem testa contra cada palavra do candidato (ex: "tridimencional" em "Sala Tridimensional")
+        let wordSim = 0;
+        for (let w = 0; w < cTokens.length; w++) {
+          const wt = compact(cTokens[w]);
+          if (wt.length >= 4) {
+            const s = similarity(qComp, wt);
+            if (s > wordSim) wordSim = s;
+          }
+        }
+
+        const bestSim = Math.max(fullSim, wordSim, prefSim * 0.94);
+        if (bestSim >= 0.66) {
+          score = Math.round(bestSim * 700);
+          kind = "fuzzy";
+        }
+      }
+
+      if (score > 0) {
+        if (opt.official) score += 15;
+        const numbersMatch = qNums.length === 0 || qNums.every((n) => cNums.includes(n));
+        ranked.push({
+          val: opt.val,
+          score,
+          kind,
+          sim: similarity(qComp, cComp),
+          numbersMatch
+        });
+      }
+    }
+
+    ranked.sort((a, b) => b.score - a.score || a.val.localeCompare(b.val));
+    return ranked;
+  };
+
+  /* -------------------- TOAST COM DESFAZER PARA AUTOCORRECAO -------------------- */
+  let toastTimer = null;
+  const showUndoToast = (inp, oldVal, newVal) => {
+    let t = document.getElementById("vu-autocorrect-toast");
+    if (t) t.remove();
+    t = document.createElement("div");
+    t.id = "vu-autocorrect-toast";
+    t.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483100;background:#0f172a;color:#f8fafc;border:1px solid #22c55e;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:12px;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.35);max-width:92vw;";
+    t.innerHTML =
+      `<span>Corrigido: <strong style="color:#86efac;">${newVal}</strong></span>` +
+      `<button type="button" id="vu-ac-undo" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fde047;font-weight:800;font-size:11.5px;cursor:pointer;">Desfazer</button>`;
+    document.body.appendChild(t);
+
+    t.querySelector("#vu-ac-undo").onclick = () => {
+      inp.dataset.vuSkipCorrectVal = oldVal;
+      setInputVal(inp, oldVal);
+      t.remove();
+    };
+
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { if (t && t.isConnected) t.remove(); }, 5000);
+  };
+
+  /* -------------------- DROPDOWN COMPACTO (RESPONSIVO AO TECLADO MOBILE) -------------------- */
+  let ddEl = null;
+  let activeInp = null;
+  let currentMatches = [];
+  let selectedIdx = 0;
+
+  const closeDd = () => {
+    if (ddEl) ddEl.style.display = "none";
+    activeInp = null;
+    currentMatches = [];
+    selectedIdx = 0;
+  };
+
+  const ensureDd = () => {
+    if (ddEl && ddEl.isConnected) return ddEl;
+    const d = document.createElement("div");
+    d.id = "vu-autocomplete-dd";
+    d.style.cssText = "position:fixed;display:none;z-index:2147482600;background:#ffffff;border:1px solid #3b82f6;border-radius:10px;box-shadow:0 16px 38px rgba(15,23,42,.26);overflow-y:auto;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;";
+    document.body.appendChild(d);
+    ddEl = d;
+    return d;
+  };
+
+  const positionDd = (inp) => {
+    if (!ddEl || !inp || !isVisible(inp)) return;
+    const r = inp.getBoundingClientRect();
+    const vv = window.visualViewport;
+    const vpHeight = vv ? vv.height : window.innerHeight;
+    const vpTop = vv ? vv.offsetTop : 0;
+    const vw = vv ? vv.width : window.innerWidth;
+
+    const w = Math.min(vw - 16, Math.max(220, r.width));
+    const left = Math.max(8, Math.min(r.left, vw - w - 8));
+
+    const spaceBelow = vpTop + vpHeight - r.bottom - 10;
+    const spaceAbove = r.top - vpTop - 10;
+
+    ddEl.style.left = left + "px";
+    ddEl.style.width = w + "px";
+
+    if (spaceBelow >= 135 || spaceBelow >= spaceAbove) {
+      ddEl.style.top = (r.bottom + 4) + "px";
+      ddEl.style.bottom = "auto";
+      ddEl.style.maxHeight = Math.max(100, Math.min(230, spaceBelow)) + "px";
+    } else {
+      ddEl.style.top = "auto";
+      ddEl.style.bottom = (window.innerHeight - r.top + 4) + "px";
+      ddEl.style.maxHeight = Math.max(100, Math.min(230, spaceAbove)) + "px";
+    }
+  };
+
+  const pickOption = (inp, val) => {
+    delete inp.dataset.vuSkipCorrectVal;
+    setInputVal(inp, val);
+    closeDd();
+  };
+
+  const renderDd = (inp, fieldType) => {
+    const raw = String(inp.value || "").trim();
+    const options = getOptionsForInput(inp, fieldType);
+    if (!options.length) {
+      closeDd();
+      return;
+    }
+
+    let matches;
+    if (!raw) {
+      matches = options.slice(0, 12).map((o) => ({ val: o.val, kind: "list", score: 500, sim: 1, numbersMatch: true }));
+    } else {
+      matches = rankCandidates(raw, options).slice(0, 10);
+      // Se ja esta exatamente igual ao unico resultado, esconde
+      if (matches.length === 1 && matches[0].val === raw) {
+        closeDd();
+        return;
+      }
+    }
+
+    if (!matches.length) {
+      closeDd();
+      return;
+    }
+
+    const d = ensureDd();
+    activeInp = inp;
+    currentMatches = matches;
+    selectedIdx = 0;
+
+    d.innerHTML = matches.map((m, idx) => {
+      const badge =
+        m.kind === "fuzzy"
+          ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:#fef3c7;color:#92400e;">Corre\u00e7\u00e3o</span>`
+          : m.kind === "prefix" && raw.length >= 2
+          ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:#dcfce7;color:#166534;">Completar</span>`
+          : "";
+      return (
+        `<button type="button" data-ac-idx="${idx}" class="vu-ac-row" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;padding:9px 12px;border:none;border-bottom:1px solid #f1f5f9;background:${idx === 0 ? "#eff6ff" : "#ffffff"};color:#0f172a;font-size:13px;font-weight:${idx === 0 ? "800" : "600"};text-align:left;cursor:pointer;">` +
+          `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${m.val}</span>` +
+          badge +
+        `</button>`
+      );
+    }).join("");
+
+    d.querySelectorAll(".vu-ac-row").forEach((btn) => {
+      btn.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        const i = Number(btn.getAttribute("data-ac-idx"));
+        if (currentMatches[i]) pickOption(inp, currentMatches[i].val);
+      });
+      btn.addEventListener("touchstart", (ev) => {
+        ev.preventDefault();
+        const i = Number(btn.getAttribute("data-ac-idx"));
+        if (currentMatches[i]) pickOption(inp, currentMatches[i].val);
+      }, { passive: false });
+    });
+
+    positionDd(inp);
+    d.style.display = "block";
+  };
+
+  const tryAutoCorrect = (inp, fieldType) => {
+    // Na descricao do instrumento apenas sugerimos, sem sobrescrever nomes novos
+    if (fieldType === "desc") return;
+
+    const raw = String(inp.value || "").trim();
+    if (!raw || raw.length < 3) return;
+    if (inp.dataset.vuSkipCorrectVal === raw) return;
+
+    const options = getOptionsForInput(inp, fieldType);
+    if (!options.length) return;
+
+    // Se ja existe exatamente igual, nao faz nada
+    if (options.some((o) => o.val === raw)) return;
+
+    const ranked = rankCandidates(raw, options);
+    if (!ranked.length) return;
+
+    const best = ranked[0];
+    const second = ranked[1];
+    if (!best.numbersMatch) return;
+
+    let shouldFix = false;
+
+    // 1. Apenas diferenca de acento/maiuscula/espaco (ex: "tridimensional" -> "Tridimensional")
+    if (best.kind === "exact") {
+      shouldFix = true;
+    }
+    // 2. Prefixo unico e claro (ex: "Tridim" ou "tri di" -> "Tridimensional")
+    else if (best.kind === "prefix" && compact(raw).length >= 4) {
+      const otherPrefix = ranked.slice(1).some((r) => r.kind === "prefix" && r.numbersMatch);
+      if (!otherPrefix) shouldFix = true;
+    }
+    // 3. Erro de digitacao claro (ex: "Tridimencional" -> "Tridimensional")
+    else if (best.kind === "fuzzy" && compact(raw).length >= 5) {
+      const gap = second ? best.score - second.score : 999;
+      if (best.sim >= 0.76 && gap >= 50) shouldFix = true;
+    }
+
+    if (shouldFix && best.val !== raw) {
+      setInputVal(inp, best.val);
+      showUndoToast(inp, raw, best.val);
+    }
+  };
+
+  /* -------------------- IDENTIFICACAO DOS CAMPOS DE FORMULARIO -------------------- */
+  const classifyField = (inp) => {
+    if (!inp || inp.tagName !== "INPUT") return null;
+    const tp = String(inp.type || "text").toLowerCase();
+    if (!["text", "search", ""].includes(tp)) return null;
+    if (inp.disabled || inp.readOnly) return null;
+    if (inp.closest("#vu-img-modal") || inp.closest("#vu-adm-inner") || inp.closest("#vu-dl-voith")) return null;
+
+    const hint = getFieldHint(inp);
+    if (/(codigo|code|patrimonio|faixa|data|valid|calibr|centro|custo|senha|login|busca|pesquis|filtrar)/.test(hint)) {
+      return null;
+    }
+
+    const hasList = Boolean(inp.getAttribute("list") || inp.dataset.vuOrigList);
+    if (/(localiz|local|armario|devolv|posse)/.test(hint)) return "local";
+    if (/(setor|sector|area|chapa)/.test(hint)) return "setor";
+    if (/(respons|tecnic|colaborad|portador|holder)/.test(hint)) return "resp";
+    if (/(descri|instrumento)/.test(hint) && inp.closest("[role=dialog], .fixed.inset-0, .modal, form")) return "desc";
+    if (hasList) return "local";
+    return null;
+  };
+
+  const bindSmartInputs = () => {
+    document.querySelectorAll("input").forEach((inp) => {
+      if (inp.dataset.vuAutoBound === "1") return;
+      const fieldType = classifyField(inp);
+      if (!fieldType) return;
+
+      inp.dataset.vuAutoBound = "1";
+      inp.dataset.vuFieldType = fieldType;
+
+      // Salva o id do datalist nativo para lermos as opcoes oficiais sem conflitar com o menu nativo
+      const listId = inp.getAttribute("list");
+      if (listId) {
+        inp.dataset.vuOrigList = listId;
+        inp.removeAttribute("list");
+      }
+      inp.setAttribute("autocomplete", "off");
+
+      inp.addEventListener("focus", () => {
+        setTimeout(() => renderDd(inp, fieldType), 60);
+      });
+
+      inp.addEventListener("input", () => {
+        delete inp.dataset.vuSkipCorrectVal;
+        renderDd(inp, fieldType);
+      });
+
+      inp.addEventListener("keydown", (ev) => {
+        if (!ddEl || ddEl.style.display === "none" || activeInp !== inp || !currentMatches.length) return;
+        if (ev.key === "ArrowDown") {
+          ev.preventDefault();
+          selectedIdx = (selectedIdx + 1) % currentMatches.length;
+          ddEl.querySelectorAll(".vu-ac-row").forEach((b, i) => {
+            b.style.background = i === selectedIdx ? "#eff6ff" : "#ffffff";
+            b.style.fontWeight = i === selectedIdx ? "800" : "600";
+          });
+        } else if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          selectedIdx = (selectedIdx - 1 + currentMatches.length) % currentMatches.length;
+          ddEl.querySelectorAll(".vu-ac-row").forEach((b, i) => {
+            b.style.background = i === selectedIdx ? "#eff6ff" : "#ffffff";
+            b.style.fontWeight = i === selectedIdx ? "800" : "600";
+          });
+        } else if (ev.key === "Enter" || ev.key === "Tab") {
+          if (currentMatches[selectedIdx]) {
+            if (ev.key === "Enter") ev.preventDefault();
+            pickOption(inp, currentMatches[selectedIdx].val);
+          }
+        } else if (ev.key === "Escape") {
+          closeDd();
+        }
+      });
+
+      inp.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (activeInp === inp) closeDd();
+          tryAutoCorrect(inp, fieldType);
+        }, 160);
+      });
+    });
+  };
+
+  // Garante autocorrecao tambem se clicar direto em "Salvar" sem sair do campo antes
+  document.addEventListener("mousedown", (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+    if (btn && /(salvar|confirmar|registrar)/.test(norm(btn.textContent))) {
+      const focused = document.activeElement;
+      if (focused && focused.dataset && focused.dataset.vuAutoBound === "1") {
+        tryAutoCorrect(focused, focused.dataset.vuFieldType);
+        closeDd();
+      }
+    }
+    if (ddEl && ddEl.style.display !== "none" && !ddEl.contains(ev.target) && (!activeInp || !activeInp.contains(ev.target))) {
+      closeDd();
+    }
+  }, true);
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      if (activeInp && ddEl && ddEl.style.display === "block") positionDd(activeInp);
+    });
+  }
+  window.addEventListener("scroll", () => {
+    if (activeInp && ddEl && ddEl.style.display === "block") positionDd(activeInp);
+  }, true);
+
+  let timer = null;
+  const schedule = (delay = 160) => {
+    if (timer) return;
+    timer = setTimeout(() => { timer = null; bindSmartInputs(); }, delay);
+  };
+
+  const init = () => {
+    schedule(220);
+    document.addEventListener("click", () => schedule(120), true);
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        schedule(180);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_AUTOCOMPLETE_AUTOCORRECT_V1_END */
+
 /* VOITH_IMAGE_IMPORTER_V1_START */
 (() => {
   "use strict";
@@ -1858,12 +3788,12 @@
   const mapSectorName = (raw) => {
     const s = norm(raw);
     if (!s) return "";
-    if (s.includes("ferroviaria") && s.includes("redutor")) return "Ferrovi\u00e1ria Redutor";
-    if (s.includes("ferrovi")) return "Ferrovi\u00e1ria";
+    if (s.includes("ferroviaria") && s.includes("redutor")) return "Voith Turbo (Ferrovi\u00e1ria Redutor)";
+    if (s.includes("ferrovi")) return "Voith Turbo (Ferrovi\u00e1ria)";
     if (s.includes("assist") && s.includes("automot")) return "Assist\u00eancia T\u00e9cnica Automotive";
-    if (s.includes("automot") || s.includes("engate")) return "Automotive/Engates";
+    if (s.includes("automot") || s.includes("engate")) return "Voith Turbo (Automotive)";
     if (s.includes("assist") && s.includes("industr")) return "Assist\u00eancia T\u00e9cnica Industrial";
-    if (s.includes("industr")) return "Industrial";
+    if (s.includes("industr")) return "Voith Turbo (Industrial)";
     if (s.includes("qualid")) return "Qualidade";
     if (s.includes("vorecon")) return "Vorecon";
     if (s.includes("metrolog")) return "Metrologia / Turbo";
@@ -1887,6 +3817,47 @@
     return a || b || "";
   };
 
+  const parseTrailingDetails = (restRaw) => {
+    let rest = String(restRaw || "").trim();
+    let cc = "", setor = "", responsavel = "", faixaIni = "", faixaFim = "";
+
+    if (!rest) return { cc, setor, responsavel, faixaIni, faixaFim };
+
+    const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
+    if (ccm) {
+      cc = ccm[1].trim().toUpperCase();
+      rest = rest.slice(ccm[0].length).trim();
+    }
+
+    const fm = rest.match(/['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s+['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s*$/);
+    if (fm) {
+      faixaIni = fm[1];
+      faixaFim = fm[2];
+      rest = rest.slice(0, fm.index).trim();
+    }
+
+    const sm = rest.match(/(?:vo[ji]?ith\s*turbo\s*)?\(([^)]+)\)/i);
+    if (sm) {
+      setor = mapSectorName(sm[1]);
+      rest = (rest.slice(0, sm.index) + " " + rest.slice(sm.index + sm[0].length)).trim();
+    } else {
+      const kw = rest.match(/(ferrovi[a\u00e1]ria(?:\s+redutor)?|automotive(?:\/engates)?|industrial|qualidade|vorecon|metrologia)/i);
+      if (kw) {
+        setor = mapSectorName(kw[1]);
+        rest = (rest.slice(0, kw.index) + " " + rest.slice(kw.index + kw[0].length)).trim();
+      }
+    }
+
+    responsavel = rest
+      .replace(/vo[ji]?ith\s*turbo/ig, "")
+      .replace(/([a-z\u00e0-\u00ff])([A-Z\u00c0-\u00dd])/g, "$1 $2")
+      .replace(/^[\s.,;:'"`()|:-]+|[\s.,;:'"`()|:-]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return { cc, setor, responsavel, faixaIni, faixaFim };
+  };
+
   const parseVoithLines = (rawText) => {
     const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const items = [];
@@ -1895,22 +3866,36 @@
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // Modo 1: Colado direto do Excel (separado por TAB)
+      // Modo 1: Colado direto do Excel / Sheets (colunas separadas por TAB)
       if (line.includes("\t")) {
         const cols = line.split("\t").map((c) => c.trim());
-        const codeMatch = String(cols[0] || "").toUpperCase().replace(/\s+/g, "").match(/^([A-Z]{2}\d{5,7}[A-Z0-9-]*)$/);
-        if (!codeMatch) continue;
-        const code = codeMatch[1];
+        while (cols.length && !cols[0]) cols.shift();
+        if (cols.length < 2) continue;
+
+        const c0Norm = norm(cols[0]);
+        if (/^(instrumento|codigo|cod|patrimonio|tag|informacoes|listagem|total)$/.test(c0Norm)) continue;
+
+        const code = cols[0].toUpperCase().replace(/\s+/g, "");
+        if (!code || code.length < 3 || code.length > 30 || !/[A-Z0-9]/.test(code)) continue;
         if (seen.has(code)) continue;
         seen.add(code);
 
         const desc = cols[1] || "";
-        const validade = normalizeDateBR(cols[2] || "");
-        const cc = cols[3] || "";
-        const setor = mapSectorName(cols[4] || "");
-        const responsavel = cols[5] || "";
-        const faixaIni = cols[6] || "";
-        const faixaFim = cols[7] || "";
+        let validade = normalizeDateBR(cols[2] || "");
+        let cc = cols[3] || "";
+        let setor = mapSectorName(cols[4] || "");
+        let responsavel = cols[5] || "";
+        let faixaIni = cols[6] || "";
+        let faixaFim = cols[7] || "";
+
+        // Se a data estiver em outra coluna, ajusta automaticamente
+        if (!validade) {
+          for (let c = 1; c < cols.length; c++) {
+            const d = normalizeDateBR(cols[c]);
+            if (d) { validade = d; break; }
+          }
+        }
+
         items.push({
           code,
           desc,
@@ -1925,15 +3910,14 @@
         continue;
       }
 
-      // Modo 2: Texto vindo do OCR da imagem da Listagem de Instrumentos
+      // Modo 2: Texto livre ou OCR de imagem
       const clean = line
         .replace(/[|\u00a6\[\]{}]/g, " ")
         .replace(/[_\u2014\u2013]+/g, " ")
         .replace(/\s+/g, " ")
         .trim();
 
-      const codeRe = /\b([A-Z]{2}\s*\d{5,7}[A-Z0-9-]*)\b/i;
-      const cm = clean.match(codeRe);
+      const cm = clean.match(/\b([A-Z]{2,4}\s*[-]?\s*\d{4,7}[A-Z0-9-]*)\b/i);
       if (!cm) continue;
 
       const code = cm[1].replace(/\s+/g, "").toUpperCase();
@@ -1941,74 +3925,60 @@
       seen.add(code);
 
       const afterCode = clean.slice(cm.index + cm[0].length).trim();
-      const dateRe = /\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/;
-      const dm = afterCode.match(dateRe);
+      const dm = afterCode.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
 
       let desc = "";
       let validade = "";
       let rest = "";
 
       if (dm) {
-        desc = afterCode.slice(0, dm.index).replace(/^[\s.,;:'"`-]+|[\s.,;:'"`-]+$/g, "").trim();
+        desc = afterCode.slice(0, dm.index).replace(/^[\s.,;:'"`:-]+|[\s.,;:'"`:-]+$/g, "").trim();
         validade = normalizeDateBR(dm[1]);
         rest = afterCode.slice(dm.index + dm[0].length).trim();
       } else {
         desc = afterCode;
       }
 
-      let cc = "";
-      let setor = "";
-      let responsavel = "";
-      let faixaIni = "";
-      let faixaFim = "";
-
-      if (rest) {
-        // Centro de custo (ex: 4311 F, 4310 A)
-        const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
-        if (ccm) {
-          cc = ccm[1].trim().toUpperCase();
-          rest = rest.slice(ccm[0].length).trim();
-        }
-
-        // Faixa Inicial e Faixa Final no fim da linha (ex: 0,1 200 ou 0 150)
-        const fm = rest.match(/['"`.,]*(-?\d+(?:[.,]\d+)?)\s+['"`.,]*(-?\d+(?:[.,]\d+)?)\s*$/);
-        if (fm) {
-          faixaIni = fm[1];
-          faixaFim = fm[2];
-          rest = rest.slice(0, fm.index).trim();
-        }
-
-        // Setor (ex: Voith Turbo (Ferroviaria) ou Voith Turbo (Automotive))
-        const sm = rest.match(/(?:voith\s*turbo\s*)?\(([^)]+)\)/i);
-        if (sm) {
-          setor = mapSectorName(sm[1]);
-          rest = (rest.slice(0, sm.index) + " " + rest.slice(sm.index + sm[0].length)).trim();
-        } else {
-          const kw = rest.match(/(ferrovi[a\u00e1]ria(?:\s+redutor)?|automotive(?:\/engates)?|industrial|qualidade|vorecon|metrologia)/i);
-          if (kw) {
-            setor = mapSectorName(kw[1]);
-            rest = (rest.slice(0, kw.index) + " " + rest.slice(kw.index + kw[0].length)).trim();
-          }
-        }
-
-        responsavel = rest
-          .replace(/voith\s*turbo/ig, "")
-          .replace(/^[\s.,;:'"`()-]+|[\s.,;:'"`()-]+$/g, "")
-          .replace(/\s+/g, " ")
-          .trim();
-      }
-
+      const det = parseTrailingDetails(rest);
       items.push({
         code,
         desc,
         validade,
-        cc,
-        setor,
-        responsavel,
-        faixaIni,
-        faixaFim,
-        faixa: formatRange(faixaIni, faixaFim)
+        cc: det.cc,
+        setor: det.setor,
+        responsavel: det.responsavel,
+        faixaIni: det.faixaIni,
+        faixaFim: det.faixaFim,
+        faixa: formatRange(det.faixaIni, det.faixaFim)
       });
+    }
+
+    // Fallback: se o OCR borrou o codigo mas leu a data/detalhes da linha, cria rascunho editavel
+    if (!items.length && lines.length) {
+      const joined = lines.join(" ")
+        .replace(/[|\u00a6\[\]{}]/g, " ")
+        .replace(/\s*:\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const dm = joined.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
+      if (dm) {
+        const desc = joined.slice(0, dm.index).replace(/^[\s.,;:'"`:-]+|[\s.,;:'"`:-]+$/g, "").trim();
+        const validade = normalizeDateBR(dm[1]);
+        const rest = joined.slice(dm.index + dm[0].length).trim();
+        const det = parseTrailingDetails(rest);
+        items.push({
+          code: "",
+          desc,
+          validade,
+          cc: det.cc,
+          setor: det.setor,
+          responsavel: det.responsavel,
+          faixaIni: det.faixaIni,
+          faixaFim: det.faixaFim,
+          faixa: formatRange(det.faixaIni, det.faixaFim),
+          missingCode: true
+        });
+      }
     }
 
     return items;
@@ -2034,7 +4004,6 @@
     });
   };
 
-  // Aumenta nitidez e remove triangulos verdes do Excel antes do OCR
   const preprocessImageForOcr = (blob) => {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
@@ -2058,7 +4027,6 @@
           const d = imgData.data;
           for (let i = 0; i < d.length; i += 4) {
             const r = d[i], g = d[i + 1], b = d[i + 2];
-            // Apaga triangulo verde de aviso do Excel e linhas azuis claras de cabecalho
             if (g > r + 22 && g > b + 22) {
               d[i] = d[i + 1] = d[i + 2] = 255;
               continue;
@@ -2083,31 +4051,91 @@
     });
   };
 
-  /* -------------------- CRIACAO AUTOMATICA VIA MODAL NATIVO "+ NOVO ITEM" -------------------- */
+  /* -------------------- IDENTIFICACAO ESTRITA DO MODAL "+ NOVO ITEM" -------------------- */
   const findNewItemButton = () => {
     return Array.from(document.querySelectorAll("button")).find((b) => {
       if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
       const t = norm(b.textContent);
-      return t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento");
+      if (t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento")) return true;
+      if (t === "+" && b.getBoundingClientRect().top < 90) return true;
+      return false;
     }) || null;
   };
 
-  const findOpenNewItemModal = () => {
-    const candidates = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).filter((el) => {
-      if (!isVisible(el) || el.id === "vu-img-modal" || el.id === "vu-img-progress" || el.id === "vu-dl-voith" || el.id === "vu-bulk-modal") return false;
-      const inputs = el.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea");
-      const hasSave = Array.from(el.querySelectorAll("button")).some((b) => {
+  const resolveInnerCard = (el) => {
+    let cur = el;
+    for (let depth = 0; depth < 3; depth++) {
+      if (!cur || !cur.classList) break;
+      const kids = Array.from(cur.children).filter((ch) => isVisible(ch) && ch.querySelector("input, select, textarea"));
+      if (kids.length === 1 && (cur.classList.contains("inset-0") || window.getComputedStyle(cur).position === "fixed")) {
+        cur = kids[0];
+      } else {
+        break;
+      }
+    }
+    return cur;
+  };
+
+  const isEditOrCustodyModal = (card) => {
+    if (!card) return true;
+    const txt = norm(card.textContent || "");
+    if (
+      txt.includes("mover p/ perdidos") ||
+      txt.includes("salvar & proximo") ||
+      txt.includes("nova cautela") ||
+      txt.includes("registrar cautela") ||
+      txt.includes("registrar devolucao") ||
+      txt.includes("buscar instrumento por codigo") ||
+      txt.includes("painel administrativo") ||
+      txt.includes("monitoramento de frota") ||
+      txt.includes("vence em ") ||
+      txt.includes("vencido ha ")
+    ) {
+      return true;
+    }
+    const btns = Array.from(card.querySelectorAll("button")).filter(isVisible);
+    const hasEditOrCustodyBtn = btns.some((b) => {
+      const t = norm(b.textContent);
+      return t === "excluir" || t === "localizar" || t === "cautela" || t === "copiar";
+    });
+    if (hasEditOrCustodyBtn) return true;
+
+    const heading = card.querySelector("h1, h2, h3, h4");
+    if (heading && /\b[a-z]{2}\d{4,}\b/i.test(String(heading.textContent || ""))) return true;
+
+    return false;
+  };
+
+  const findOpenNewItemCard = () => {
+    const overlays = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).filter((el) => {
+      if (!isVisible(el)) return false;
+      if (el.id && el.id.startsWith("vu-")) return false;
+      return true;
+    });
+
+    for (let i = overlays.length - 1; i >= 0; i--) {
+      const card = resolveInnerCard(overlays[i]);
+      if (!card || !isVisible(card)) continue;
+      if (isEditOrCustodyModal(card)) continue;
+
+      const txt = norm(card.textContent || "");
+      const hasInstrumentFields = txt.includes("codigo") && (txt.includes("descricao") || txt.includes("instrumento"));
+      const inputs = card.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea");
+      const hasSave = Array.from(card.querySelectorAll("button")).some((b) => {
         const t = norm(b.textContent);
         return isVisible(b) && /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem)/.test(t);
       });
-      return inputs.length >= 3 && hasSave && !String(el.textContent || "").includes("Monitoramento de Frota");
-    });
-    return candidates.length ? candidates[candidates.length - 1] : null;
+
+      if (hasInstrumentFields && inputs.length >= 3 && hasSave) {
+        return card;
+      }
+    }
+    return null;
   };
 
-  const closeNativeNewItemModal = (modal) => {
-    if (!modal || !isVisible(modal)) return;
-    const cBtn = Array.from(modal.querySelectorAll("button")).find((b) => {
+  const closeNativeNewItemModal = (card) => {
+    if (!card || !isVisible(card)) return;
+    const cBtn = Array.from(card.querySelectorAll("button")).find((b) => {
       if (!isVisible(b)) return false;
       const raw = String(b.textContent || "").trim();
       const t = norm(b.textContent);
@@ -2145,8 +4173,8 @@
       const it = rows[i];
       drawProg(i, it.code, "Abrindo cadastro e preenchendo dados");
 
-      let modal = findOpenNewItemModal();
-      if (!modal) {
+      let card = findOpenNewItemCard();
+      if (!card) {
         const newBtn = findNewItemButton();
         if (!newBtn) {
           fail.push(`${it.code} (bot\u00e3o + Novo Item n\u00e3o encontrado)`);
@@ -2155,17 +4183,17 @@
         newBtn.click();
         for (let t = 0; t < 20; t++) {
           await sleep(100);
-          modal = findOpenNewItemModal();
-          if (modal) break;
+          card = findOpenNewItemCard();
+          if (card) break;
         }
       }
 
-      if (!modal) {
+      if (!card) {
         fail.push(`${it.code} (janela de cadastro n\u00e3o abriu)`);
         continue;
       }
 
-      const controls = Array.from(modal.querySelectorAll("input, select, textarea")).filter((el) => {
+      const controls = Array.from(card.querySelectorAll("input, select, textarea")).filter((el) => {
         if (!isVisible(el) || el.disabled || el.readOnly) return false;
         const tp = String(el.type || "").toLowerCase();
         return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
@@ -2188,49 +4216,39 @@
         return false;
       };
 
-      // 1. Codigo
       const filledCode = fillBy(it.code, /(codigo|code|patrimonio|tag|identif|ac4)/, /(setor|centro|custo)/);
       if (!filledCode && controls[0]) {
         setControlValue(controls[0], it.code);
         used.add(controls[0]);
       }
 
-      // 2. Descricao / Instrumento
+      if (it.cc) {
+        const filledCc = fillBy(it.cc, /(centro|custo|cc)/, /(obs)/);
+        if (!filledCc) fillBy(`CC: ${it.cc}`, /(obs|nota|coment|detalh)/, null);
+      }
+
       fillBy(it.desc, /(descri|instrument|nome|equip|modelo|tipo)/, /(codigo|code|setor|respons|faixa|obs|centro)/);
 
-      // 3. Faixa (separada ou campo unico)
-      const filledIni = fillBy(it.faixaIni, /(faixa\s*inic|min|inicial)/, /(final|max)/);
-      const filledFim = fillBy(it.faixaFim, /(faixa\s*fin|max|final)/, /(inic|min)/);
+      const filledIni = fillBy(it.faixaIni, /(faixa\s*min|minima|min|inicial)/, /(final|max)/);
+      const filledFim = fillBy(it.faixaFim, /(faixa\s*max|maxima|max|final)/, /(inic|min)/);
       if (!filledIni && !filledFim) {
         fillBy(it.faixa, /(faixa|capac|range|medicao|escala)/, /(setor|data|valid)/);
       }
 
-      // 4. Data da Proxima Calibracao / Validade
+      fillBy(it.setor, /(setor|sector|area|chapa|divis|depart)/, /(local|armario|respons)/);
+      fillBy(it.responsavel, /(respons|tecnic|colaborad|gestor|owner|holder)/, /(setor|local|armario)/);
+
       const filledDate =
-        fillBy(it.validade, /(valid|proxim|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast)/, (el) => el.type === "date") ||
-        fillBy(it.validade, /(valid|proxim|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast|period|meses)/);
+        fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast)/, (el) => el.type === "date") ||
+        fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast|period|meses)/);
       if (!filledDate && it.validade) {
         const anyDate = controls.find((el) => !used.has(el) && el.type === "date");
         if (anyDate && setControlValue(anyDate, it.validade)) used.add(anyDate);
       }
 
-      // 5. Setor
-      fillBy(it.setor, /(setor|sector|area|chapa|divis|depart)/, /(local|armario|respons)/);
-
-      // 6. Responsavel
-      fillBy(it.responsavel, /(respons|tecnic|colaborad|gestor|owner|holder)/, /(setor|local|armario)/);
-
-      // 7. Centro de Custo ou Observacao
-      if (it.cc) {
-        const filledCc = fillBy(it.cc, /(centro|custo|cc)/, /(obs)/);
-        if (!filledCc) {
-          fillBy(`CC: ${it.cc}`, /(obs|nota|coment|detalh)/, null);
-        }
-      }
-
       await sleep(160);
 
-      const saveBtn = Array.from(modal.querySelectorAll("button")).find((b) => {
+      const saveBtn = Array.from(card.querySelectorAll("button")).find((b) => {
         if (!isVisible(b) || b.disabled) return false;
         const t = norm(b.textContent);
         return /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem|limpar)/.test(t);
@@ -2238,15 +4256,14 @@
 
       if (!saveBtn) {
         fail.push(`${it.code} (bot\u00e3o salvar n\u00e3o encontrado)`);
-        closeNativeNewItemModal(modal);
+        closeNativeNewItemModal(card);
         continue;
       }
 
       saveBtn.click();
       await sleep(950);
 
-      // Se o modal ainda estiver aberto, fecha antes do proximo
-      const stillOpen = findOpenNewItemModal();
+      const stillOpen = findOpenNewItemCard();
       if (stillOpen) {
         closeNativeNewItemModal(stillOpen);
         await sleep(220);
@@ -2283,12 +4300,12 @@
         `<div style="background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
           `<div>` +
             `<div style="font-size:16px;font-weight:800;">Importar Instrumentos por Imagem ou Excel</div>` +
-            `<div style="font-size:12px;color:#bfdbfe;">Envie um print/foto da Listagem de Instrumentos Voith, d\u00ea Ctrl+V na imagem ou cole linhas direto do Excel.</div>` +
+            `<div style="font-size:12px;color:#bfdbfe;">Cole linhas direto do Excel (Ctrl+C &rarr; Ctrl+V) ou envie um print/foto da Listagem Voith.</div>` +
           `</div>` +
           `<button type="button" id="vu-img-close" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:19px;line-height:1;cursor:pointer;">&times;</button>` +
         `</div>` +
         `<div style="padding:16px 20px;overflow-y:auto;display:grid;gap:14px;">` +
-          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">` +
+          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">` +
             `<label id="vu-img-drop" style="border:2px dashed #60a5fa;border-radius:12px;background:#eff6ff;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;cursor:pointer;">` +
               `<input id="vu-img-file" type="file" accept="image/*" style="display:none;">` +
               `<div style="font-weight:800;font-size:13.5px;color:#003399;">Clique para escolher imagem ou arraste aqui</div>` +
@@ -2357,12 +4374,13 @@
       prevWrap.style.display = parsedRows.length ? "grid" : "none";
       countEl.textContent = `Itens detectados (${parsedRows.length})`;
       tbody.innerHTML = parsedRows.map((r, idx) => {
-        const exists = existingCodes.has(String(r.code || "").toUpperCase());
+        const exists = r.code && existingCodes.has(String(r.code).toUpperCase());
+        const needsCode = !r.code;
         const inpCss = "width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;color:#0f172a;background:#fff;";
         return (
-          `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${exists ? "#fffbeb" : "#ffffff"};">` +
+          `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${exists ? "#fffbeb" : (needsCode ? "#fef2f2" : "#ffffff")};">` +
             `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" ${exists ? "" : "checked"}></td>` +
-            `<td style="padding:6px;"><input class="vu-c-code" value="${r.code || ""}" style="${inpCss}font-weight:800;">${exists ? '<div style="font-size:10px;color:#b45309;font-weight:700;margin-top:2px;">J\u00e1 cadastrado</div>' : ""}</td>` +
+            `<td style="padding:6px;"><input class="vu-c-code" value="${r.code || ""}" placeholder="Digite c\u00f3digo" style="${inpCss}font-weight:800;${needsCode ? "border-color:#dc2626;" : ""}">${exists ? '<div style="font-size:10px;color:#b45309;font-weight:700;margin-top:2px;">J\u00e1 cadastrado</div>' : (needsCode ? '<div style="font-size:10px;color:#dc2626;font-weight:700;margin-top:2px;">Preencher c\u00f3digo</div>' : "")}</td>` +
             `<td style="padding:6px;"><input class="vu-c-desc" value="${r.desc || ""}" style="${inpCss}"></td>` +
             `<td style="padding:6px;width:108px;"><input class="vu-c-val" value="${r.validade || ""}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
             `<td style="padding:6px;"><input class="vu-c-setor" value="${r.setor || ""}" style="${inpCss}"></td>` +
@@ -2393,12 +4411,15 @@
         const text = (res && res.data && res.data.text) || "";
         rawTxt.value = text;
         parsedRows = parseVoithLines(text);
-        if (parsedRows.length) {
+        if (parsedRows.length && !parsedRows[0].missingCode) {
           statusEl.style.color = "#15803d";
           statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da imagem! Confira os campos e clique em Criar Instrumentos.`;
+        } else if (parsedRows.length && parsedRows[0].missingCode) {
+          statusEl.style.color = "#b45309";
+          statusEl.textContent = "Dados lidos, mas o c\u00f3digo ficou borrado na imagem. Digite apenas o c\u00f3digo na tabela abaixo e clique em Criar.";
         } else {
           statusEl.style.color = "#b45309";
-          statusEl.textContent = "Texto lido, mas nenhum c\u00f3digo no formato AC000000 foi encontrado. Voc\u00ea pode ajustar o texto acima e clicar em Ler Texto.";
+          statusEl.textContent = "Texto lido, mas nenhum c\u00f3digo foi encontrado. Ajuste o texto acima e clique em Ler Texto.";
         }
         renderTable();
       } catch (err) {
@@ -2421,12 +4442,39 @@
       if (f) runOcrOnBlob(f);
     };
 
+    // CORRIGIDO: prioriza texto real (Excel/Sheets copia texto + imagem juntos!)
     const onPaste = (ev) => {
       if (!overlay.isConnected) {
         document.removeEventListener("paste", onPaste);
         return;
       }
-      const items = ev.clipboardData && ev.clipboardData.items;
+      const cb = ev.clipboardData;
+      if (!cb) return;
+
+      const plainText = String(cb.getData("text/plain") || "").trim();
+      if (plainText) {
+        if (document.activeElement !== rawTxt) {
+          ev.preventDefault();
+          rawTxt.value = plainText;
+        }
+        setTimeout(() => {
+          parsedRows = parseVoithLines(rawTxt.value);
+          if (parsedRows.length && !parsedRows[0].missingCode) {
+            statusEl.style.color = "#15803d";
+            statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) direto do Excel/texto!`;
+          } else if (parsedRows.length) {
+            statusEl.style.color = "#b45309";
+            statusEl.textContent = "Linha lida, mas confirme o c\u00f3digo na tabela abaixo antes de criar.";
+          } else {
+            statusEl.style.color = "#b45309";
+            statusEl.textContent = "Texto colado, mas nenhuma linha v\u00e1lida foi identificada. Ajuste e clique em Ler Texto.";
+          }
+          renderTable();
+        }, 40);
+        return;
+      }
+
+      const items = cb.items;
       if (items) {
         for (let i = 0; i < items.length; i++) {
           if (items[i].type && items[i].type.startsWith("image/")) {
@@ -2437,16 +4485,6 @@
           }
         }
       }
-      if (document.activeElement === rawTxt) {
-        setTimeout(() => {
-          parsedRows = parseVoithLines(rawTxt.value);
-          if (parsedRows.length) {
-            statusEl.style.color = "#15803d";
-            statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da planilha colada!`;
-            renderTable();
-          }
-        }, 50);
-      }
     };
     document.addEventListener("paste", onPaste);
 
@@ -2455,7 +4493,7 @@
       statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
       statusEl.textContent = parsedRows.length
         ? `${parsedRows.length} instrumento(s) detectado(s) no texto.`
-        : "Nenhuma linha com c\u00f3digo (ex: AC424767) encontrada no texto.";
+        : "Nenhuma linha v\u00e1lida encontrada no texto.";
       renderTable();
     };
 
@@ -2478,11 +4516,15 @@
 
     createBtn.onclick = () => {
       const selected = [];
+      let missingCodeCount = 0;
       tbody.querySelectorAll("tr").forEach((tr) => {
         const chk = tr.querySelector(".vu-row-chk");
         if (!chk || !chk.checked) return;
         const code = String(tr.querySelector(".vu-c-code").value || "").trim().toUpperCase();
-        if (!code) return;
+        if (!code) {
+          missingCodeCount++;
+          return;
+        }
         const faixa = String(tr.querySelector(".vu-c-faixa").value || "").trim();
         const parts = faixa.split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
         selected.push({
@@ -2497,60 +4539,86 @@
           cc: String(tr.querySelector(".vu-c-cc").value || "").trim()
         });
       });
+      if (missingCodeCount > 0 && !selected.length) {
+        statusEl.style.color = "#dc2626";
+        statusEl.textContent = "Preencha o campo C\u00f3digo na tabela antes de criar.";
+        return;
+      }
       if (!selected.length) return;
       document.removeEventListener("paste", onPaste);
       createInstrumentsQueue(selected);
     };
   };
 
-  /* -------------------- INJECAO DOS BOTOES -------------------- */
+  /* -------------------- INJECAO LIMPA APENAS EM "+ NOVO ITEM" -------------------- */
   const injectImageImportButtons = () => {
-    // 1. Ao lado do botao "+ Novo Item" no topo
-    const newBtn = findNewItemButton();
-    if (newBtn && newBtn.parentElement && !newBtn.parentElement.querySelector("#vu-open-img-import")) {
-      const b = document.createElement("button");
-      b.id = "vu-open-img-import";
-      b.type = "button";
-      b.textContent = "Ler Imagem";
-      b.title = "Importar instrumentos lendo print/imagem da Listagem Voith ou colando do Excel";
-      b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
-      b.onclick = openImageImportModal;
-      newBtn.insertAdjacentElement("afterend", b);
+    document.querySelectorAll("#vu-modal-img-wrap, #vu-modal-img-btn").forEach((el) => {
+      const host = el.closest("[role=dialog], .fixed.inset-0, .modal");
+      const card = host ? resolveInnerCard(host) : el.parentElement;
+      if (!card || !isVisible(card) || isEditOrCustodyModal(card)) {
+        el.remove();
+      }
+    });
+
+    const existingTop = document.getElementById("vu-open-img-import");
+    if (window.innerWidth <= 768 && existingTop) {
+      existingTop.remove();
+    } else if (window.innerWidth > 768 && !existingTop) {
+      const newBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
+        const t = norm(b.textContent);
+        return t.includes("novo item") || t.includes("novo instrumento");
+      });
+      if (newBtn && newBtn.parentElement) {
+        const b = document.createElement("button");
+        b.id = "vu-open-img-import";
+        b.type = "button";
+        b.textContent = "Ler Imagem";
+        b.title = "Importar instrumentos colando do Excel ou lendo print/imagem";
+        b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
+        b.onclick = openImageImportModal;
+        newBtn.insertAdjacentElement("afterend", b);
+      }
     }
 
-    // 2. Dentro do proprio modal "+ Novo Item" caso o usuario clique nele primeiro
-    const openNewModal = findOpenNewItemModal();
-    if (openNewModal && !openNewModal.querySelector("#vu-modal-img-btn")) {
-      const header = openNewModal.querySelector("div, header");
-      if (header) {
-        const b2 = document.createElement("button");
-        b2.id = "vu-modal-img-btn";
-        b2.type = "button";
-        b2.textContent = "Importar de Imagem / Excel";
-        b2.style.cssText = "margin:8px 16px 0;padding:7px 12px;border-radius:8px;border:1px solid #0284c7;background:#eff6ff;color:#004899;font-weight:800;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;";
-        b2.onclick = () => {
-          closeNativeNewItemModal(openNewModal);
-          setTimeout(openImageImportModal, 120);
-        };
-        header.insertAdjacentElement("afterend", b2);
-      }
+    const newItemCard = findOpenNewItemCard();
+    if (newItemCard && !newItemCard.querySelector("#vu-modal-img-wrap")) {
+      const firstInput = newItemCard.querySelector("input:not([type=hidden]):not([type=checkbox]), select, textarea");
+      const formBody = (firstInput && (firstInput.closest("form") || firstInput.parentElement && firstInput.parentElement.parentElement)) || newItemCard;
+
+      const wrap = document.createElement("div");
+      wrap.id = "vu-modal-img-wrap";
+      wrap.style.cssText = "width:100%;margin-bottom:12px;box-sizing:border-box;";
+      wrap.innerHTML =
+        `<button type="button" id="vu-modal-img-btn" style="width:100%;padding:9px 12px;border-radius:10px;border:1px dashed #0284c7;background:#eff6ff;color:#004899;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">` +
+          `<span>Importar v\u00e1rios por Imagem / Excel</span>` +
+        `</button>`;
+
+      wrap.querySelector("#vu-modal-img-btn").onclick = () => {
+        closeNativeNewItemModal(newItemCard);
+        setTimeout(openImageImportModal, 120);
+      };
+
+      if (formBody.firstChild) formBody.insertBefore(wrap, formBody.firstChild);
+      else formBody.appendChild(wrap);
     }
   };
 
   let t = null;
-  const schedule = (delay = 180) => {
+  const schedule = (delay = 160) => {
     if (t) return;
     t = setTimeout(() => { t = null; injectImageImportButtons(); }, delay);
   };
 
   const init = () => {
-    schedule(250);
-    document.addEventListener("click", () => schedule(150), true);
+    schedule(220);
+    document.addEventListener("click", () => schedule(120), true);
+    window.addEventListener("resize", () => schedule(150));
     const obs = new MutationObserver((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
-        schedule(200);
+        schedule(180);
         break;
       }
     });
