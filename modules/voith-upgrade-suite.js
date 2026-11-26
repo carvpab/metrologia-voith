@@ -1734,3 +1734,799 @@
     getUserProfiles: () => loadProfiles()
   });
 })();
+
+/* VOITH_IMAGE_IMPORTER_V1_START */
+(() => {
+  "use strict";
+
+  const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setControlValue = (el, val) => {
+    if (!el) return false;
+    const str = String(val == null ? "" : val).trim();
+    if (!str) return false;
+
+    if (el.tagName === "SELECT") {
+      const target = norm(str);
+      const opts = Array.from(el.options || []);
+      const hit =
+        opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
+        opts.find((o) => norm(o.textContent).includes(target) || (target.length >= 4 && target.includes(norm(o.textContent))));
+      if (hit) {
+        el.value = hit.value;
+      } else {
+        return false;
+      }
+    } else {
+      let finalVal = str;
+      if (String(el.type || "").toLowerCase() === "date") {
+        const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
+      }
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (desc && desc.set) desc.set.call(el, finalVal);
+      else el.value = finalVal;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const getFieldHint = (el) => {
+    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label")];
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${el.id}"]`);
+      if (lbl) parts.push(lbl.textContent);
+    }
+    const closestLbl = el.closest("label");
+    if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.parentElement) {
+      const sib = el.parentElement.querySelector("label, span, p");
+      if (sib && sib !== el && String(sib.textContent || "").length < 80) {
+        parts.push(sib.textContent);
+      }
+    }
+    return norm(parts.filter(Boolean).join(" "));
+  };
+
+  const getExistingCodesSet = () => {
+    const set = new Set();
+    const sources = [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.state && window.state.instruments
+    ];
+    sources.forEach((arr) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach((it) => {
+        const c = String((it && (it.code || it.codigo || it.cod)) || "").trim().toUpperCase();
+        if (c) set.add(c);
+      });
+    });
+    document.querySelectorAll("table tbody tr").forEach((tr) => {
+      const m = String(tr.textContent || "").match(/\b([A-Z]{2}\d{5,7}[A-Z0-9-]*)\b/);
+      if (m) set.add(m[1].toUpperCase());
+    });
+    return set;
+  };
+
+  const mapSectorName = (raw) => {
+    const s = norm(raw);
+    if (!s) return "";
+    if (s.includes("ferroviaria") && s.includes("redutor")) return "Ferrovi\u00e1ria Redutor";
+    if (s.includes("ferrovi")) return "Ferrovi\u00e1ria";
+    if (s.includes("assist") && s.includes("automot")) return "Assist\u00eancia T\u00e9cnica Automotive";
+    if (s.includes("automot") || s.includes("engate")) return "Automotive/Engates";
+    if (s.includes("assist") && s.includes("industr")) return "Assist\u00eancia T\u00e9cnica Industrial";
+    if (s.includes("industr")) return "Industrial";
+    if (s.includes("qualid")) return "Qualidade";
+    if (s.includes("vorecon")) return "Vorecon";
+    if (s.includes("metrolog")) return "Metrologia / Turbo";
+    const paren = String(raw || "").match(/\(([^)]+)\)/);
+    return paren ? paren[1].trim() : String(raw || "").trim();
+  };
+
+  const normalizeDateBR = (raw) => {
+    const s = String(raw || "").trim();
+    let m = s.match(/(\d{2})[\/.-](\d{2})[\/.-](\d{4})/);
+    if (m) return `${m[1]}/${m[2]}/${m[3]}`;
+    m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return "";
+  };
+
+  const formatRange = (ini, fim) => {
+    const a = String(ini || "").replace(/[^\d,.-]/g, "").trim();
+    const b = String(fim || "").replace(/[^\d,.-]/g, "").trim();
+    if (a && b) return `${a} ~ ${b}`;
+    return a || b || "";
+  };
+
+  const parseVoithLines = (rawText) => {
+    const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const items = [];
+    const seen = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Modo 1: Colado direto do Excel (separado por TAB)
+      if (line.includes("\t")) {
+        const cols = line.split("\t").map((c) => c.trim());
+        const codeMatch = String(cols[0] || "").toUpperCase().replace(/\s+/g, "").match(/^([A-Z]{2}\d{5,7}[A-Z0-9-]*)$/);
+        if (!codeMatch) continue;
+        const code = codeMatch[1];
+        if (seen.has(code)) continue;
+        seen.add(code);
+
+        const desc = cols[1] || "";
+        const validade = normalizeDateBR(cols[2] || "");
+        const cc = cols[3] || "";
+        const setor = mapSectorName(cols[4] || "");
+        const responsavel = cols[5] || "";
+        const faixaIni = cols[6] || "";
+        const faixaFim = cols[7] || "";
+        items.push({
+          code,
+          desc,
+          validade,
+          cc,
+          setor,
+          responsavel,
+          faixaIni,
+          faixaFim,
+          faixa: formatRange(faixaIni, faixaFim)
+        });
+        continue;
+      }
+
+      // Modo 2: Texto vindo do OCR da imagem da Listagem de Instrumentos
+      const clean = line
+        .replace(/[|\u00a6\[\]{}]/g, " ")
+        .replace(/[_\u2014\u2013]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const codeRe = /\b([A-Z]{2}\s*\d{5,7}[A-Z0-9-]*)\b/i;
+      const cm = clean.match(codeRe);
+      if (!cm) continue;
+
+      const code = cm[1].replace(/\s+/g, "").toUpperCase();
+      if (seen.has(code)) continue;
+      seen.add(code);
+
+      const afterCode = clean.slice(cm.index + cm[0].length).trim();
+      const dateRe = /\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/;
+      const dm = afterCode.match(dateRe);
+
+      let desc = "";
+      let validade = "";
+      let rest = "";
+
+      if (dm) {
+        desc = afterCode.slice(0, dm.index).replace(/^[\s.,;:'"`-]+|[\s.,;:'"`-]+$/g, "").trim();
+        validade = normalizeDateBR(dm[1]);
+        rest = afterCode.slice(dm.index + dm[0].length).trim();
+      } else {
+        desc = afterCode;
+      }
+
+      let cc = "";
+      let setor = "";
+      let responsavel = "";
+      let faixaIni = "";
+      let faixaFim = "";
+
+      if (rest) {
+        // Centro de custo (ex: 4311 F, 4310 A)
+        const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
+        if (ccm) {
+          cc = ccm[1].trim().toUpperCase();
+          rest = rest.slice(ccm[0].length).trim();
+        }
+
+        // Faixa Inicial e Faixa Final no fim da linha (ex: 0,1 200 ou 0 150)
+        const fm = rest.match(/['"`.,]*(-?\d+(?:[.,]\d+)?)\s+['"`.,]*(-?\d+(?:[.,]\d+)?)\s*$/);
+        if (fm) {
+          faixaIni = fm[1];
+          faixaFim = fm[2];
+          rest = rest.slice(0, fm.index).trim();
+        }
+
+        // Setor (ex: Voith Turbo (Ferroviaria) ou Voith Turbo (Automotive))
+        const sm = rest.match(/(?:voith\s*turbo\s*)?\(([^)]+)\)/i);
+        if (sm) {
+          setor = mapSectorName(sm[1]);
+          rest = (rest.slice(0, sm.index) + " " + rest.slice(sm.index + sm[0].length)).trim();
+        } else {
+          const kw = rest.match(/(ferrovi[a\u00e1]ria(?:\s+redutor)?|automotive(?:\/engates)?|industrial|qualidade|vorecon|metrologia)/i);
+          if (kw) {
+            setor = mapSectorName(kw[1]);
+            rest = (rest.slice(0, kw.index) + " " + rest.slice(kw.index + kw[0].length)).trim();
+          }
+        }
+
+        responsavel = rest
+          .replace(/voith\s*turbo/ig, "")
+          .replace(/^[\s.,;:'"`()-]+|[\s.,;:'"`()-]+$/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      items.push({
+        code,
+        desc,
+        validade,
+        cc,
+        setor,
+        responsavel,
+        faixaIni,
+        faixaFim,
+        faixa: formatRange(faixaIni, faixaFim)
+      });
+    }
+
+    return items;
+  };
+
+  const loadTesseract = () => {
+    if (window.Tesseract && typeof window.Tesseract.recognize === "function") {
+      return Promise.resolve(window.Tesseract);
+    }
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${TESSERACT_CDN}"]`);
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.Tesseract));
+        existing.addEventListener("error", () => reject(new Error("Falha ao carregar OCR.")));
+        return;
+      }
+      const sc = document.createElement("script");
+      sc.src = TESSERACT_CDN;
+      sc.async = true;
+      sc.onload = () => resolve(window.Tesseract);
+      sc.onerror = () => reject(new Error("N\u00e3o foi poss\u00edvel carregar o leitor de imagem (Tesseract)."));
+      document.head.appendChild(sc);
+    });
+  };
+
+  // Aumenta nitidez e remove triangulos verdes do Excel antes do OCR
+  const preprocessImageForOcr = (blob) => {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(3, Math.max(1.8, 2200 / Math.max(img.width, 1)));
+          const w = Math.min(3400, Math.round(img.width * scale));
+          const h = Math.round(img.height * (w / img.width));
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, w, h);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const d = imgData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], g = d[i + 1], b = d[i + 2];
+            // Apaga triangulo verde de aviso do Excel e linhas azuis claras de cabecalho
+            if (g > r + 22 && g > b + 22) {
+              d[i] = d[i + 1] = d[i + 2] = 255;
+              continue;
+            }
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            const boosted = gray < 165 ? Math.max(0, gray * 0.72) : Math.min(255, gray * 1.18);
+            d[i] = d[i + 1] = d[i + 2] = boosted;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Imagem inv\u00e1lida ou corrompida."));
+      };
+      img.src = url;
+    });
+  };
+
+  /* -------------------- CRIACAO AUTOMATICA VIA MODAL NATIVO "+ NOVO ITEM" -------------------- */
+  const findNewItemButton = () => {
+    return Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
+      const t = norm(b.textContent);
+      return t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento");
+    }) || null;
+  };
+
+  const findOpenNewItemModal = () => {
+    const candidates = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).filter((el) => {
+      if (!isVisible(el) || el.id === "vu-img-modal" || el.id === "vu-img-progress" || el.id === "vu-dl-voith" || el.id === "vu-bulk-modal") return false;
+      const inputs = el.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea");
+      const hasSave = Array.from(el.querySelectorAll("button")).some((b) => {
+        const t = norm(b.textContent);
+        return isVisible(b) && /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem)/.test(t);
+      });
+      return inputs.length >= 3 && hasSave && !String(el.textContent || "").includes("Monitoramento de Frota");
+    });
+    return candidates.length ? candidates[candidates.length - 1] : null;
+  };
+
+  const closeNativeNewItemModal = (modal) => {
+    if (!modal || !isVisible(modal)) return;
+    const cBtn = Array.from(modal.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b)) return false;
+      const raw = String(b.textContent || "").trim();
+      const t = norm(b.textContent);
+      return raw === "\u00d7" || raw === "x" || raw === "X" || t === "cancelar" || t === "fechar";
+    });
+    if (cBtn) cBtn.click();
+  };
+
+  const createInstrumentsQueue = async (rows) => {
+    const impModal = document.getElementById("vu-img-modal");
+    if (impModal) impModal.remove();
+
+    let prog = document.getElementById("vu-img-progress");
+    if (prog) prog.remove();
+    prog = document.createElement("div");
+    prog.id = "vu-img-progress";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:10985;width:min(470px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    document.body.appendChild(prog);
+
+    const ok = [];
+    const fail = [];
+
+    const drawProg = (idx, code, msg) => {
+      const pct = Math.round((idx / rows.length) * 100);
+      prog.innerHTML =
+        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
+          `<span>Criando Instrumentos (${idx}/${rows.length})</span>` +
+          `<span style="color:#7dd3fc;">${pct}%</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + code + "</strong>" : ""}</div>` +
+        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#22c55e;transition:width .2s;"></div></div>`;
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const it = rows[i];
+      drawProg(i, it.code, "Abrindo cadastro e preenchendo dados");
+
+      let modal = findOpenNewItemModal();
+      if (!modal) {
+        const newBtn = findNewItemButton();
+        if (!newBtn) {
+          fail.push(`${it.code} (bot\u00e3o + Novo Item n\u00e3o encontrado)`);
+          continue;
+        }
+        newBtn.click();
+        for (let t = 0; t < 20; t++) {
+          await sleep(100);
+          modal = findOpenNewItemModal();
+          if (modal) break;
+        }
+      }
+
+      if (!modal) {
+        fail.push(`${it.code} (janela de cadastro n\u00e3o abriu)`);
+        continue;
+      }
+
+      const controls = Array.from(modal.querySelectorAll("input, select, textarea")).filter((el) => {
+        if (!isVisible(el) || el.disabled || el.readOnly) return false;
+        const tp = String(el.type || "").toLowerCase();
+        return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
+      });
+
+      const used = new Set();
+      const fillBy = (val, regex, excludeRegex, tagFilter) => {
+        if (!val) return false;
+        const target = controls.find((el) => {
+          if (used.has(el)) return false;
+          if (tagFilter && !tagFilter(el)) return false;
+          const h = getFieldHint(el);
+          if (excludeRegex && excludeRegex.test(h)) return false;
+          return regex.test(h);
+        });
+        if (target && setControlValue(target, val)) {
+          used.add(target);
+          return true;
+        }
+        return false;
+      };
+
+      // 1. Codigo
+      const filledCode = fillBy(it.code, /(codigo|code|patrimonio|tag|identif|ac4)/, /(setor|centro|custo)/);
+      if (!filledCode && controls[0]) {
+        setControlValue(controls[0], it.code);
+        used.add(controls[0]);
+      }
+
+      // 2. Descricao / Instrumento
+      fillBy(it.desc, /(descri|instrument|nome|equip|modelo|tipo)/, /(codigo|code|setor|respons|faixa|obs|centro)/);
+
+      // 3. Faixa (separada ou campo unico)
+      const filledIni = fillBy(it.faixaIni, /(faixa\s*inic|min|inicial)/, /(final|max)/);
+      const filledFim = fillBy(it.faixaFim, /(faixa\s*fin|max|final)/, /(inic|min)/);
+      if (!filledIni && !filledFim) {
+        fillBy(it.faixa, /(faixa|capac|range|medicao|escala)/, /(setor|data|valid)/);
+      }
+
+      // 4. Data da Proxima Calibracao / Validade
+      const filledDate =
+        fillBy(it.validade, /(valid|proxim|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast)/, (el) => el.type === "date") ||
+        fillBy(it.validade, /(valid|proxim|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast|period|meses)/);
+      if (!filledDate && it.validade) {
+        const anyDate = controls.find((el) => !used.has(el) && el.type === "date");
+        if (anyDate && setControlValue(anyDate, it.validade)) used.add(anyDate);
+      }
+
+      // 5. Setor
+      fillBy(it.setor, /(setor|sector|area|chapa|divis|depart)/, /(local|armario|respons)/);
+
+      // 6. Responsavel
+      fillBy(it.responsavel, /(respons|tecnic|colaborad|gestor|owner|holder)/, /(setor|local|armario)/);
+
+      // 7. Centro de Custo ou Observacao
+      if (it.cc) {
+        const filledCc = fillBy(it.cc, /(centro|custo|cc)/, /(obs)/);
+        if (!filledCc) {
+          fillBy(`CC: ${it.cc}`, /(obs|nota|coment|detalh)/, null);
+        }
+      }
+
+      await sleep(160);
+
+      const saveBtn = Array.from(modal.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b) || b.disabled) return false;
+        const t = norm(b.textContent);
+        return /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem|limpar)/.test(t);
+      });
+
+      if (!saveBtn) {
+        fail.push(`${it.code} (bot\u00e3o salvar n\u00e3o encontrado)`);
+        closeNativeNewItemModal(modal);
+        continue;
+      }
+
+      saveBtn.click();
+      await sleep(950);
+
+      // Se o modal ainda estiver aberto, fecha antes do proximo
+      const stillOpen = findOpenNewItemModal();
+      if (stillOpen) {
+        closeNativeNewItemModal(stillOpen);
+        await sleep(220);
+      }
+
+      ok.push(it.code);
+      drawProg(i + 1, it.code, "Cadastrado com sucesso");
+    }
+
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} instrumento(s) criado(s)</div>` +
+        `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${fail.join(", ")}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Verifique os novos itens no Invent\u00e1rio e aguarde a bolinha verde sincronizar com o Supabase.</div>`);
+
+    prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 7000);
+  };
+
+  /* -------------------- MODAL DE IMPORTACAO DE IMAGEM / PLANILHA -------------------- */
+  const openImageImportModal = () => {
+    const old = document.getElementById("vu-img-modal");
+    if (old) old.remove();
+
+    let parsedRows = [];
+    const existingCodes = getExistingCodesSet();
+
+    const overlay = document.createElement("div");
+    overlay.id = "vu-img-modal";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:10900;background:rgba(15,23,42,.66);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,sans-serif;";
+    overlay.innerHTML =
+      `<div style="width:min(980px,96vw);max-height:92vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;">` +
+        `<div style="background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
+          `<div>` +
+            `<div style="font-size:16px;font-weight:800;">Importar Instrumentos por Imagem ou Excel</div>` +
+            `<div style="font-size:12px;color:#bfdbfe;">Envie um print/foto da Listagem de Instrumentos Voith, d\u00ea Ctrl+V na imagem ou cole linhas direto do Excel.</div>` +
+          `</div>` +
+          `<button type="button" id="vu-img-close" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:19px;line-height:1;cursor:pointer;">&times;</button>` +
+        `</div>` +
+        `<div style="padding:16px 20px;overflow-y:auto;display:grid;gap:14px;">` +
+          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">` +
+            `<label id="vu-img-drop" style="border:2px dashed #60a5fa;border-radius:12px;background:#eff6ff;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;cursor:pointer;">` +
+              `<input id="vu-img-file" type="file" accept="image/*" style="display:none;">` +
+              `<div style="font-weight:800;font-size:13.5px;color:#003399;">Clique para escolher imagem ou arraste aqui</div>` +
+              `<div style="font-size:11.5px;color:#475569;">Tamb\u00e9m aceita <strong>Ctrl + V</strong> de um print da tela (PNG / JPG)</div>` +
+            `</label>` +
+            `<div style="border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;padding:12px;display:grid;gap:6px;">` +
+              `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">` +
+                `<span style="font-weight:800;font-size:12px;color:#334155;">Ou cole linhas do Excel / texto aqui:</span>` +
+                `<button type="button" id="vu-img-parse-txt" style="padding:5px 10px;border-radius:7px;border:none;background:#004899;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Ler Texto</button>` +
+              `</div>` +
+              `<textarea id="vu-img-raw" rows="3" placeholder="Cole linhas da planilha (Ctrl+C no Excel -> Ctrl+V aqui)..." style="width:100%;padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:12px;font-family:monospace;resize:vertical;"></textarea>` +
+            `</div>` +
+          `</div>` +
+          `<div id="vu-img-status" style="font-size:12.5px;font-weight:700;color:#0369a1;min-height:18px;"></div>` +
+          `<div id="vu-img-preview-wrap" style="display:none;gap:8px;">` +
+            `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">` +
+              `<span id="vu-img-count" style="font-size:12.5px;font-weight:800;color:#002466;">Itens detectados (0)</span>` +
+              `<span style="font-size:11.5px;color:#64748b;">Revise ou edite qualquer campo abaixo antes de cadastrar.</span>` +
+            `</div>` +
+            `<div style="overflow-x:auto;border:1px solid #cbd5e1;border-radius:10px;">` +
+              `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:780px;">` +
+                `<thead><tr style="background:#f1f5f9;color:#334155;text-align:left;">` +
+                  `<th style="padding:8px;width:32px;"><input type="checkbox" id="vu-img-chk-all" checked></th>` +
+                  `<th style="padding:8px;">C\u00f3digo</th>` +
+                  `<th style="padding:8px;">Descri\u00e7\u00e3o</th>` +
+                  `<th style="padding:8px;">Pr\u00f3x. Cal.</th>` +
+                  `<th style="padding:8px;">Setor</th>` +
+                  `<th style="padding:8px;">Respons\u00e1vel</th>` +
+                  `<th style="padding:8px;">Faixa</th>` +
+                  `<th style="padding:8px;width:85px;">CC</th>` +
+                `</tr></thead>` +
+                `<tbody id="vu-img-tbody"></tbody>` +
+              `</table>` +
+            `</div>` +
+          `</div>` +
+        `</div>` +
+        `<div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
+          `<button type="button" id="vu-img-add-manual" style="padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12px;cursor:pointer;">+ Adicionar linha manual</button>` +
+          `<div style="display:flex;gap:10px;">` +
+            `<button type="button" id="vu-img-cancel" style="padding:9px 16px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;">Cancelar</button>` +
+            `<button type="button" id="vu-img-create" disabled style="padding:9px 18px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;opacity:.55;">Criar Instrumentos (0)</button>` +
+          `</div>` +
+        `</div>` +
+      `</div>`;
+
+    document.body.appendChild(overlay);
+
+    const fileInp = overlay.querySelector("#vu-img-file");
+    const dropZone = overlay.querySelector("#vu-img-drop");
+    const rawTxt = overlay.querySelector("#vu-img-raw");
+    const statusEl = overlay.querySelector("#vu-img-status");
+    const prevWrap = overlay.querySelector("#vu-img-preview-wrap");
+    const tbody = overlay.querySelector("#vu-img-tbody");
+    const countEl = overlay.querySelector("#vu-img-count");
+    const createBtn = overlay.querySelector("#vu-img-create");
+    const chkAll = overlay.querySelector("#vu-img-chk-all");
+
+    const updateCreateCount = () => {
+      const n = tbody.querySelectorAll(".vu-row-chk:checked").length;
+      createBtn.textContent = `Criar Instrumentos (${n})`;
+      createBtn.disabled = n === 0;
+      createBtn.style.opacity = n === 0 ? ".55" : "1";
+    };
+
+    const renderTable = () => {
+      prevWrap.style.display = parsedRows.length ? "grid" : "none";
+      countEl.textContent = `Itens detectados (${parsedRows.length})`;
+      tbody.innerHTML = parsedRows.map((r, idx) => {
+        const exists = existingCodes.has(String(r.code || "").toUpperCase());
+        const inpCss = "width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;color:#0f172a;background:#fff;";
+        return (
+          `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${exists ? "#fffbeb" : "#ffffff"};">` +
+            `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" ${exists ? "" : "checked"}></td>` +
+            `<td style="padding:6px;"><input class="vu-c-code" value="${r.code || ""}" style="${inpCss}font-weight:800;">${exists ? '<div style="font-size:10px;color:#b45309;font-weight:700;margin-top:2px;">J\u00e1 cadastrado</div>' : ""}</td>` +
+            `<td style="padding:6px;"><input class="vu-c-desc" value="${r.desc || ""}" style="${inpCss}"></td>` +
+            `<td style="padding:6px;width:108px;"><input class="vu-c-val" value="${r.validade || ""}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
+            `<td style="padding:6px;"><input class="vu-c-setor" value="${r.setor || ""}" style="${inpCss}"></td>` +
+            `<td style="padding:6px;"><input class="vu-c-resp" value="${r.responsavel || ""}" style="${inpCss}"></td>` +
+            `<td style="padding:6px;width:105px;"><input class="vu-c-faixa" value="${r.faixa || ""}" placeholder="0 ~ 150" style="${inpCss}"></td>` +
+            `<td style="padding:6px;width:85px;"><input class="vu-c-cc" value="${r.cc || ""}" style="${inpCss}"></td>` +
+          `</tr>`
+        );
+      }).join("");
+
+      tbody.querySelectorAll(".vu-row-chk").forEach((c) => { c.onchange = updateCreateCount; });
+      updateCreateCount();
+    };
+
+    const runOcrOnBlob = async (blob) => {
+      try {
+        statusEl.style.color = "#0369a1";
+        statusEl.textContent = "Preparando imagem e carregando motor de leitura (OCR)...";
+        const [Tesseract, canvas] = await Promise.all([loadTesseract(), preprocessImageForOcr(blob)]);
+        statusEl.textContent = "Lendo texto da imagem (0%)...";
+        const res = await Tesseract.recognize(canvas, "por", {
+          logger: (m) => {
+            if (m && m.status === "recognizing text" && typeof m.progress === "number") {
+              statusEl.textContent = `Lendo dados da imagem (${Math.round(m.progress * 100)}%)...`;
+            }
+          }
+        });
+        const text = (res && res.data && res.data.text) || "";
+        rawTxt.value = text;
+        parsedRows = parseVoithLines(text);
+        if (parsedRows.length) {
+          statusEl.style.color = "#15803d";
+          statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da imagem! Confira os campos e clique em Criar Instrumentos.`;
+        } else {
+          statusEl.style.color = "#b45309";
+          statusEl.textContent = "Texto lido, mas nenhum c\u00f3digo no formato AC000000 foi encontrado. Voc\u00ea pode ajustar o texto acima e clicar em Ler Texto.";
+        }
+        renderTable();
+      } catch (err) {
+        statusEl.style.color = "#dc2626";
+        statusEl.textContent = "Erro ao ler imagem: " + (err && err.message ? err.message : err);
+      }
+    };
+
+    fileInp.onchange = () => {
+      const f = fileInp.files && fileInp.files[0];
+      if (f) runOcrOnBlob(f);
+    };
+
+    dropZone.ondragover = (ev) => { ev.preventDefault(); dropZone.style.background = "#dbeafe"; };
+    dropZone.ondragleave = () => { dropZone.style.background = "#eff6ff"; };
+    dropZone.ondrop = (ev) => {
+      ev.preventDefault();
+      dropZone.style.background = "#eff6ff";
+      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (f) runOcrOnBlob(f);
+    };
+
+    const onPaste = (ev) => {
+      if (!overlay.isConnected) {
+        document.removeEventListener("paste", onPaste);
+        return;
+      }
+      const items = ev.clipboardData && ev.clipboardData.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type && items[i].type.startsWith("image/")) {
+            ev.preventDefault();
+            const blob = items[i].getAsFile();
+            if (blob) runOcrOnBlob(blob);
+            return;
+          }
+        }
+      }
+      if (document.activeElement === rawTxt) {
+        setTimeout(() => {
+          parsedRows = parseVoithLines(rawTxt.value);
+          if (parsedRows.length) {
+            statusEl.style.color = "#15803d";
+            statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da planilha colada!`;
+            renderTable();
+          }
+        }, 50);
+      }
+    };
+    document.addEventListener("paste", onPaste);
+
+    overlay.querySelector("#vu-img-parse-txt").onclick = () => {
+      parsedRows = parseVoithLines(rawTxt.value);
+      statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
+      statusEl.textContent = parsedRows.length
+        ? `${parsedRows.length} instrumento(s) detectado(s) no texto.`
+        : "Nenhuma linha com c\u00f3digo (ex: AC424767) encontrada no texto.";
+      renderTable();
+    };
+
+    overlay.querySelector("#vu-img-add-manual").onclick = () => {
+      parsedRows.push({ code: "", desc: "", validade: "", cc: "", setor: "", responsavel: "", faixaIni: "", faixaFim: "", faixa: "" });
+      renderTable();
+    };
+
+    chkAll.onchange = () => {
+      tbody.querySelectorAll(".vu-row-chk").forEach((c) => { c.checked = chkAll.checked; });
+      updateCreateCount();
+    };
+
+    const closeModal = () => {
+      document.removeEventListener("paste", onPaste);
+      overlay.remove();
+    };
+    overlay.querySelector("#vu-img-close").onclick = closeModal;
+    overlay.querySelector("#vu-img-cancel").onclick = closeModal;
+
+    createBtn.onclick = () => {
+      const selected = [];
+      tbody.querySelectorAll("tr").forEach((tr) => {
+        const chk = tr.querySelector(".vu-row-chk");
+        if (!chk || !chk.checked) return;
+        const code = String(tr.querySelector(".vu-c-code").value || "").trim().toUpperCase();
+        if (!code) return;
+        const faixa = String(tr.querySelector(".vu-c-faixa").value || "").trim();
+        const parts = faixa.split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
+        selected.push({
+          code,
+          desc: String(tr.querySelector(".vu-c-desc").value || "").trim(),
+          validade: String(tr.querySelector(".vu-c-val").value || "").trim(),
+          setor: String(tr.querySelector(".vu-c-setor").value || "").trim(),
+          responsavel: String(tr.querySelector(".vu-c-resp").value || "").trim(),
+          faixa,
+          faixaIni: parts[0] || "",
+          faixaFim: parts[1] || "",
+          cc: String(tr.querySelector(".vu-c-cc").value || "").trim()
+        });
+      });
+      if (!selected.length) return;
+      document.removeEventListener("paste", onPaste);
+      createInstrumentsQueue(selected);
+    };
+  };
+
+  /* -------------------- INJECAO DOS BOTOES -------------------- */
+  const injectImageImportButtons = () => {
+    // 1. Ao lado do botao "+ Novo Item" no topo
+    const newBtn = findNewItemButton();
+    if (newBtn && newBtn.parentElement && !newBtn.parentElement.querySelector("#vu-open-img-import")) {
+      const b = document.createElement("button");
+      b.id = "vu-open-img-import";
+      b.type = "button";
+      b.textContent = "Ler Imagem";
+      b.title = "Importar instrumentos lendo print/imagem da Listagem Voith ou colando do Excel";
+      b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
+      b.onclick = openImageImportModal;
+      newBtn.insertAdjacentElement("afterend", b);
+    }
+
+    // 2. Dentro do proprio modal "+ Novo Item" caso o usuario clique nele primeiro
+    const openNewModal = findOpenNewItemModal();
+    if (openNewModal && !openNewModal.querySelector("#vu-modal-img-btn")) {
+      const header = openNewModal.querySelector("div, header");
+      if (header) {
+        const b2 = document.createElement("button");
+        b2.id = "vu-modal-img-btn";
+        b2.type = "button";
+        b2.textContent = "Importar de Imagem / Excel";
+        b2.style.cssText = "margin:8px 16px 0;padding:7px 12px;border-radius:8px;border:1px solid #0284c7;background:#eff6ff;color:#004899;font-weight:800;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;";
+        b2.onclick = () => {
+          closeNativeNewItemModal(openNewModal);
+          setTimeout(openImageImportModal, 120);
+        };
+        header.insertAdjacentElement("afterend", b2);
+      }
+    }
+  };
+
+  let t = null;
+  const schedule = (delay = 180) => {
+    if (t) return;
+    t = setTimeout(() => { t = null; injectImageImportButtons(); }, delay);
+  };
+
+  const init = () => {
+    schedule(250);
+    document.addEventListener("click", () => schedule(150), true);
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        schedule(200);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, { openImageImportModal });
+})();
+/* VOITH_IMAGE_IMPORTER_V1_END */
