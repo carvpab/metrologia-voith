@@ -81,7 +81,7 @@
       const hit =
         opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
         opts.find((o) => norm(o.textContent).includes(target) || target.includes(norm(o.textContent)));
-      if (hit) el.value = hit.value;
+      if (hit) { el.value = hit.value; } else if (str.trim()) { const o = document.createElement("option"); o.value = str; o.textContent = str; el.appendChild(o); el.value = str; }
     } else {
       const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const desc = Object.getOwnPropertyDescriptor(proto, "value");
@@ -753,6 +753,7 @@
                 `<option value="Empr\u00e9stimo operacional em bancada">Empr\u00e9stimo operacional em bancada</option>` +
                 `<option value="Encaminhado para reparo / manuten\u00e7\u00e3o">Encaminhado para reparo / manuten\u00e7\u00e3o</option>` +
                 `<option value="Envio para calibra\u00e7\u00e3o externa">Envio para calibra\u00e7\u00e3o externa</option>` +
+                `<option value="Calibra\u00e7\u00e3o interna">Calibra\u00e7\u00e3o interna</option>` +
                 `<option value="Verifica\u00e7\u00e3o / auditoria interna">Verifica\u00e7\u00e3o / auditoria interna</option>` +
                 `<option value="Uso em campo / montagem">Uso em campo / montagem</option>` +
               `</select>` +
@@ -1659,11 +1660,28 @@
 
   /* -------------------- AGENDAMENTO LEVE (SEM LOOP) -------------------- */
   let uiTimer = null;
+  const ensureInternalCalibOption = () => {
+    document.querySelectorAll("select").forEach((sel) => {
+      if (sel.id === "vu-bulk-motivo") return;
+      const opts = Array.from(sel.options || []);
+      const isMotivo = opts.some((o) => /emprestimo operacional|calibracao externa|encaminhado para reparo/.test(norm(o.textContent)));
+      if (!isMotivo) return;
+      if (opts.some((o) => norm(o.textContent).includes("calibracao interna"))) return;
+      const opt = document.createElement("option");
+      opt.value = "Calibra\u00e7\u00e3o interna";
+      opt.textContent = "Calibra\u00e7\u00e3o interna";
+      const ref = opts.find((o) => norm(o.textContent).includes("calibracao externa"));
+      if (ref && ref.nextSibling) sel.insertBefore(opt, ref.nextSibling);
+      else sel.appendChild(opt);
+    });
+  };
+
   const runUiPass = () => {
     upgradeAdminModal();
     enhancePartialCodeSearch();
     injectBulkCustodyButton();
     updateInventoryBulkBar();
+    ensureInternalCalibOption();
   };
 
   const scheduleUiPass = (delay = 140) => {
