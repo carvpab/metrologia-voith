@@ -590,11 +590,33 @@
     const invBar = document.getElementById("vu-inv-bulk-bar");
     if (invBar) invBar.style.display = "none";
 
+    if (!document.getElementById("vu-silent-bulk-css")) {
+      const st = document.createElement("style");
+      st.id = "vu-silent-bulk-css";
+      st.textContent = `
+        body.vu-silent-bulk [role="dialog"]:not(#vu-bulk-progress),
+        body.vu-silent-bulk .fixed.inset-0:not(#vu-bulk-progress):not(#vu-dl-voith):not(#vu-bulk-modal) {
+          opacity: 0.01 !important;
+          pointer-events: none !important;
+          transition: none !important;
+          animation: none !important;
+        }
+        body.vu-silent-bulk *:not(#vu-bulk-progress):not(#vu-bulk-progress *) {
+          transition: none !important;
+          animation: none !important;
+        }
+        @keyframes vuSpin { to { transform: rotate(360deg); } }
+      `;
+      document.head.appendChild(st);
+    }
+
+    document.body.classList.add("vu-silent-bulk");
+
     let prog = document.getElementById("vu-bulk-progress");
     if (prog) prog.remove();
     prog = document.createElement("div");
     prog.id = "vu-bulk-progress";
-    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:10980;width:min(460px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    prog.style.cssText = "position:fixed;inset:0;z-index:2147483000;background:rgba(6,16,33,0.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;";
     document.body.appendChild(prog);
 
     const okList = [];
@@ -603,21 +625,31 @@
     const renderProg = (idx, code, msg) => {
       const pct = Math.round((idx / items.length) * 100);
       prog.innerHTML =
-        `<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:800;">` +
-          `<span>Cautela em Massa (${idx}/${items.length})</span>` +
-          `<span style="color:#7dd3fc;">${pct}%</span>` +
-        `</div>` +
-        `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " — <strong>" + code + "</strong>" : ""}</div>` +
-        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#38bdf8;transition:width .2s;"></div></div>`;
+        `<div style="width:min(440px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:16px;padding:22px 24px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:grid;gap:12px;">` +
+          `<div style="display:flex;align-items:center;gap:12px;">` +
+            `<div style="width:24px;height:24px;border-radius:50%;border:3px solid rgba(125,211,252,.28);border-top-color:#38bdf8;animation:vuSpin .8s linear infinite;flex-shrink:0;"></div>` +
+            `<div style="flex:1;">` +
+              `<div style="font-size:14.5px;font-weight:800;">Registrando Cautelas em Segundo Plano</div>` +
+              `<div style="font-size:12px;color:#bfdbfe;">${idx} de ${items.length} conclu\u00eddo(s) &bull; ${pct}%</div>` +
+            `</div>` +
+          `</div>` +
+          `<div style="font-size:12.5px;color:#e2e8f0;background:rgba(255,255,255,.06);padding:9px 12px;border-radius:9px;border:1px solid rgba(148,163,184,.2);">` +
+            `${msg}${code ? " \u2014 <strong style='color:#7dd3fc;'>" + code + "</strong>" : ""}` +
+          `</div>` +
+          `<div style="height:8px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;">` +
+            `<div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#0284c7,#38bdf8);transition:width .25s ease;"></div>` +
+          `</div>` +
+          `<div style="font-size:11px;color:#94a3b8;">Aguarde alguns segundos. N\u00e3o atualize a p\u00e1gina at\u00e9 concluir.</div>` +
+        `</div>`;
     };
 
     try {
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        renderProg(i, it.code, "Localizando e registrando");
+        renderProg(i, it.code, "Processando instrumento");
 
         closeTopNativeOverlays();
-        await sleep(180);
+        await sleep(140);
 
         const ctx = await ensureOnCustodyAndOpenQuickModal();
         if (!ctx) {
@@ -625,15 +657,13 @@
           continue;
         }
 
-        // 1. Preenche o codigo completo e clica em Localizar
         bypassPartialIntercept = true;
         setControlValue(ctx.codeInput, it.code);
-        await sleep(80);
+        await sleep(70);
         ctx.locBtn.click();
-        await sleep(380);
+        await sleep(340);
         bypassPartialIntercept = false;
 
-        // 2. Preenche os campos de Responsavel, Motivo e Destino (se informado)
         const controls = Array.from(ctx.modal.querySelectorAll("input, select, textarea")).filter((el) => {
           if (el === ctx.codeInput || !isVisible(el) || el.disabled) return false;
           const tp = String(el.type || "").toLowerCase();
@@ -661,9 +691,8 @@
           if (firstText) setControlValue(firstText, responsavel);
         }
 
-        await sleep(140);
+        await sleep(120);
 
-        // 3. Clica no botao de confirmar/registrar do modal nativo
         const submitBtn = Array.from(ctx.modal.querySelectorAll("button")).find((b) => {
           if (!isVisible(b) || b.disabled) return false;
           const t = norm(b.textContent);
@@ -677,31 +706,35 @@
         }
 
         submitBtn.click();
-        await sleep(950);
+        await sleep(900);
 
-        // Fecha comprovante SHA-256 ou modal restante antes do proximo item
         closeTopNativeOverlays();
-        await sleep(220);
+        await sleep(180);
 
         okList.push(it.code);
         renderProg(i + 1, it.code, "Registrado com sucesso");
       }
 
       pushAudit("Cautela em Massa", `Respons\u00e1vel: ${responsavel} | Motivo: ${motivo} | OK: ${okList.length}/${items.length}`);
-
-      prog.innerHTML =
-        `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
-          `<div style="font-size:13.5px;font-weight:800;color:${failList.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${okList.length} de ${items.length} enviados para cautela</div>` +
-          `<button type="button" id="vu-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
-        `</div>` +
-        (failList.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o conclu\u00eddos: ${failList.join(", ")}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Todos os itens foram salvos no Supabase e registrados na aba Cautela &amp; Campo.</div>`);
-
-      prog.querySelector("#vu-prog-close").onclick = () => prog.remove();
-      setTimeout(() => { if (prog && prog.isConnected && !failList.length) prog.remove(); }, 6500);
+    } catch (err) {
+      failList.push(String((err && err.message) || err));
     } finally {
+      closeTopNativeOverlays();
+      document.body.classList.remove("vu-silent-bulk");
       bulkRunning = false;
       document.querySelectorAll("table input[type=checkbox]:checked").forEach((cb) => cb.click());
     }
+
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483000;width:min(460px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${failList.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${okList.length} de ${items.length} enviados para cautela</div>` +
+        `<button type="button" id="vu-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (failList.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o conclu\u00eddos: ${failList.join(", ")}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Todos os itens foram salvos no Supabase e registrados na aba Cautela &amp; Campo.</div>`);
+
+    prog.querySelector("#vu-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !failList.length) prog.remove(); }, 6000);
   };
 
   const openBulkCustodyModal = (initialItems = []) => {
