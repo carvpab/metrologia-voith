@@ -6471,3 +6471,235 @@
   window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, { openImageImportModal });
 })();
 /* VOITH_IMAGE_IMPORTER_V1_END */
+
+/* VOITH_CUSTODY_REASON_TABS_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const CATEGORIES = [
+    { id: "all",       label: "Todos",                 bg: "#ffffff", col: "#334155", bd: "#cbd5e1", actBg: "#004899" },
+    { id: "bancada",   label: "Empr\u00e9stimo Bancada", bg: "#eff6ff", col: "#1d4ed8", bd: "#93c5fd", actBg: "#2563eb" },
+    { id: "reparo",    label: "Reparo / Manuten\u00e7\u00e3o", bg: "#fef2f2", col: "#b91c1c", bd: "#fca5a5", actBg: "#dc2626" },
+    { id: "calibracao",label: "Calibra\u00e7\u00e3o",   bg: "#fffbeb", col: "#b45309", bd: "#fcd34d", actBg: "#d97706" },
+    { id: "outros",    label: "Outros",                bg: "#f1f5f9", col: "#475569", bd: "#cbd5e1", actBg: "#475569" }
+  ];
+
+  let activeReason = "all";
+
+  const classifyReason = (motivoText) => {
+    const t = norm(motivoText);
+    if (!t || t === "-" || t === "—") return "outros";
+    if (/(reparo|manutenc|consert|defeito|danific|quebr|corretiv|assistenc)/.test(t)) return "reparo";
+    if (/(calibrac|aferic|certific|laborat|recolhid.*cal|envio.*cal|interna|externa)/.test(t)) return "calibracao";
+    if (/(emprestim|bancada|operacional|campo|oficina|produc|montagem|linha|uso)/.test(t)) return "bancada";
+    return "outros";
+  };
+
+  const findCustodyTabsContainer = () => {
+    const todosBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-custody-reason-bar") || b.closest("#vu-img-modal") || b.closest("#vu-bulk-modal")) return false;
+      return norm(b.textContent) === "todos os itens";
+    });
+    if (!todosBtn) return null;
+
+    let cur = todosBtn.parentElement;
+    for (let d = 0; d < 3 && cur; d++) {
+      const txt = norm(cur.textContent || "");
+      if (txt.includes("por pessoa") && txt.includes("todos os itens")) {
+        return { container: cur, todosBtn };
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  };
+
+  const isButtonActive = (btn) => {
+    if (!btn) return false;
+    const cls = String(btn.className || "");
+    if (/bg-(blue|voith|primary|sky|indigo|slate-9)|text-white/.test(cls)) return true;
+    const bg = String(window.getComputedStyle(btn).backgroundColor || "");
+    return Boolean(bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent" && bg !== "rgb(255, 255, 255)" && bg !== "rgb(241, 245, 249)" && bg !== "rgb(248, 250, 252)");
+  };
+
+  const findCustodyTable = () => {
+    const tables = Array.from(document.querySelectorAll("table")).filter((tb) =>
+      isVisible(tb) && !tb.closest("#vu-img-modal") && !tb.closest("#vu-bulk-modal") && !tb.closest("#vu-adm-inner")
+    );
+    for (let i = 0; i < tables.length; i++) {
+      const ths = Array.from(tables[i].querySelectorAll("thead th"));
+      const headTxt = norm(ths.map((th) => th.textContent).join(" "));
+      if (headTxt.includes("motivo") && (headTxt.includes("em posse") || headTxt.includes("retirada") || headTxt.includes("devolver"))) {
+        const motivoIdx = ths.findIndex((th) => norm(th.textContent).includes("motivo"));
+        return { table: tables[i], motivoIdx, colCount: Math.max(1, ths.length) };
+      }
+    }
+    return null;
+  };
+
+  const getRowReasonText = (tr, motivoIdx) => {
+    const tds = Array.from(tr.querySelectorAll("td"));
+    if (!tds.length) return "";
+    if (motivoIdx >= 0 && tds[motivoIdx]) return String(tds[motivoIdx].textContent || "");
+    // Fallback: penultima ou ultima celula que nao seja apenas botoes
+    for (let i = tds.length - 1; i >= 0; i--) {
+      if (tds[i].querySelector("button") && String(tds[i].textContent || "").trim().length < 20) continue;
+      return String(tds[i].textContent || "");
+    }
+    return String(tds[tds.length - 1].textContent || "");
+  };
+
+  const applyFilterAndRender = () => {
+    const tabsInfo = findCustodyTabsContainer();
+    const existingBar = document.getElementById("vu-custody-reason-bar");
+
+    if (!tabsInfo) {
+      if (existingBar) existingBar.remove();
+      return;
+    }
+
+    const tableInfo = findCustodyTable();
+    const onItemsTable = Boolean(tableInfo && isButtonActive(tabsInfo.todosBtn));
+    const counts = { all: 0, bancada: 0, reparo: 0, calibracao: 0, outros: 0 };
+
+    if (tableInfo) {
+      const tbody = tableInfo.table.querySelector("tbody");
+      if (tbody) {
+        const oldEmpty = tbody.querySelector("#vu-custody-empty-row");
+        const dataRows = Array.from(tbody.querySelectorAll("tr")).filter((tr) => {
+          if (tr.id === "vu-custody-empty-row") return false;
+          const txt = norm(tr.textContent || "");
+          return txt.length > 0 && !/nenhum (item|instrumento|registro|resultado)/.test(txt);
+        });
+
+        let visibleAfterFilter = 0;
+
+        dataRows.forEach((tr) => {
+          const reasonTxt = getRowReasonText(tr, tableInfo.motivoIdx);
+          const cat = classifyReason(reasonTxt);
+          counts.all++;
+          counts[cat]++;
+
+          const shouldShow = activeReason === "all" || cat === activeReason;
+          const targetDisplay = shouldShow ? "" : "none";
+          if (tr.style.display !== targetDisplay) tr.style.display = targetDisplay;
+          if (shouldShow) visibleAfterFilter++;
+        });
+
+        if (activeReason !== "all" && dataRows.length > 0 && visibleAfterFilter === 0) {
+          if (!oldEmpty) {
+            const catObj = CATEGORIES.find((c) => c.id === activeReason);
+            const er = document.createElement("tr");
+            er.id = "vu-custody-empty-row";
+            er.innerHTML = `<td colspan="${tableInfo.colCount}" style="padding:20px 14px;text-align:center;font-size:13px;color:#64748b;font-weight:600;">Nenhum instrumento em cautela na categoria <strong>${catObj ? catObj.label : ""}</strong>.</td>`;
+            tbody.appendChild(er);
+          }
+        } else if (oldEmpty) {
+          oldEmpty.remove();
+        }
+      }
+    }
+
+    const isDark =
+      document.documentElement.classList.contains("dark") ||
+      document.body.classList.contains("dark");
+
+    let bar = existingBar;
+    if (!bar || bar.previousElementSibling !== tabsInfo.container) {
+      if (bar) bar.remove();
+      bar = document.createElement("div");
+      bar.id = "vu-custody-reason-bar";
+      tabsInfo.container.insertAdjacentElement("afterend", bar);
+    }
+
+    const showCounts = onItemsTable || Boolean(tableInfo);
+    const sig = `${activeReason}|${showCounts ? 1 : 0}|${counts.all}|${counts.bancada}|${counts.reparo}|${counts.calibracao}|${counts.outros}|${isDark ? "d" : "l"}`;
+    if (bar.dataset.vuSig === sig) return;
+    bar.dataset.vuSig = sig;
+
+    const wrapBg = isDark ? "rgba(15,23,42,.72)" : "#f8fafc";
+    const wrapBd = isDark ? "rgba(148,163,184,.25)" : "#e2e8f0";
+    const titleCol = isDark ? "#94a3b8" : "#64748b";
+
+    bar.style.cssText =
+      `margin:10px 0 8px;padding:8px 10px;border-radius:12px;background:${wrapBg};border:1px solid ${wrapBd};` +
+      `display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-family:system-ui,-apple-system,Segoe UI,sans-serif;`;
+
+    const visibleCats = CATEGORIES.filter((c) => c.id !== "outros" || counts.outros > 0 || activeReason === "outros");
+
+    bar.innerHTML =
+      `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:${titleCol};margin-right:2px;">Tipo de Cautela:</span>` +
+      visibleCats.map((c) => {
+        const isAct = activeReason === c.id;
+        const bg = isAct ? c.actBg : (isDark ? "#1e293b" : c.bg);
+        const col = isAct ? "#ffffff" : (isDark ? "#e2e8f0" : c.col);
+        const bd = isAct ? c.actBg : (isDark ? "rgba(148,163,184,.3)" : c.bd);
+        const countBadge = showCounts ? ` <span style="opacity:.85;font-weight:700;">(${counts[c.id]})</span>` : "";
+        return (
+          `<button type="button" data-vu-creason="${c.id}" style="padding:6px 11px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ${bd};background:${bg};color:${col};white-space:nowrap;transition:all .15s;">` +
+            `${c.label}${countBadge}` +
+          `</button>`
+        );
+      }).join("");
+
+    bar.querySelectorAll("[data-vu-creason]").forEach((btn) => {
+      btn.onclick = () => {
+        const chosen = btn.getAttribute("data-vu-creason") || "all";
+        activeReason = (activeReason === chosen && chosen !== "all") ? "all" : chosen;
+
+        // Se nao estiver na aba "Todos os Itens", muda para ela automaticamente para exibir a lista filtrada
+        const curTabs = findCustodyTabsContainer();
+        if (curTabs && curTabs.todosBtn && !isButtonActive(curTabs.todosBtn)) {
+          curTabs.todosBtn.click();
+          setTimeout(() => applyFilterAndRender(), 90);
+          return;
+        }
+        applyFilterAndRender();
+      };
+    });
+  };
+
+  let timer = null;
+  const schedule = (delay = 70) => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      applyFilterAndRender();
+    }, delay);
+  };
+
+  const init = () => {
+    schedule(120);
+    document.addEventListener("click", (ev) => {
+      if (ev.target && ev.target.closest && ev.target.closest("#vu-custody-reason-bar")) return;
+      schedule(90);
+    }, true);
+    document.addEventListener("input", () => schedule(90), true);
+    window.addEventListener("hashchange", () => schedule(120));
+
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (!tgt) continue;
+        if (tgt.id === "vu-custody-reason-bar" || tgt.id === "vu-custody-empty-row") continue;
+        if (tgt.closest && tgt.closest("#vu-custody-reason-bar")) continue;
+        schedule(80);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_CUSTODY_REASON_TABS_V1_END */
