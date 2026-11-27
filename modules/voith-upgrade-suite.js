@@ -5624,3 +5624,174 @@
   window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, { openImageImportModal });
 })();
 /* VOITH_IMAGE_IMPORTER_V1_END */
+
+/* VOITH_TOP_COUNTER_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const findPerPageBar = () => {
+    const labelEl = Array.from(document.querySelectorAll("span, div, p, label")).find((el) => {
+      if (!isVisible(el) || el.closest("#vu-top-count-badge") || el.closest("#vu-img-modal")) return false;
+      if (el.children.length > 0) return false;
+      const t = norm(el.textContent);
+      return t === "por pagina:" || t === "por pagina";
+    });
+    if (!labelEl) return null;
+
+    let leftGroup = labelEl.parentElement;
+    let rowBar = leftGroup ? leftGroup.parentElement : null;
+
+    const hasTodosBtn = (node) =>
+      Boolean(node && Array.from(node.querySelectorAll("button")).some((b) => norm(b.textContent) === "todos"));
+
+    if (!hasTodosBtn(leftGroup) && hasTodosBtn(rowBar)) {
+      leftGroup = rowBar;
+      rowBar = leftGroup.parentElement;
+    }
+
+    if (rowBar && norm(rowBar.textContent || "").includes("dica:")) {
+      return { rowBar, leftGroup };
+    }
+    if (leftGroup && norm(leftGroup.textContent || "").includes("dica:")) {
+      return { rowBar: leftGroup, leftGroup: null };
+    }
+    return { rowBar: rowBar || leftGroup, leftGroup };
+  };
+
+  const readFooterCount = () => {
+    const candidates = Array.from(document.querySelectorAll("div, span, p")).filter((el) => {
+      if (!isVisible(el) || el.id === "vu-top-count-badge" || el.closest("#vu-top-count-badge") || el.closest("#vu-img-modal")) return false;
+      if (el.children.length > 2) return false;
+      const txt = String(el.textContent || "").trim();
+      return txt.length >= 8 && txt.length <= 95 && /mostrando\s+.+\s+instrumento/i.test(norm(txt));
+    });
+
+    for (let i = 0; i < candidates.length; i++) {
+      const raw = String(candidates[i].textContent || "").replace(/\s+/g, " ").trim();
+      const m = raw.match(/mostrando\s+(\d+)\s*[\u2013\u2014-]\s*(\d+)\s+de\s+(\d+)\s+instrumento/i);
+      if (m) {
+        return { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
+      }
+      const m2 = raw.match(/(?:de|mostrando)\s+(\d+)\s+instrumento/i);
+      if (m2) {
+        const total = Number(m2[1]);
+        return { start: total > 0 ? 1 : 0, end: total, total };
+      }
+    }
+
+    const table = Array.from(document.querySelectorAll("table")).find((tb) => isVisible(tb) && !tb.closest("#vu-img-modal"));
+    if (table) {
+      const rows = Array.from(table.querySelectorAll("tbody tr")).filter((tr) => {
+        if (!isVisible(tr)) return false;
+        const t = norm(tr.textContent || "");
+        return t.length > 0 && !/nenhum (item|instrumento|registro)/.test(t);
+      });
+      return { start: rows.length ? 1 : 0, end: rows.length, total: rows.length };
+    }
+    return null;
+  };
+
+  const renderTopCounter = () => {
+    const barInfo = findPerPageBar();
+    const existing = document.getElementById("vu-top-count-badge");
+
+    if (!barInfo || !barInfo.rowBar) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const stats = readFooterCount();
+    if (!stats) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const isDark =
+      document.documentElement.classList.contains("dark") ||
+      document.body.classList.contains("dark");
+
+    let badge = existing;
+    if (!badge || !barInfo.rowBar.contains(badge)) {
+      if (badge) badge.remove();
+      badge = document.createElement("div");
+      badge.id = "vu-top-count-badge";
+
+      if (barInfo.leftGroup && barInfo.leftGroup.parentElement === barInfo.rowBar) {
+        barInfo.leftGroup.insertAdjacentElement("afterend", badge);
+      } else {
+        const todosBtn = Array.from(barInfo.rowBar.querySelectorAll("button")).find((b) => norm(b.textContent) === "todos");
+        if (todosBtn) todosBtn.insertAdjacentElement("afterend", badge);
+        else barInfo.rowBar.appendChild(badge);
+      }
+    }
+
+    const isEmpty = stats.total === 0;
+    const bg = isEmpty
+      ? (isDark ? "rgba(245,158,11,.16)" : "#fffbeb")
+      : (isDark ? "rgba(59,130,246,.18)" : "#eff6ff");
+    const bd = isEmpty
+      ? (isDark ? "rgba(251,191,36,.45)" : "#fcd34d")
+      : (isDark ? "rgba(96,165,250,.45)" : "#bfdbfe");
+    const colMain = isEmpty
+      ? (isDark ? "#fde68a" : "#b45309")
+      : (isDark ? "#93c5fd" : "#003399");
+    const colSub = isDark ? "#cbd5e1" : "#475569";
+
+    const label = stats.total === 1 ? "instrumento" : "instrumentos";
+    const subRange =
+      stats.total > 0 && (stats.start > 1 || stats.end < stats.total)
+        ? ` <span style="font-weight:600;color:${colSub};">&bull; exibindo ${stats.start}&ndash;${stats.end}</span>`
+        : "";
+    const sig = `${stats.start}-${stats.end}-${stats.total}-${isDark ? "d" : "l"}`;
+
+    if (badge.dataset.vuSig === sig) return;
+    badge.dataset.vuSig = sig;
+
+    badge.style.cssText =
+      `display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;` +
+      `background:${bg};border:1px solid ${bd};color:${colMain};font-size:12px;font-weight:800;` +
+      `white-space:nowrap;margin:0 auto 0 12px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;`;
+    badge.innerHTML = `<span>${stats.total} ${label}</span>${subRange}`;
+  };
+
+  let timer = null;
+  const schedule = (delay = 60) => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      renderTopCounter();
+    }, delay);
+  };
+
+  const init = () => {
+    schedule(120);
+    document.addEventListener("click", () => schedule(70), true);
+    document.addEventListener("change", () => schedule(70), true);
+    document.addEventListener("input", () => schedule(90), true);
+    window.addEventListener("hashchange", () => schedule(120));
+
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && (tgt.id === "vu-top-count-badge" || (tgt.closest && tgt.closest("#vu-top-count-badge")))) continue;
+        schedule(80);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_TOP_COUNTER_V1_END */
