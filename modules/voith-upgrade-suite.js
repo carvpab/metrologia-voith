@@ -8577,3 +8577,544 @@
   });
 })();
 /* VOITH_PRO_OPS_SUITE_V1_END */
+
+/* VOITH_ADMIN_UI_V2_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const REMOVE_TAB_IDS = [
+    "admTabBatchDraft",
+    "admTabDueWindow",
+    "admTabHolderPend",
+    "admTabSlaInline",
+    "admTabSplit"
+  ];
+
+  const ICONS = {
+    users: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    rbac: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+    places: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    sla: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
+    audit: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>`,
+    ota: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>`,
+    dot: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/></svg>`
+  };
+
+  const TAB_META = [
+    { key: "users",  group: "access", order: 1, match: /usuarios?\s*&\s*logins/i,     label: "Usu\u00e1rios & Logins",       desc: "Cria\u00e7\u00e3o de contas, redefini\u00e7\u00e3o de senhas e gest\u00e3o de perfis ativos.", icon: ICONS.users },
+    { key: "rbac",   group: "access", order: 2, match: /tipos de login|hierarquia/i,   label: "Perfis & Permiss\u00f5es",     desc: "Configure matr\u00edcula, setor e permiss\u00f5es detalhadas de cada colaborador.", icon: ICONS.rbac },
+    { key: "places", group: "ops",    order: 3, match: /locais\s*&\s*setores/i,       label: "Locais & Setores",             desc: "Lista oficial de arm\u00e1rios, bancadas e setores usados no autocompletar.", icon: ICONS.places },
+    { key: "sla",    group: "ops",    order: 4, match: /risco\s*&\s*sla/i,            label: "Risco & SLA Lab",              desc: "Monitoramento de prazos externos, criticidade e indicadores de calibra\u00e7\u00e3o.", icon: ICONS.sla },
+    { key: "audit",  group: "ops",    order: 5, match: /auditoria/i,                  label: "Auditoria & Logs",             desc: "Trilha de altera\u00e7\u00f5es administrativas e exporta\u00e7\u00e3o para conformidade ISO.", icon: ICONS.audit },
+    { key: "ota",    group: "ops",    order: 6, match: /ota|telemetria/i,             label: "OTA & Telemetria",             desc: "Vers\u00e3o instalada, diagn\u00f3stico do app e atualiza\u00e7\u00f5es remotas.", icon: ICONS.ota }
+  ];
+
+  const ensureAdminV2Styles = () => {
+    if (document.getElementById("vu-admin-v2-css")) return;
+    const st = document.createElement("style");
+    st.id = "vu-admin-v2-css";
+    st.textContent = `
+      .vu-adm-card-host {
+        max-width: 1060px !important;
+        width: 94vw !important;
+        height: min(720px, 88vh) !important;
+        max-height: 90vh !important;
+        padding: 0 !important;
+        border-radius: 18px !important;
+        overflow: hidden !important;
+        border: 1px solid rgba(148, 163, 184, 0.28) !important;
+        box-shadow: 0 32px 80px -12px rgba(2, 6, 23, 0.55) !important;
+        background: #ffffff !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 {
+        display: flex !important;
+        flex-direction: row !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-height: 90vh !important;
+        background: #f8fafc !important;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+      }
+
+      /* SIDEBAR EXECUTIVA VOITH */
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar {
+        width: 248px !important;
+        flex: 0 0 248px !important;
+        background: linear-gradient(180deg, #071630 0%, #0b2147 65%, #081834 100%) !important;
+        border-right: 1px solid rgba(148, 163, 184, 0.16) !important;
+        padding: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        overflow-y: auto !important;
+        color: #e2e8f0 !important;
+      }
+
+      .vu-adm-v2-brand {
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+
+      .vu-adm-v2-logo {
+        background: #ffffff;
+        color: #003399;
+        font-weight: 900;
+        font-size: 11px;
+        letter-spacing: 0.09em;
+        padding: 5px 8px;
+        border-radius: 7px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        flex-shrink: 0;
+      }
+
+      .vu-adm-v2-nav {
+        padding: 14px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex: 1 1 auto;
+      }
+
+      .vu-adm-v2-sec-lbl {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #64748b;
+        padding: 10px 10px 4px;
+      }
+      .vu-adm-v2-sec-lbl:first-child {
+        padding-top: 2px;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        width: 100% !important;
+        text-align: left !important;
+        padding: 9px 11px !important;
+        border-radius: 9px !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        color: #cbd5e1 !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        line-height: 1.25 !important;
+        cursor: pointer !important;
+        transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item svg {
+        opacity: 0.72;
+        flex-shrink: 0;
+        color: #94a3b8;
+        transition: color 0.14s ease, opacity 0.14s ease;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item:hover {
+        background: rgba(255, 255, 255, 0.07) !important;
+        color: #ffffff !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item:hover svg {
+        color: #7dd3fc;
+        opacity: 1;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item.vu-active {
+        background: rgba(56, 189, 248, 0.15) !important;
+        border-color: rgba(56, 189, 248, 0.28) !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        box-shadow: inset 3px 0 0 #38bdf8 !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item.vu-active svg {
+        color: #38bdf8 !important;
+        opacity: 1 !important;
+      }
+
+      .vu-adm-v2-foot {
+        padding: 12px 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.14);
+        font-size: 11px;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      /* COLUNA PRINCIPAL INTEGRADA */
+      #vu-adm-inner.vu-adm-v2 #vu-admin-main {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+        max-height: 90vh !important;
+        padding: 0 !important;
+        background: #f8fafc !important;
+        overflow: hidden !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border-radius: 0 !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        padding: 15px 24px !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+        flex-shrink: 0 !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar h1,
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar h2,
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar h3,
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar span,
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar div {
+        color: inherit;
+      }
+
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar button {
+        width: 34px !important;
+        height: 34px !important;
+        border-radius: 9px !important;
+        border: 1px solid #cbd5e1 !important;
+        background: #f8fafc !important;
+        color: #475569 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 18px !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+        transition: all 0.14s ease !important;
+        padding: 0 !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar button:hover {
+        background: #fee2e2 !important;
+        border-color: #fca5a5 !important;
+        color: #dc2626 !important;
+      }
+
+      #vu-adm-v2-sub {
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        color: #64748b !important;
+        margin-top: 2px !important;
+        display: block !important;
+      }
+
+      /* AREA DE CONTEUDO E CARDS */
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll {
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        padding: 20px 24px 26px !important;
+        background: #f8fafc !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="text"],
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="password"],
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="search"],
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll select {
+        border-radius: 9px !important;
+        border: 1px solid #cbd5e1 !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        transition: border-color 0.14s ease, box-shadow 0.14s ease !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input:focus,
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll select:focus {
+        outline: none !important;
+        border-color: #0284c7 !important;
+        box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14) !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table {
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        width: 100% !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table thead th {
+        background: #f1f5f9 !important;
+        color: #475569 !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        padding: 10px 14px !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody td {
+        padding: 11px 14px !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        font-size: 13px !important;
+      }
+
+      #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody tr:hover td {
+        background: #f8fafc !important;
+      }
+
+      /* MODO ESCURO COMPLETO */
+      html.dark #vu-adm-inner.vu-adm-v2,
+      body.dark #vu-adm-inner.vu-adm-v2,
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-main,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-main,
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll {
+        background: #0f172a !important;
+        color: #f1f5f9 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar,
+      body.dark #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar {
+        background: #1e293b !important;
+        color: #f8fafc !important;
+        border-bottom-color: #334155 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-adm-v2-sub,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-adm-v2-sub {
+        color: #94a3b8 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar button,
+      body.dark #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar button {
+        background: #0f172a !important;
+        border-color: #475569 !important;
+        color: #cbd5e1 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="text"],
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="password"],
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll select,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="text"],
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll input[type="password"],
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll select {
+        background: #1e293b !important;
+        border-color: #334155 !important;
+        color: #f8fafc !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table thead th,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table thead th {
+        background: #1e293b !important;
+        color: #94a3b8 !important;
+        border-bottom-color: #334155 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody td,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody td {
+        border-bottom-color: #1e293b !important;
+        color: #e2e8f0 !important;
+      }
+
+      html.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody tr:hover td,
+      body.dark #vu-adm-inner.vu-adm-v2 #vu-admin-scroll table tbody tr:hover td {
+        background: rgba(30, 41, 59, 0.65) !important;
+      }
+
+      /* RESPONSIVO MOBILE */
+      @media (max-width: 768px) {
+        .vu-adm-card-host {
+          width: 97vw !important;
+          height: 92vh !important;
+        }
+        #vu-adm-inner.vu-adm-v2 {
+          flex-direction: column !important;
+        }
+        #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar {
+          width: 100% !important;
+          flex: 0 0 auto !important;
+          order: 1 !important;
+          border-right: none !important;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+        }
+        .vu-adm-v2-brand, .vu-adm-v2-sec-lbl, .vu-adm-v2-foot {
+          display: none !important;
+        }
+        .vu-adm-v2-nav {
+          flex-direction: row !important;
+          overflow-x: auto !important;
+          padding: 8px 10px !important;
+          gap: 6px !important;
+        }
+        #vu-adm-inner.vu-adm-v2 #vu-admin-sidebar .vu-side-item {
+          width: auto !important;
+          flex: 0 0 auto !important;
+          white-space: nowrap !important;
+          padding: 7px 11px !important;
+          font-size: 12px !important;
+        }
+        #vu-adm-inner.vu-adm-v2 #vu-admin-main {
+          order: 2 !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        #vu-adm-inner.vu-adm-v2 .vu-adm-v2-topbar {
+          padding: 12px 14px !important;
+        }
+        #vu-adm-inner.vu-adm-v2 #vu-admin-scroll {
+          padding: 14px !important;
+        }
+      }
+    `;
+    document.head.appendChild(st);
+  };
+
+  const getTabMeta = (btn) => {
+    const t = norm(btn.textContent);
+    for (let i = 0; i < TAB_META.length; i++) {
+      if (TAB_META[i].match.test(t)) return TAB_META[i];
+    }
+    return {
+      key: "extra",
+      group: "ops",
+      order: 99,
+      label: String(btn.textContent || "").replace(/[^\w\s\u00c0-\u00ff&/-]/g, "").trim() || "Configura\u00e7\u00e3o",
+      desc: "Configura\u00e7\u00f5es administrativas do sistema Voith Metrologia.",
+      icon: ICONS.dot
+    };
+  };
+
+  const applyAdminV2Upgrade = () => {
+    const inner = document.getElementById("vu-adm-inner");
+    if (!inner || inner.dataset.vuV2Done === "1") return;
+
+    const sidebar = inner.querySelector("#vu-admin-sidebar");
+    const mainCol = inner.querySelector("#vu-admin-main");
+    if (!sidebar || !mainCol) return;
+
+    ensureAdminV2Styles();
+    inner.dataset.vuV2Done = "1";
+    inner.classList.add("vu-adm-v2");
+
+    // 1. Remove as 5 abas extras redundantes / estaticas
+    REMOVE_TAB_IDS.forEach((id) => {
+      const el = sidebar.querySelector(`#${id}`);
+      if (el) el.remove();
+    });
+
+    // 2. Coleta os botoes uteis restantes e organiza em 2 grupos limpos com SVGs
+    const keptBtns = Array.from(sidebar.querySelectorAll(".vu-side-item"));
+    const mapped = keptBtns.map((btn) => ({ btn, meta: getTabMeta(btn) }))
+      .sort((a, b) => a.meta.order - b.meta.order);
+
+    const ver = (window.VOITH_CONFIG && window.VOITH_CONFIG.APP_VERSION) || "v16.25";
+    sidebar.innerHTML = "";
+
+    const brand = document.createElement("div");
+    brand.className = "vu-adm-v2-brand";
+    brand.innerHTML =
+      `<span class="vu-adm-v2-logo">VOITH</span>` +
+      `<div style="min-width:0;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:#ffffff;line-height:1.2;">Admin Center</div>` +
+        `<div style="font-size:11px;color:#94a3b8;line-height:1.2;margin-top:1px;">Metrologia &bull; Turbo</div>` +
+      `</div>`;
+
+    const nav = document.createElement("div");
+    nav.className = "vu-adm-v2-nav";
+
+    const accessItems = mapped.filter((x) => x.meta.group === "access");
+    const opsItems = mapped.filter((x) => x.meta.group !== "access");
+
+    const topHeader = Array.from(mainCol.children).find((ch) => ch.id !== "vu-admin-scroll");
+    let subEl = null;
+
+    if (topHeader) {
+      topHeader.classList.add("vu-adm-v2-topbar");
+      topHeader.style.borderRadius = "0";
+      const titleNode = Array.from(topHeader.querySelectorAll("h1, h2, h3, h4, span, div")).find((el) =>
+        String(el.textContent || "").includes("Painel Administrativo") && el.children.length <= 1
+      );
+      if (titleNode) {
+        titleNode.style.fontSize = "16px";
+        titleNode.style.fontWeight = "800";
+        titleNode.style.lineHeight = "1.2";
+        subEl = document.createElement("span");
+        subEl.id = "vu-adm-v2-sub";
+        titleNode.insertAdjacentElement("afterend", subEl);
+      }
+    }
+
+    const updateTopSub = (meta) => {
+      if (subEl && meta) subEl.textContent = meta.desc;
+    };
+
+    const appendGroup = (title, items) => {
+      if (!items.length) return;
+      const lbl = document.createElement("div");
+      lbl.className = "vu-adm-v2-sec-lbl";
+      lbl.textContent = title;
+      nav.appendChild(lbl);
+
+      items.forEach(({ btn, meta }) => {
+        btn.innerHTML = `${meta.icon}<span style="overflow:hidden;text-overflow:ellipsis;">${meta.label}</span>`;
+        btn.addEventListener("click", () => updateTopSub(meta));
+        if (btn.classList.contains("vu-active")) updateTopSub(meta);
+        nav.appendChild(btn);
+      });
+    };
+
+    appendGroup("Acesso & Equipe", accessItems);
+    appendGroup("Opera\u00e7\u00e3o & Sistema", opsItems);
+
+    if (subEl && !subEl.textContent && mapped[0]) {
+      updateTopSub(mapped[0].meta);
+    }
+
+    const foot = document.createElement("div");
+    foot.className = "vu-adm-v2-foot";
+    foot.innerHTML =
+      `<span>Voith Turbo &bull; ISO 9001</span>` +
+      `<span style="padding:2px 7px;border-radius:999px;background:rgba(56,189,248,.14);color:#7dd3fc;font-weight:700;font-size:10px;">${ver}</span>`;
+
+    sidebar.appendChild(brand);
+    sidebar.appendChild(nav);
+    sidebar.appendChild(foot);
+  };
+
+  let timer = null;
+  const schedule = (delay = 60) => {
+    if (timer) return;
+    timer = setTimeout(() => { timer = null; applyAdminV2Upgrade(); }, delay);
+  };
+
+  const init = () => {
+    ensureAdminV2Styles();
+    schedule(100);
+    document.addEventListener("click", () => schedule(90), true);
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        if (document.getElementById("vu-adm-inner")) {
+          schedule(50);
+          break;
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+/* VOITH_ADMIN_UI_V2_END */
