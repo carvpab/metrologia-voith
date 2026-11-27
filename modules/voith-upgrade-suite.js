@@ -9640,15 +9640,8 @@
   /* -------------------- 2. MODO ESCURO COMPLETO + STICKY TABLE HEADERS + BARRAS COMPACTAS -------------------- */
   const detectDarkMode = () => {
     if (document.documentElement.classList.contains("dark") || document.body.classList.contains("dark")) return true;
-    if (document.documentElement.getAttribute("data-theme") === "dark") return true;
-    try {
-      const bg = window.getComputedStyle(document.body).backgroundColor || "";
-      const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-      if (m) {
-        const lum = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
-        return lum < 110;
-      }
-    } catch (_) {}
+    if (document.documentElement.classList.contains("dark-mode") || document.body.classList.contains("dark-mode")) return true;
+    if (document.documentElement.getAttribute("data-theme") === "dark" || document.body.getAttribute("data-theme") === "dark") return true;
     return false;
   };
 
@@ -10311,283 +10304,7 @@
 })();
 /* VOITH_UX_TURBO_SUITE_V1_END */
 
-/* VOITH_EXECUTIVE_THEME_V1_START */
-(() => {
-  "use strict";
 
-  const ensureCorporateFont = () => {
-    if (document.getElementById("vu-voith-font")) return;
-    const link = document.createElement("link");
-    link.id = "vu-voith-font";
-    link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
-    (document.head || document.documentElement).appendChild(link);
-  };
-
-  const ensureTopAccentBar = () => {
-    if (document.getElementById("vu-exec-topstripe")) return;
-    const bar = document.createElement("div");
-    bar.id = "vu-exec-topstripe";
-    bar.setAttribute("aria-hidden", "true");
-    bar.style.cssText =
-      "position:fixed;top:0;left:0;right:0;height:3px;z-index:2147483400;pointer-events:none;" +
-      "background:linear-gradient(90deg,#001d52 0%,#004899 58%,#009fe3 100%);";
-    document.body.appendChild(bar);
-  };
-
-  const ensureExecutiveStyles = () => {
-    if (document.getElementById("vu-executive-theme-css")) return;
-    const st = document.createElement("style");
-    st.id = "vu-executive-theme-css";
-    st.textContent = `
-      :root {
-        --voith-navy: #002466;
-        --voith-blue: #004899;
-        --voith-blue-hover: #003a7a;
-        --voith-cyan: #009fe3;
-        --voith-canvas: #f2f5fa;
-        --voith-surface: #ffffff;
-        --voith-border: #dce4f0;
-        --voith-border-strong: #c3d1e6;
-        --voith-text: #0f172a;
-        --voith-muted: #52637a;
-        --voith-shadow-sm: 0 1px 2px rgba(0, 36, 102, 0.04), 0 3px 10px -2px rgba(0, 36, 102, 0.05);
-        --voith-shadow-md: 0 8px 24px -6px rgba(0, 36, 102, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
-      }
-
-      html.vu-dark,
-      html.dark,
-      body.dark {
-        --voith-canvas: #080f1e;
-        --voith-surface: #0f1a2e;
-        --voith-border: #1e2f4d;
-        --voith-border-strong: #2c436b;
-        --voith-text: #f1f5f9;
-        --voith-muted: #94a3b8;
-        --voith-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-        --voith-shadow-md: 0 14px 34px -8px rgba(0, 0, 0, 0.55);
-      }
-
-      /* Base tipografica e anti-aliasing */
-      body {
-        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-        text-rendering: optimizeLegibility;
-      }
-
-      html:not(.vu-dark):not(.dark) body {
-        background-color: var(--voith-canvas) !important;
-        color: var(--voith-text);
-      }
-
-      html.vu-dark body,
-      html.dark body,
-      body.dark {
-        background-color: var(--voith-canvas) !important;
-        color: var(--voith-text);
-      }
-
-      /* Alinhamento tabular perfeito para codigos, datas, faixas e KPIs */
-      table, th, td,
-      #vu-top-count-badge,
-      [class*="tabular"],
-      .vu-exec-num {
-        font-variant-numeric: tabular-nums !important;
-      }
-
-      /* Cabecalho principal com acabamento corporativo */
-      html:not(.vu-dark):not(.dark) header {
-        background: rgba(255, 255, 255, 0.92) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-bottom: 1px solid var(--voith-border) !important;
-        box-shadow: 0 1px 3px rgba(0, 36, 102, 0.04);
-      }
-      html.vu-dark header,
-      html.dark header {
-        background: rgba(12, 22, 41, 0.9) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-bottom: 1px solid var(--voith-border) !important;
-      }
-
-      /* Sidebar desktop e barra inferior mobile mais nitidas */
-      html:not(.vu-dark):not(.dark) aside:not(#vu-admin-sidebar) {
-        border-right-color: var(--voith-border) !important;
-      }
-      html.vu-dark aside:not(#vu-admin-sidebar),
-      html.dark aside:not(#vu-admin-sidebar) {
-        border-right-color: var(--voith-border) !important;
-      }
-
-      /* Cartoes e paineis com elevacao executiva limpa */
-      html:not(.vu-dark):not(.dark) main .rounded-xl,
-      html:not(.vu-dark):not(.dark) main .rounded-2xl {
-        border-color: var(--voith-border);
-        box-shadow: var(--voith-shadow-sm);
-      }
-
-      /* Tabelas: visual de engenharia (cabecalho preciso + hover sutil) */
-      table {
-        border-collapse: separate;
-        border-spacing: 0;
-      }
-
-      html:not(.vu-dark):not(.dark) table thead th {
-        background: #eef3f9 !important;
-        color: #334a6b !important;
-        font-size: 11px !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.055em !important;
-        text-transform: uppercase !important;
-        border-bottom: 1px solid var(--voith-border-strong) !important;
-      }
-
-      html.vu-dark table thead th,
-      html.dark table thead th {
-        background: #13213a !important;
-        color: #93b4dc !important;
-        font-size: 11px !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.055em !important;
-        text-transform: uppercase !important;
-        border-bottom: 1px solid var(--voith-border-strong) !important;
-      }
-
-      table tbody tr {
-        transition: background-color 0.12s ease;
-      }
-
-      html:not(.vu-dark):not(.dark) table tbody tr:hover td {
-        background-color: #f4f8ff !important;
-      }
-
-      html.vu-dark table tbody tr:hover td,
-      html.dark table tbody tr:hover td {
-        background-color: rgba(0, 159, 227, 0.08) !important;
-      }
-
-      html:not(.vu-dark):not(.dark) table tbody td {
-        border-bottom-color: #e9eff7 !important;
-      }
-      html.vu-dark table tbody td,
-      html.dark table tbody td {
-        border-bottom-color: #192844 !important;
-      }
-
-      /* Campos de entrada e seletores com foco padrao Voith */
-      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-      select,
-      textarea {
-        transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
-      }
-
-      input:not([type="checkbox"]):not([type="radio"]):focus,
-      select:focus,
-      textarea:focus {
-        outline: none !important;
-        border-color: var(--voith-blue) !important;
-        box-shadow: 0 0 0 3px rgba(0, 72, 153, 0.15) !important;
-      }
-
-      html.vu-dark input:not([type="checkbox"]):not([type="radio"]):focus,
-      html.vu-dark select:focus,
-      html.vu-dark textarea:focus,
-      html.dark input:not([type="checkbox"]):not([type="radio"]):focus,
-      html.dark select:focus,
-      html.dark textarea:focus {
-        border-color: var(--voith-cyan) !important;
-        box-shadow: 0 0 0 3px rgba(0, 159, 227, 0.22) !important;
-      }
-
-      /* Botoes com resposta tatil sutil (GPU-friendly) */
-      button {
-        transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.08s ease;
-      }
-      button:active:not(:disabled) {
-        transform: scale(0.985);
-      }
-
-      /* Harmonizacao executiva das barras da suite */
-      html:not(.vu-dark):not(.dark) #vu-family-bar > div:first-child,
-      html:not(.vu-dark):not(.dark) #vu-custody-reason-bar {
-        background: #ffffff !important;
-        border: 1px solid var(--voith-border) !important;
-        box-shadow: var(--voith-shadow-sm) !important;
-      }
-
-      html:not(.vu-dark):not(.dark) #vu-top-count-badge {
-        background: #eaf2fc !important;
-        border-color: #bfd6f6 !important;
-        color: var(--voith-navy) !important;
-      }
-
-      html:not(.vu-dark):not(.dark) #vu-open-img-import {
-        background: #ffffff !important;
-        border: 1px solid #bfd6f6 !important;
-        color: var(--voith-blue) !important;
-        box-shadow: 0 1px 2px rgba(0, 36, 102, 0.05);
-      }
-      html:not(.vu-dark):not(.dark) #vu-open-img-import:hover {
-        background: #eaf2fc !important;
-        border-color: var(--voith-blue) !important;
-      }
-
-      html:not(.vu-dark):not(.dark) #vu-saneamento-btn {
-        background: #ffffff !important;
-        border: 1px solid #c7d4ee !important;
-        color: var(--voith-navy) !important;
-        box-shadow: 0 1px 2px rgba(0, 36, 102, 0.05);
-      }
-      html:not(.vu-dark):not(.dark) #vu-saneamento-btn:hover {
-        background: #eef4fc !important;
-        border-color: var(--voith-blue) !important;
-      }
-
-      /* Barras de rolagem finas e discretas */
-      ::-webkit-scrollbar {
-        width: 7px;
-        height: 7px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(100, 116, 139, 0.34);
-        border-radius: 999px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 72, 153, 0.58);
-      }
-      html.vu-dark ::-webkit-scrollbar-thumb,
-      html.dark ::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.28);
-      }
-      html.vu-dark ::-webkit-scrollbar-thumb:hover,
-      html.dark ::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 159, 227, 0.55);
-      }
-
-      /* Melhor contraste na selecao de texto */
-      ::selection {
-        background: rgba(0, 159, 227, 0.22);
-        color: inherit;
-      }
-    `;
-    (document.head || document.documentElement).appendChild(st);
-  };
-
-  const boot = () => {
-    ensureCorporateFont();
-    ensureExecutiveStyles();
-    if (document.body) ensureTopAccentBar();
-    else document.addEventListener("DOMContentLoaded", ensureTopAccentBar, { once: true });
-  };
-
-  boot();
-})();
-/* VOITH_EXECUTIVE_THEME_V1_END */
 
 /* VOITH_NEXTGEN_SUITE_V1_START */
 (() => {
@@ -11299,6 +11016,31 @@
     }
   };
 
+  const alignAnalyticsToNativeCards = (wrap) => {
+    const main = document.querySelector("main") || document.body;
+    const refBlocks = Array.from(main.querySelectorAll("div")).filter((el) => {
+      if (el === wrap || el.contains(wrap) || wrap.contains(el)) return false;
+      if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
+      const r = el.getBoundingClientRect();
+      const mr = main.getBoundingClientRect();
+      return r.width >= 320 && r.width < mr.width - 24 && r.height >= 120 && r.top < wrap.getBoundingClientRect().top + 10;
+    });
+
+    if (refBlocks.length) {
+      // Escolhe o container mais largo que envolve as duas colunas de cards acima
+      refBlocks.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+      const ref = refBlocks[0];
+      const rr = ref.getBoundingClientRect();
+      wrap.style.maxWidth = Math.round(rr.width) + "px";
+      wrap.style.marginLeft = "auto";
+      wrap.style.marginRight = "auto";
+    } else {
+      wrap.style.maxWidth = "1280px";
+      wrap.style.marginLeft = "auto";
+      wrap.style.marginRight = "auto";
+    }
+  };
+
   const renderCommandCenterAnalytics = () => {
     const existing = document.getElementById("vu-cc-analytics");
     if (!isCommandCenterScreen()) {
@@ -11309,7 +11051,6 @@
     const fleet = getFleetArray();
     if (!fleet.length) return;
 
-    // 1. Previsao dos proximos 6 meses
     const now = new Date();
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const buckets = [];
@@ -11331,7 +11072,6 @@
 
     const maxCount = Math.max(1, ...buckets.map((b) => b.count));
 
-    // 2. Ranking de reparos recorrentes (Timeline + Cautelas + Obs)
     const repairByCode = new Map();
     const repairBySector = new Map();
     const fleetByCode = new Map(fleet.map((f) => [f.code, f]));
@@ -11372,75 +11112,80 @@
     const topItems = Array.from(repairByCode.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const topSectors = Array.from(repairBySector.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
 
-    const sig = `${fleet.length}|${overdueCount}|${buckets.map((b) => b.count).join(",")}|${topItems.map((x) => x.join(":")).join(",")}`;
-    if (existing && existing.dataset.vuSig === sig) return;
+    const sig = `v2|${fleet.length}|${overdueCount}|${buckets.map((b) => b.count).join(",")}|${topItems.map((x) => x.join(":")).join(",")}`;
+    if (existing && existing.dataset.vuSig === sig) {
+      alignAnalyticsToNativeCards(existing);
+      return;
+    }
 
     const host = document.querySelector("main") || document.body;
+    const footerInMain = Array.from(host.children).find((ch) => ch.tagName === "FOOTER");
     let wrap = existing;
     if (!wrap) {
       wrap = document.createElement("section");
       wrap.id = "vu-cc-analytics";
-      wrap.style.cssText = "margin:16px 0 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;font-family:Inter,system-ui,-apple-system,sans-serif;";
-      host.appendChild(wrap);
+      wrap.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif;";
+      if (footerInMain) host.insertBefore(wrap, footerInMain);
+      else host.appendChild(wrap);
     }
     wrap.dataset.vuSig = sig;
 
     const total6m = buckets.reduce((acc, b) => acc + b.count, 0);
 
     wrap.innerHTML =
-      `<div class="vu-cc-card" style="background:#ffffff;border:1px solid #dce4f0;border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,36,102,.05);display:grid;gap:12px;">` +
+      `<div class="vu-cc-card" style="display:grid;gap:12px;">` +
         `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">` +
           `<div>` +
-            `<div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#004899;">Planejamento Metrol\u00f3gico</div>` +
-            `<div style="font-size:15px;font-weight:800;margin-top:2px;">Previs\u00e3o de Calibra\u00e7\u00f5es (Pr\u00f3ximos 6 Meses)</div>` +
+            `<div class="vu-cc-kicker">Planejamento Metrol\u00f3gico</div>` +
+            `<div class="vu-cc-title">Previs\u00e3o de Calibra\u00e7\u00f5es (Pr\u00f3ximos 6 Meses)</div>` +
           `</div>` +
           `<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
-            `<span style="padding:3px 9px;border-radius:999px;background:#eaf2fc;color:#003399;font-size:11px;font-weight:800;">6 meses: ${total6m}</span>` +
-            (overdueCount ? `<span style="padding:3px 9px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800;">Vencidos: ${overdueCount}</span>` : "") +
+            `<span class="vu-cc-pill-blue">6 meses: ${total6m}</span>` +
+            (overdueCount ? `<span class="vu-cc-pill-red">Vencidos: ${overdueCount}</span>` : "") +
           `</div>` +
         `</div>` +
         `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;height:142px;padding-top:14px;">` +
           buckets.map((b, idx) => {
             const pct = Math.max(8, Math.round((b.count / maxCount) * 100));
-            const barColor = idx === 0 ? "linear-gradient(180deg,#0284c7,#004899)" : "linear-gradient(180deg,#38bdf8,#0284c7)";
+            const barColor = idx === 0 ? "linear-gradient(180deg,#009fe3,#004899)" : "linear-gradient(180deg,#38bdf8,#0284c7)";
             return (
               `<button type="button" data-cc-ym="${b.ym}" title="Ver ${b.count} instrumento(s) vencendo em ${b.label}" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;border:none;background:transparent;cursor:pointer;padding:0;gap:5px;">` +
-                `<span style="font-size:12px;font-weight:800;color:#004899;font-variant-numeric:tabular-nums;">${b.count}</span>` +
-                `<div style="width:100%;max-width:40px;height:${pct}%;min-height:8px;border-radius:7px 7px 3px 3px;background:${b.count ? barColor : "#e2e8f0"};transition:height .25s;"></div>` +
-                `<span style="font-size:11px;font-weight:700;color:#64748b;">${b.label}</span>` +
+                `<span class="vu-cc-bar-num">${b.count}</span>` +
+                `<div style="width:100%;max-width:42px;height:${pct}%;min-height:8px;border-radius:7px 7px 3px 3px;background:${b.count ? barColor : "rgba(148,163,184,.28)"};transition:height .25s;"></div>` +
+                `<span class="vu-cc-bar-lbl">${b.label}</span>` +
               `</button>`
             );
           }).join("") +
         `</div>` +
-        `<div style="font-size:11px;color:#64748b;">Clique em qualquer m\u00eas acima para abrir o Invent\u00e1rio j\u00e1 filtrado nele.</div>` +
+        `<div class="vu-cc-hint">Clique em qualquer m\u00eas acima para abrir o Invent\u00e1rio j\u00e1 filtrado nele.</div>` +
       `</div>` +
-      `<div class="vu-cc-card" style="background:#ffffff;border:1px solid #dce4f0;border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,36,102,.05);display:grid;gap:12px;align-content:start;">` +
+      `<div class="vu-cc-card" style="display:grid;gap:12px;align-content:start;">` +
         `<div>` +
-          `<div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#dc2626;">Confiabilidade &amp; Manuten\u00e7\u00e3o</div>` +
-          `<div style="font-size:15px;font-weight:800;margin-top:2px;">Ranking de Reparos Recorrentes</div>` +
+          `<div class="vu-cc-kicker vu-cc-kicker-red">Confiabilidade &amp; Manuten\u00e7\u00e3o</div>` +
+          `<div class="vu-cc-title">Ranking de Reparos Recorrentes</div>` +
         `</div>` +
         (topItems.length
-          ? `<div style="display:grid;gap:6px;">` +
+          ? `<div style="display:grid;gap:7px;">` +
               topItems.map(([code, cnt], idx) => {
                 const ref = fleetByCode.get(code);
                 return (
-                  `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:12px;">` +
+                  `<div class="vu-cc-row">` +
                     `<div style="min-width:0;">` +
-                      `<span style="font-weight:800;color:#64748b;margin-right:6px;">#${idx + 1}</span>` +
-                      `<strong style="color:#004899;">${escHtml(code)}</strong>` +
-                      (ref && ref.desc ? ` <span style="color:#475569;">\u2014 ${escHtml(ref.desc)}</span>` : "") +
+                      `<span style="font-weight:800;opacity:.65;margin-right:6px;">#${idx + 1}</span>` +
+                      `<span class="vu-cc-code">${escHtml(code)}</span>` +
+                      (ref && ref.desc ? ` <span class="vu-cc-desc">\u2014 ${escHtml(ref.desc)}</span>` : "") +
                     `</div>` +
-                    `<span style="padding:2px 8px;border-radius:999px;background:${cnt >= 2 ? "#dc2626" : "#fee2e2"};color:${cnt >= 2 ? "#fff" : "#b91c1c"};font-size:11px;font-weight:800;white-space:nowrap;">${cnt}x reparo</span>` +
+                    `<span class="vu-cc-pill-red" style="${cnt >= 2 ? "background:#dc2626 !important;color:#fff !important;border-color:#dc2626 !important;" : ""}">${cnt}x reparo</span>` +
                   `</div>`
                 );
               }).join("") +
             `</div>`
-          : `<div style="padding:14px;border-radius:10px;background:#f8fafc;border:1px dashed #cbd5e1;font-size:12px;color:#64748b;">Nenhum reparo recorrente computado ainda. Envios para reparo na Cautela e registros na Linha do Tempo alimentam este ranking automaticamente.</div>`) +
+          : `<div class="vu-cc-empty">Nenhum reparo recorrente computado ainda. Envios para reparo na Cautela e registros na Linha do Tempo alimentam este ranking automaticamente.</div>`) +
         (topSectors.length
-          ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;border-top:1px solid #e2e8f0;">` +
-              `<span style="font-size:11px;font-weight:800;color:#64748b;width:100%;">Setores com mais ocorr\u00eancias:</span>` +
+          ? `<div class="vu-cc-sec-wrap">` +
+              `<span class="vu-cc-hint" style="font-weight:800;width:100%;">Setores com mais ocorr\u00eancias:</span>` +
               topSectors.map(([sec, cnt]) =>
-                `<span style="padding:3px 9px;border-radius:999px;background:#fff1f2;border:1px solid #fecdd3;color:#9f1239;font-size:11px;font-weight:700;">${escHtml(sec)} (${cnt})</span>`
+                `<span class="vu-cc-sec-pill">${escHtml(sec)} (${cnt})</span>`
               ).join("") +
             `</div>`
           : "") +
@@ -11449,6 +11194,8 @@
     wrap.querySelectorAll("[data-cc-ym]").forEach((btn) => {
       btn.onclick = () => jumpToInventoryMonth(btn.getAttribute("data-cc-ym"));
     });
+
+    alignAnalyticsToNativeCards(wrap);
   };
 
   /* -------------------- 5. MODO VISAO POR IA OPCIONAL (GEMINI) NO LER IMAGEM -------------------- */
@@ -11675,3 +11422,474 @@
   });
 })();
 /* VOITH_NEXTGEN_SUITE_V1_END */
+
+/* VOITH_EXECUTIVE_THEME_V1_START */
+(() => {
+  "use strict";
+
+  const ensureCorporateFont = () => {
+    if (document.getElementById("vu-voith-font")) return;
+    const link = document.createElement("link");
+    link.id = "vu-voith-font";
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+    (document.head || document.documentElement).appendChild(link);
+  };
+
+  const ensureTopAccentBar = () => {
+    if (document.getElementById("vu-exec-topstripe")) return;
+    const bar = document.createElement("div");
+    bar.id = "vu-exec-topstripe";
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.cssText =
+      "position:fixed;top:0;left:0;right:0;height:3px;z-index:2147483400;pointer-events:none;" +
+      "background:linear-gradient(90deg,#001d52 0%,#004899 58%,#009fe3 100%);";
+    document.body.appendChild(bar);
+  };
+
+  const ensureExecutiveStyles = () => {
+    const old = document.getElementById("vu-executive-theme-css");
+    if (old) old.remove();
+
+    const st = document.createElement("style");
+    st.id = "vu-executive-theme-css";
+    st.textContent = `
+      :root {
+        --voith-navy: #002466;
+        --voith-blue: #004899;
+        --voith-blue-hover: #003a7a;
+        --voith-cyan: #009fe3;
+        --voith-canvas: #f2f5fa;
+        --voith-surface: #ffffff;
+        --voith-surface-2: #f8fafc;
+        --voith-border: #dce4f0;
+        --voith-border-strong: #c3d1e6;
+        --voith-text: #0f172a;
+        --voith-muted: #52637a;
+        --voith-shadow-sm: 0 1px 2px rgba(0, 36, 102, 0.04), 0 3px 10px -2px rgba(0, 36, 102, 0.05);
+      }
+
+      html.vu-dark,
+      html.dark,
+      body.dark {
+        --voith-canvas: #080f1e;
+        --voith-surface: #0f1a2e;
+        --voith-surface-2: #15233b;
+        --voith-border: #1e2f4d;
+        --voith-border-strong: #2c436b;
+        --voith-text: #f1f5f9;
+        --voith-muted: #94a3b8;
+        --voith-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+      }
+
+      body {
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      html:not(.vu-dark):not(.dark) body {
+        background-color: var(--voith-canvas) !important;
+        color: var(--voith-text);
+      }
+
+      html.vu-dark body,
+      html.dark body,
+      body.dark {
+        background-color: var(--voith-canvas) !important;
+        color: var(--voith-text);
+      }
+
+      /* Alinhamento tabular perfeito para codigos, datas, faixas e KPIs */
+      table, th, td,
+      #vu-top-count-badge,
+      .vu-cc-bar-num,
+      .vu-exec-num {
+        font-variant-numeric: tabular-nums !important;
+      }
+
+      /* Cabecalho principal */
+      html:not(.vu-dark):not(.dark) header {
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--voith-border) !important;
+        box-shadow: 0 1px 3px rgba(0, 36, 102, 0.04);
+      }
+      html.vu-dark header,
+      html.dark header,
+      body.dark header {
+        background: rgba(12, 22, 41, 0.94) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--voith-border) !important;
+        color: #f1f5f9 !important;
+      }
+
+      /* Correcao completa do Modo Escuro nos cards nativos, barra de busca, botoes do topo e rodape */
+      html.vu-dark main .bg-white,
+      html.dark main .bg-white,
+      body.dark main .bg-white {
+        background-color: var(--voith-surface) !important;
+        border-color: var(--voith-border) !important;
+        color: #f1f5f9 !important;
+      }
+
+      html.vu-dark main .bg-white .bg-white,
+      html.dark main .bg-white .bg-white,
+      body.dark main .bg-white .bg-white,
+      html.vu-dark main .bg-slate-50,
+      html.dark main .bg-slate-50,
+      body.dark main .bg-slate-50,
+      html.vu-dark main .bg-gray-50,
+      html.dark main .bg-gray-50,
+      body.dark main .bg-gray-50,
+      html.vu-dark main .bg-slate-100,
+      html.dark main .bg-slate-100,
+      body.dark main .bg-slate-100 {
+        background-color: var(--voith-surface-2) !important;
+        border-color: #243759 !important;
+        color: #f1f5f9 !important;
+      }
+
+      html.vu-dark main .border-slate-200,
+      html.dark main .border-slate-200,
+      body.dark main .border-slate-200,
+      html.vu-dark main .border-slate-100,
+      html.dark main .border-slate-100,
+      body.dark main .border-slate-100,
+      html.vu-dark main .border-gray-200,
+      html.dark main .border-gray-200,
+      body.dark main .border-gray-200 {
+        border-color: var(--voith-border) !important;
+      }
+
+      html.vu-dark main .text-slate-900,
+      html.dark main .text-slate-900,
+      body.dark main .text-slate-900,
+      html.vu-dark main .text-slate-800,
+      html.dark main .text-slate-800,
+      body.dark main .text-slate-800,
+      html.vu-dark main .text-gray-900,
+      html.dark main .text-gray-900,
+      body.dark main .text-gray-900,
+      html.vu-dark main .text-gray-800,
+      html.dark main .text-gray-800,
+      body.dark main .text-gray-800 {
+        color: #f1f5f9 !important;
+      }
+
+      html.vu-dark main .text-slate-700,
+      html.dark main .text-slate-700,
+      body.dark main .text-slate-700,
+      html.vu-dark main .text-gray-700,
+      html.dark main .text-gray-700,
+      body.dark main .text-gray-700 {
+        color: #cbd5e1 !important;
+      }
+
+      html.vu-dark main .text-slate-600,
+      html.dark main .text-slate-600,
+      body.dark main .text-slate-600,
+      html.vu-dark main .text-slate-500,
+      html.dark main .text-slate-500,
+      body.dark main .text-slate-500,
+      html.vu-dark main .text-gray-500,
+      html.dark main .text-gray-500,
+      body.dark main .text-gray-500 {
+        color: #94a3b8 !important;
+      }
+
+      /* Botoes PDF escuros dentro de cards escuros */
+      html.vu-dark main button.bg-slate-900,
+      html.dark main button.bg-slate-900,
+      body.dark main button.bg-slate-900,
+      html.vu-dark main button.bg-slate-800,
+      html.dark main button.bg-slate-800,
+      body.dark main button.bg-slate-800 {
+        background-color: #1e3a5f !important;
+        border: 1px solid #355a8a !important;
+        color: #ffffff !important;
+      }
+
+      /* Barra de busca e botoes neutros no topo (Modo Escuro) */
+      html.vu-dark header .bg-white,
+      html.dark header .bg-white,
+      body.dark header .bg-white,
+      html.vu-dark header .bg-slate-50,
+      html.dark header .bg-slate-50,
+      body.dark header .bg-slate-50,
+      html.vu-dark header .bg-slate-100,
+      html.dark header .bg-slate-100,
+      body.dark header .bg-slate-100,
+      html.vu-dark header input,
+      html.dark header input,
+      body.dark header input {
+        background-color: #15233b !important;
+        border-color: #263a5e !important;
+        color: #f1f5f9 !important;
+      }
+
+      html.vu-dark header input::placeholder,
+      html.dark header input::placeholder,
+      body.dark header input::placeholder {
+        color: #94a3b8 !important;
+      }
+
+      /* Rodape no Modo Escuro */
+      html.vu-dark footer,
+      html.dark footer,
+      body.dark footer {
+        background-color: #0b1426 !important;
+        border-top-color: var(--voith-border) !important;
+        color: #94a3b8 !important;
+      }
+      html.vu-dark footer a,
+      html.dark footer a,
+      body.dark footer a,
+      html.vu-dark footer button,
+      html.dark footer button,
+      body.dark footer button {
+        color: #94a3b8 !important;
+      }
+
+      /* Botao Baixar App integrado de forma discreta na sidebar escura */
+      aside #vu-menu-dl-item {
+        color: #cbd5e1 !important;
+        font-weight: 600 !important;
+        font-size: 12.5px !important;
+        padding: 7px 10px !important;
+      }
+      aside #vu-menu-dl-item:hover {
+        background: rgba(255, 255, 255, 0.08) !important;
+        color: #7dd3fc !important;
+      }
+
+      /* Cartoes e elevacao no Modo Claro */
+      html:not(.vu-dark):not(.dark) main .rounded-xl,
+      html:not(.vu-dark):not(.dark) main .rounded-2xl {
+        border-color: var(--voith-border);
+        box-shadow: var(--voith-shadow-sm);
+      }
+
+      /* Tabelas */
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+
+      html:not(.vu-dark):not(.dark) table thead th {
+        background: #eef3f9 !important;
+        color: #334a6b !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.055em !important;
+        text-transform: uppercase !important;
+        border-bottom: 1px solid var(--voith-border-strong) !important;
+      }
+
+      html.vu-dark table thead th,
+      html.dark table thead th,
+      body.dark table thead th {
+        background: #13213a !important;
+        color: #93b4dc !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.055em !important;
+        text-transform: uppercase !important;
+        border-bottom: 1px solid var(--voith-border-strong) !important;
+      }
+
+      table tbody tr {
+        transition: background-color 0.12s ease;
+      }
+
+      html:not(.vu-dark):not(.dark) table tbody tr:hover td {
+        background-color: #f4f8ff !important;
+      }
+      html.vu-dark table tbody tr:hover td,
+      html.dark table tbody tr:hover td,
+      body.dark table tbody tr:hover td {
+        background-color: rgba(0, 159, 227, 0.08) !important;
+      }
+
+      html:not(.vu-dark):not(.dark) table tbody td {
+        border-bottom-color: #e9eff7 !important;
+      }
+      html.vu-dark table tbody td,
+      html.dark table tbody td,
+      body.dark table tbody td {
+        border-bottom-color: #192844 !important;
+      }
+
+      /* Foco corporativo */
+      input:not([type="checkbox"]):not([type="radio"]):focus,
+      select:focus,
+      textarea:focus {
+        outline: none !important;
+        border-color: var(--voith-blue) !important;
+        box-shadow: 0 0 0 3px rgba(0, 72, 153, 0.15) !important;
+      }
+      html.vu-dark input:not([type="checkbox"]):not([type="radio"]):focus,
+      html.vu-dark select:focus,
+      html.vu-dark textarea:focus,
+      html.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+      html.dark select:focus,
+      html.dark textarea:focus {
+        border-color: var(--voith-cyan) !important;
+        box-shadow: 0 0 0 3px rgba(0, 159, 227, 0.22) !important;
+      }
+
+      button {
+        transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.08s ease;
+      }
+      button:active:not(:disabled) {
+        transform: scale(0.985);
+      }
+
+      /* ==================== COMMAND CENTER ANALYTICS (CLARO + ESCURO) ==================== */
+      #vu-cc-analytics {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        margin-top: 18px !important;
+        margin-bottom: 24px !important;
+      }
+      #vu-cc-analytics .vu-cc-card {
+        background: #ffffff;
+        border: 1px solid #dce4f0;
+        border-radius: 14px;
+        padding: 18px 20px;
+        box-shadow: var(--voith-shadow-sm);
+        color: #0f172a;
+      }
+      #vu-cc-analytics .vu-cc-kicker {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #004899;
+      }
+      #vu-cc-analytics .vu-cc-kicker-red { color: #dc2626; }
+      #vu-cc-analytics .vu-cc-title { font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px; }
+      #vu-cc-analytics .vu-cc-bar-num { font-size: 12px; font-weight: 800; color: #004899; }
+      #vu-cc-analytics .vu-cc-bar-lbl { font-size: 11px; font-weight: 700; color: #64748b; }
+      #vu-cc-analytics .vu-cc-hint { font-size: 11.5px; color: #64748b; }
+      #vu-cc-analytics .vu-cc-pill-blue { padding: 3px 9px; border-radius: 999px; background: #eaf2fc; color: #003399; border: 1px solid #bfd6f6; font-size: 11px; font-weight: 800; }
+      #vu-cc-analytics .vu-cc-pill-red { padding: 3px 9px; border-radius: 999px; background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 11px; font-weight: 800; }
+      #vu-cc-analytics .vu-cc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 12px; }
+      #vu-cc-analytics .vu-cc-code { font-weight: 800; color: #004899; }
+      #vu-cc-analytics .vu-cc-desc { color: #475569; }
+      #vu-cc-analytics .vu-cc-sec-wrap { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+      #vu-cc-analytics .vu-cc-sec-pill { padding: 3px 9px; border-radius: 999px; background: #fff1f2; border: 1px solid #fecdd3; color: #9f1239; font-size: 11px; font-weight: 700; }
+      #vu-cc-analytics .vu-cc-empty { padding: 14px; border-radius: 10px; background: #f8fafc; border: 1px dashed #cbd5e1; font-size: 12px; color: #64748b; }
+
+      html.vu-dark #vu-cc-analytics .vu-cc-card,
+      html.dark #vu-cc-analytics .vu-cc-card,
+      body.dark #vu-cc-analytics .vu-cc-card {
+        background: #0f1a2e !important;
+        border-color: #1e2f4d !important;
+        color: #f1f5f9 !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-kicker,
+      html.dark #vu-cc-analytics .vu-cc-kicker,
+      body.dark #vu-cc-analytics .vu-cc-kicker { color: #38bdf8 !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-kicker-red,
+      html.dark #vu-cc-analytics .vu-cc-kicker-red,
+      body.dark #vu-cc-analytics .vu-cc-kicker-red { color: #fb7185 !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-title,
+      html.dark #vu-cc-analytics .vu-cc-title,
+      body.dark #vu-cc-analytics .vu-cc-title { color: #f8fafc !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-bar-num,
+      html.dark #vu-cc-analytics .vu-cc-bar-num,
+      body.dark #vu-cc-analytics .vu-cc-bar-num { color: #7dd3fc !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-bar-lbl,
+      html.dark #vu-cc-analytics .vu-cc-bar-lbl,
+      body.dark #vu-cc-analytics .vu-cc-bar-lbl,
+      html.vu-dark #vu-cc-analytics .vu-cc-hint,
+      html.dark #vu-cc-analytics .vu-cc-hint,
+      body.dark #vu-cc-analytics .vu-cc-hint { color: #94a3b8 !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-pill-blue,
+      html.dark #vu-cc-analytics .vu-cc-pill-blue,
+      body.dark #vu-cc-analytics .vu-cc-pill-blue {
+        background: rgba(56, 189, 248, 0.16) !important;
+        color: #7dd3fc !important;
+        border-color: rgba(56, 189, 248, 0.35) !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-pill-red,
+      html.dark #vu-cc-analytics .vu-cc-pill-red,
+      body.dark #vu-cc-analytics .vu-cc-pill-red {
+        background: rgba(244, 63, 94, 0.18) !important;
+        color: #fda4af !important;
+        border-color: rgba(251, 113, 133, 0.38) !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-row,
+      html.dark #vu-cc-analytics .vu-cc-row,
+      body.dark #vu-cc-analytics .vu-cc-row {
+        background: #15233b !important;
+        border-color: #243759 !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-code,
+      html.dark #vu-cc-analytics .vu-cc-code,
+      body.dark #vu-cc-analytics .vu-cc-code { color: #7dd3fc !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-desc,
+      html.dark #vu-cc-analytics .vu-cc-desc,
+      body.dark #vu-cc-analytics .vu-cc-desc { color: #cbd5e1 !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-sec-wrap,
+      html.dark #vu-cc-analytics .vu-cc-sec-wrap,
+      body.dark #vu-cc-analytics .vu-cc-sec-wrap { border-top-color: #1e2f4d !important; }
+      html.vu-dark #vu-cc-analytics .vu-cc-sec-pill,
+      html.dark #vu-cc-analytics .vu-cc-sec-pill,
+      body.dark #vu-cc-analytics .vu-cc-sec-pill {
+        background: rgba(244, 63, 94, 0.16) !important;
+        border-color: rgba(251, 113, 133, 0.35) !important;
+        color: #fecdd3 !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-empty,
+      html.dark #vu-cc-analytics .vu-cc-empty,
+      body.dark #vu-cc-analytics .vu-cc-empty {
+        background: #15233b !important;
+        border-color: #2c436b !important;
+        color: #94a3b8 !important;
+      }
+
+      /* Harmonizacao das barras no claro */
+      html:not(.vu-dark):not(.dark) #vu-family-bar > div:first-child,
+      html:not(.vu-dark):not(.dark) #vu-custody-reason-bar {
+        background: #ffffff !important;
+        border: 1px solid var(--voith-border) !important;
+        box-shadow: var(--voith-shadow-sm) !important;
+      }
+      html:not(.vu-dark):not(.dark) #vu-top-count-badge {
+        background: #eaf2fc !important;
+        border-color: #bfd6f6 !important;
+        color: var(--voith-navy) !important;
+      }
+      html:not(.vu-dark):not(.dark) #vu-open-img-import,
+      html:not(.vu-dark):not(.dark) #vu-saneamento-btn {
+        background: #ffffff !important;
+        border: 1px solid #c3d1e6 !important;
+        color: var(--voith-navy) !important;
+      }
+
+      /* Barras de rolagem finas */
+      ::-webkit-scrollbar { width: 7px; height: 7px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.34); border-radius: 999px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(0, 72, 153, 0.58); }
+      html.vu-dark ::-webkit-scrollbar-thumb,
+      html.dark ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.28); }
+    `;
+    (document.head || document.documentElement).appendChild(st);
+  };
+
+  const boot = () => {
+    ensureCorporateFont();
+    ensureExecutiveStyles();
+    if (document.body) ensureTopAccentBar();
+    else document.addEventListener("DOMContentLoaded", ensureTopAccentBar, { once: true });
+  };
+
+  boot();
+})();
+/* VOITH_EXECUTIVE_THEME_V1_END */
