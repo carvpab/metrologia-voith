@@ -6703,3 +6703,1650 @@
   else init();
 })();
 /* VOITH_CUSTODY_REASON_TABS_V1_END */
+
+/* VOITH_PRO_OPS_SUITE_V1_START */
+(() => {
+  "use strict";
+
+  const TIMELINE_KEY = "voith_instrument_timeline_v1";
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const escHtml = (s) => String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setControlValue = (el, val) => {
+    if (!el) return false;
+    const str = String(val == null ? "" : val).trim();
+    if (el.tagName === "SELECT") {
+      if (!str) return false;
+      const target = norm(str);
+      const opts = Array.from(el.options || []);
+      const hit =
+        opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
+        opts.find((o) => norm(o.textContent).includes(target) || (target.length >= 4 && target.includes(norm(o.textContent))));
+      if (hit) el.value = hit.value;
+      else return false;
+    } else {
+      let finalVal = str;
+      if (String(el.type || "").toLowerCase() === "date" && str) {
+        const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
+      }
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (desc && desc.set) desc.set.call(el, finalVal);
+      else el.value = finalVal;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const getFieldHint = (el) => {
+    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label")];
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${el.id}"]`);
+      if (lbl) parts.push(lbl.textContent);
+    }
+    const closestLbl = el.closest("label");
+    if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.previousElementSibling && String(el.previousElementSibling.textContent || "").length < 80) {
+      parts.push(el.previousElementSibling.textContent);
+    }
+    if (el.parentElement) {
+      const sib = el.parentElement.querySelector("label, span, p");
+      if (sib && sib !== el && String(sib.textContent || "").length < 80) parts.push(sib.textContent);
+      if (el.parentElement.previousElementSibling && String(el.parentElement.previousElementSibling.textContent || "").length < 80) {
+        parts.push(el.parentElement.previousElementSibling.textContent);
+      }
+    }
+    return norm(parts.filter(Boolean).join(" "));
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px;";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    }
+  };
+
+  const showMiniToast = (msg, bg = "#0f172a", border = "#38bdf8") => {
+    let t = document.getElementById("vu-ops-toast");
+    if (t) t.remove();
+    t = document.createElement("div");
+    t.id = "vu-ops-toast";
+    t.style.cssText = `position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:2147483200;background:${bg};color:#f8fafc;border:1px solid ${border};border-radius:10px;padding:9px 15px;font-size:12.5px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 14px 36px rgba(0,0,0,.38);max-width:92vw;text-align:center;`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { if (t && t.isConnected) t.remove(); }, 3400);
+  };
+
+  /* -------------------- UTILITARIOS DE DATA, FAIXA, TIPO E SETOR -------------------- */
+  const OFFICIAL_SECTORS = [
+    "Voith Turbo (Ferrovi\u00e1ria)",
+    "Voith Turbo (Ferrovi\u00e1ria Redutor)",
+    "Voith Turbo (Automotive)",
+    "Voith Turbo (Industrial)",
+    "Assist\u00eancia T\u00e9cnica Automotive",
+    "Assist\u00eancia T\u00e9cnica Industrial",
+    "Voith Turbo - Assist. T\u00e9c. Industrial",
+    "Qualidade",
+    "Vorecon",
+    "Metrologia / Turbo"
+  ];
+
+  const suggestOfficialSector = (raw) => {
+    const s = norm(raw);
+    if (!s || s === "-" || s === "\u2014") return "";
+    if (s.includes("ferrovi") && s.includes("redutor")) return "Voith Turbo (Ferrovi\u00e1ria Redutor)";
+    if (s.includes("ferrovi")) return "Voith Turbo (Ferrovi\u00e1ria)";
+    if (s.includes("assist") && s.includes("automot")) return "Assist\u00eancia T\u00e9cnica Automotive";
+    if (s.includes("automot") || s.includes("engate")) return "Voith Turbo (Automotive)";
+    if (s.includes("assist") && s.includes("industr")) return "Assist\u00eancia T\u00e9cnica Industrial";
+    if (s.includes("industr")) return "Voith Turbo (Industrial)";
+    if (s.includes("qualid")) return "Qualidade";
+    if (s.includes("vorecon")) return "Vorecon";
+    if (s.includes("metrolog")) return "Metrologia / Turbo";
+    return "";
+  };
+
+  const parseDateInfo = (raw) => {
+    const s = String(raw || "").trim();
+    if (!s || s === "-" || s === "\u2014") return { valid: false, str: "", date: null, daysLeft: null };
+    let d = 0, m = 0, y = 0;
+    let hit = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (hit) { d = Number(hit[1]); m = Number(hit[2]); y = Number(hit[3]); }
+    else {
+      hit = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (hit) { y = Number(hit[1]); m = Number(hit[2]); d = Number(hit[3]); }
+    }
+    if (!hit || m < 1 || m > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) {
+      return { valid: false, str: s, date: null, daysLeft: null };
+    }
+    const dt = new Date(y, m - 1, d, 23, 59, 59);
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+      return { valid: false, str: s, date: null, daysLeft: null };
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysLeft = Math.floor((dt.getTime() - today.getTime()) / 86400000);
+    const br = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+    return { valid: true, str: br, date: dt, daysLeft };
+  };
+
+  const toNum = (s) => {
+    if (s == null || s === "") return null;
+    const cleaned = String(s).trim().replace(/\.(?=\d{3}(?:[^\d]|$))/g, "").replace(",", ".");
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const parseRangeFromText = (rawText) => {
+    const s = String(rawText || "").trim();
+    if (!s || /^[-–—~\s]+$/.test(s)) return null;
+    // Padroes: "0 ~ 300", "200 a 500", "0 - 150", "25/50"
+    let m = s.match(/(-?\d+(?:[.,]\d+)?)\s*(?:~|\ba\b|\bat[e\u00e9]\b|\u2013|\u2014|-)\s*(-?\d+(?:[.,]\d+)?)/i);
+    if (m) {
+      const a = toNum(m[1]), b = toNum(m[2]);
+      if (a !== null && b !== null) return { min: Math.min(a, b), max: Math.max(a, b), raw: `${m[1]} ~ ${m[2]}` };
+    }
+    // Padrao de medida unica (ex: "M12", "300mm")
+    m = s.match(/(-?\d+(?:[.,]\d+)?)\s*(?:mm|nm|n\.?m|kgf|bar|psi|\u00b0c|v|a|ohm|pol|"|')/i);
+    if (m) {
+      const v = toNum(m[1]);
+      if (v !== null) return { min: 0, max: v, raw: m[0] };
+    }
+    return null;
+  };
+
+  const extractRange = (obj) => {
+    const a = toNum(obj.faixaIni);
+    const b = toNum(obj.faixaFim);
+    if (a !== null && b !== null) return { min: Math.min(a, b), max: Math.max(a, b), raw: `${obj.faixaIni} ~ ${obj.faixaFim}` };
+    const fromFaixa = parseRangeFromText(obj.faixa);
+    if (fromFaixa) return fromFaixa;
+    const fromDesc = parseRangeFromText(obj.desc);
+    if (fromDesc) return fromDesc;
+    return null;
+  };
+
+  const TYPE_RULES = [
+    { id: "paquimetro",       label: "Paqu\u00edmetro",        re: /paquim/i },
+    { id: "micrometro",       label: "Micr\u00f4metro",        re: /microm/i },
+    { id: "torquimetro",      label: "Torqu\u00edmetro",       re: /torquim/i },
+    { id: "relogio",          label: "Rel\u00f3gio",           re: /relogio/i },
+    { id: "subito",           label: "S\u00fabito",            re: /subito/i },
+    { id: "imicro",           label: "Imicro",                 re: /imicro/i },
+    { id: "cal_folga",        label: "Calibrador de Folga",    re: /calibrador.*folga|lamina.*folga|\bfolga\b/i },
+    { id: "cal_chaveta",      label: "Calibrador de Chaveta",  re: /chaveta/i },
+    { id: "cal_rosca",        label: "Calibrador de Rosca",    re: /rosca/i },
+    { id: "cal_tampao",       label: "Calibrador Tamp\u00e3o", re: /tampao/i },
+    { id: "cal_anel",         label: "Calibrador Anel",        re: /\banel\b/i },
+    { id: "dinamometro",      label: "Dinam\u00f4metro",       re: /dinamom/i },
+    { id: "manometro",        label: "Man\u00f4metro",         re: /manom/i },
+    { id: "vacuometro",       label: "Vacu\u00f4metro",        re: /vacuom/i },
+    { id: "termometro",       label: "Term\u00f4metro",        re: /termom|pirom/i },
+    { id: "termohigrometro",  label: "Termohigr\u00f4metro",   re: /termohigr|higrom/i },
+    { id: "multimetro",       label: "Mult\u00edmetro",        re: /multim/i },
+    { id: "alicate_amp",      label: "Alicate Amper\u00edmetro", re: /alicate|amperim/i },
+    { id: "megohmetro",       label: "Meg\u00f4hmetro",        re: /megoh|megom/i },
+    { id: "tacometro",        label: "Tac\u00f4metro",         re: /tacom/i },
+    { id: "trena",            label: "Trena",                  re: /\btrena\b/i },
+    { id: "regua",            label: "R\u00e9gua",             re: /\bregua\b/i },
+    { id: "esquadro",         label: "Esquadro",               re: /esquadro/i },
+    { id: "nivel",            label: "N\u00edvel",             re: /\bnivel\b/i },
+    { id: "goniometro",       label: "Goni\u00f4metro",        re: /goniom|transferidor/i },
+    { id: "tracador",         label: "Tra\u00e7ador / Alt\u00edmetro", re: /tracador|altimetro/i },
+    { id: "rugosimetro",      label: "Rugos\u00edmetro",       re: /rugos/i },
+    { id: "durometro",        label: "Dur\u00f4metro",         re: /durom/i },
+    { id: "espessura",        label: "Medidor de Espessura",   re: /espessura/i },
+    { id: "camada",           label: "Medidor de Camada",      re: /camada/i },
+    { id: "brilho",           label: "Medidor de Brilho",      re: /brilho/i },
+    { id: "balanca",          label: "Balan\u00e7a",           re: /balanca/i },
+    { id: "bloco",            label: "Bloco Padr\u00e3o",      re: /\bbloco\b/i },
+    { id: "multiplicador",    label: "Multiplicador de Torque", re: /multiplicador/i }
+  ];
+
+  const classifyType = (desc) => {
+    const n = norm(desc);
+    if (!n) return { id: "outro", label: "Instrumento" };
+    for (let i = 0; i < TYPE_RULES.length; i++) {
+      if (TYPE_RULES[i].re.test(n)) return { id: TYPE_RULES[i].id, label: TYPE_RULES[i].label };
+    }
+    const first = n.split(/\s+/)[0] || "outro";
+    return { id: "w_" + first, label: String(desc || "").split(/\s+/)[0] || "Instrumento" };
+  };
+
+  /* -------------------- RASTREAMENTO DE FROTA (COM DUPLICADOS), CAUTELAS E NUVEM -------------------- */
+  let fetchedRawPool = [];
+  let fetchedCustodyPool = [];
+  let fetchedLabPool = [];
+  let inFlightWrites = 0;
+
+  const waitForPendingWrites = async (maxMs = 3500) => {
+    const start = Date.now();
+    await sleep(300);
+    while (inFlightWrites > 0 && Date.now() - start < maxMs) await sleep(150);
+  };
+
+  const isCodeLike = (val) => {
+    if (typeof val !== "string") return false;
+    const s = val.trim().toUpperCase();
+    return s.length >= 4 && s.length <= 26 && /^[A-Z]{1,4}[-]?\d{4,8}[A-Z0-9-]*$/.test(s);
+  };
+
+  const extractItem = (o) => {
+    if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+    let rawCode = o.code || o.codigo || o.cod || o.tag || o.patrimonio || o.instrument_code || "";
+    if (!rawCode && isCodeLike(o.id)) rawCode = o.id;
+    const code = String(rawCode || "").trim().toUpperCase();
+    if (!code || code.length < 3 || code.length > 32 || /^\d{2}:\d{2}/.test(code) || /^\d{4}-\d{2}-\d{2}/.test(code)) return null;
+
+    const statusRaw = String(o.status || o.situacao || o.status_metrologico || "").trim();
+    const stN = norm(statusRaw);
+    if (o.deleted === true || o.isLost === true || o.lost === true) return null;
+    if (stN === "perdido" || stN === "desativado" || stN === "baixado") return null;
+
+    const desc = String(o.desc || o.descricao || o.description || o.name || o.instrumento || o.equipamento || o.nome || o.tipo || "").trim();
+    const setor = String(o.setor || o.sector || o.setor_oficial || o.sec || o.area || "").trim();
+    const local = String(o.local || o.loc || o.localizacao || o.location || o.armario || o.posse || "").trim();
+    const resp = String(o.responsavel || o.responsible || o.resp || o.tecnico || o.owner || "").trim();
+    const cc = String(o.cc || o.c_custo || o.centro_custo || o.centroCusto || "").trim();
+    const faixaIni = o.faixa_min ?? o.faixaMin ?? o.faixa_inicial ?? o.min ?? "";
+    const faixaFim = o.faixa_max ?? o.faixaMax ?? o.faixa_final ?? o.max ?? "";
+    const faixa = String(o.faixa || o.range || o.capacidade || o.escala || "").trim();
+    const validadeRaw = String(
+      o.validade || o.val || o.next_cal || o.nextCal || o.proxima_calibracao || o.prox_calibracao || o.cal || o.dueDate || o.vencimento || ""
+    ).trim();
+    const obs = String(o.obs || o.observacao || o.observacoes || o.notes || "").trim();
+
+    if (!desc && !setor && !local && !validadeRaw && !resp) return null;
+
+    const rangeObj = extractRange({ faixaIni, faixaFim, faixa, desc });
+    const dateInfo = parseDateInfo(validadeRaw);
+    const typeInfo = classifyType(desc);
+
+    return {
+      code, desc, setor, local, resp, cc,
+      faixa: rangeObj ? rangeObj.raw : faixa,
+      rangeObj,
+      validadeRaw,
+      dateInfo,
+      statusRaw,
+      obs,
+      typeId: typeInfo.id,
+      typeLabel: typeInfo.label
+    };
+  };
+
+  if (!window.__vuProOpsFetchHooked && typeof window.fetch === "function") {
+    window.__vuProOpsFetchHooked = true;
+    const prevFetch = window.fetch.bind(window);
+    window.fetch = function (...args) {
+      const reqUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+      const initObj = args[1] || {};
+      const method = String(initObj.method || (args[0] && args[0].method) || "GET").toUpperCase();
+      const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      if (isWrite) inFlightWrites++;
+
+      const p = prevFetch(...args);
+      p.then((res) => {
+        if (isWrite) inFlightWrites = Math.max(0, inFlightWrites - 1);
+        try {
+          if (!res || !res.ok) return;
+          if (!reqUrl.includes("/rest/v1/") && !reqUrl.includes("script.google.com")) return;
+          const ct = String((res.headers && res.headers.get("content-type")) || "");
+          if (!ct.includes("json")) return;
+          res.clone().json().then((data) => {
+            const arr = Array.isArray(data) ? data : (data && (data.instruments || data.items || data.data));
+            if (/cautela|custody|emprest/i.test(reqUrl) && Array.isArray(arr)) {
+              fetchedCustodyPool = arr;
+            } else if (/lab|calib|extern|envio/i.test(reqUrl) && Array.isArray(arr)) {
+              fetchedLabPool = arr;
+            } else if (!/audit|log|perdido|lost/i.test(reqUrl) && Array.isArray(arr) && arr.length >= 5 && extractItem(arr[0])) {
+              fetchedRawPool = arr;
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      }).catch(() => {
+        if (isWrite) inFlightWrites = Math.max(0, inFlightWrites - 1);
+      });
+      return p;
+    };
+  }
+
+  // Retorna lista bruta (preservando duplicados reais) + lista deduplicada + conjunto de codigos em cautela/lab
+  const getFleetSnapshot = () => {
+    let rawSource = null;
+
+    const tryPickArray = (arr) => {
+      if (!Array.isArray(arr) || arr.length < 2) return;
+      const sampleHits = arr.slice(0, 8).filter((x) => extractItem(x)).length;
+      if (sampleHits >= 2 && (!rawSource || arr.length > rawSource.length)) {
+        rawSource = arr;
+      }
+    };
+
+    if (fetchedRawPool.length) tryPickArray(fetchedRawPool);
+
+    [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.masterList,
+      window.db && window.db.instruments,
+      window.state && window.state.instruments,
+      window.state && window.state.items,
+      window.appState && window.appState.instruments
+    ].forEach(tryPickArray);
+
+    const custodyCodes = new Set();
+    const labCodes = new Set();
+    const extraTimelineEvents = [];
+
+    const scanSpecialArray = (arr, kind) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach((o) => {
+        if (!o || typeof o !== "object") return;
+        const c = String(o.code || o.codigo || o.instrument_code || o.instrumento_codigo || o.tag || "").trim().toUpperCase();
+        const codeMatch = c || (String(o.instrumento || o.instrument || o.details || "").match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/) || [])[1];
+        if (!codeMatch) return;
+        const code = codeMatch.toUpperCase();
+        const returned = Boolean(o.returned || o.devolvido || o.return_date || o.data_retorno || o.data_devolucao || norm(o.status).includes("devolv") || norm(o.status).includes("concluid"));
+
+        if (kind === "custody") {
+          if (!returned) custodyCodes.add(code);
+          extraTimelineEvents.push({
+            code,
+            ts: o.created_at || o.date || o.retirada || o.data_retirada || "",
+            kind: /reparo|manutenc|defeito/i.test(norm(o.motivo || o.reason || "")) ? "reparo" : "cautela",
+            title: returned ? "Cautela (Devolvida)" : "Retirada em Cautela",
+            detail: [o.responsavel || o.holder || o.pessoa || o.em_posse_de, o.motivo || o.reason, o.destino || o.devolver_para ? `Devolver: ${o.destino || o.devolver_para}` : ""].filter(Boolean).join(" \u2022 ")
+          });
+        } else if (kind === "lab") {
+          if (!returned) labCodes.add(code);
+          extraTimelineEvents.push({
+            code,
+            ts: o.sent_at || o.data_envio || o.date || o.created_at || "",
+            kind: "lab",
+            title: returned ? "Retorno de Laborat\u00f3rio" : "Envio para Laborat\u00f3rio",
+            detail: [o.lab || o.laboratorio, o.rps ? `RPS: ${o.rps}` : "", o.obs || o.observacao].filter(Boolean).join(" \u2022 ")
+          });
+        }
+      });
+    };
+
+    scanSpecialArray(fetchedCustodyPool, "custody");
+    scanSpecialArray(fetchedLabPool, "lab");
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        const raw = localStorage.getItem(k);
+        if (!raw || raw.length < 25 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch (_) { continue; }
+
+        if (/cautela|custody|emprest/i.test(k)) {
+          scanSpecialArray(Array.isArray(parsed) ? parsed : (parsed.items || parsed.data), "custody");
+          continue;
+        }
+        if (/lab|extern|calib_hist/i.test(k)) {
+          scanSpecialArray(Array.isArray(parsed) ? parsed : (parsed.items || parsed.data), "lab");
+          continue;
+        }
+        if (/audit/i.test(k)) {
+          const logs = Array.isArray(parsed) ? parsed : (parsed.logs || parsed.items || []);
+          if (Array.isArray(logs)) {
+            logs.forEach((lg) => {
+              const txt = JSON.stringify(lg || "");
+              const ms = txt.match(/\b[A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*\b/g);
+              if (!ms) return;
+              const uniq = Array.from(new Set(ms));
+              if (uniq.length > 6) return;
+              uniq.forEach((code) => {
+                const act = String(lg.action || lg.acao || lg.type || "Evento");
+                const det = String(lg.details || lg.detalhes || lg.msg || lg.desc || "");
+                const knd = /reparo|manutenc/i.test(norm(act + " " + det)) ? "reparo" : (/cautela|devol/i.test(norm(act + " " + det)) ? "cautela" : (/lab|calibr/i.test(norm(act + " " + det)) ? "lab" : "edit"));
+                extraTimelineEvents.push({ code: code.toUpperCase(), ts: lg.timestamp || lg.date || lg.ts || "", kind: knd, title: act, detail: det });
+              });
+            });
+          }
+          continue;
+        }
+        if (/voith_lost_categories|voith_instrument_timeline/i.test(k)) continue;
+
+        if (Array.isArray(parsed)) {
+          tryPickArray(parsed);
+        } else if (parsed && typeof parsed === "object") {
+          ["instruments", "items", "data", "list", "rows", "frota", "equipamentos"].forEach((sub) => tryPickArray(parsed[sub]));
+          if (Array.isArray(parsed.custody || parsed.cautelas)) scanSpecialArray(parsed.custody || parsed.cautelas, "custody");
+          if (Array.isArray(parsed.lab || parsed.externalLab)) scanSpecialArray(parsed.lab || parsed.externalLab, "lab");
+        }
+      }
+    } catch (_) {}
+
+    if (!rawSource) {
+      try {
+        const keys = Object.keys(window);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator|VoithUpgrade)/i.test(k)) continue;
+          let v;
+          try { v = window[k]; } catch (_) { continue; }
+          if (Array.isArray(v) && v.length >= 10) tryPickArray(v);
+        }
+      } catch (_) {}
+    }
+
+    const rawItems = [];
+    const uniqueMap = new Map();
+    const dupGroups = new Map();
+
+    (rawSource || []).forEach((o) => {
+      const it = extractItem(o);
+      if (!it) return;
+      rawItems.push(it);
+      if (!dupGroups.has(it.code)) dupGroups.set(it.code, []);
+      dupGroups.get(it.code).push(it);
+      if (!uniqueMap.has(it.code)) uniqueMap.set(it.code, it);
+    });
+
+    // Complementa codigos em cautela / lab a partir do proprio status do item
+    uniqueMap.forEach((it) => {
+      const st = norm(it.statusRaw + " " + it.local);
+      if (/(em posse|cautela|emprestad)/.test(st)) custodyCodes.add(it.code);
+      if (/(aguardando|laborat|calib.*ext|reparo|manutenc)/.test(st)) labCodes.add(it.code);
+    });
+
+    return {
+      rawItems,
+      uniqueList: Array.from(uniqueMap.values()),
+      uniqueMap,
+      dupGroups,
+      custodyCodes,
+      labCodes,
+      extraTimelineEvents
+    };
+  };
+
+  /* -------------------- TIMELINE PERSISTENTE DO INSTRUMENTO -------------------- */
+  const loadTimelineStore = () => {
+    try { return JSON.parse(localStorage.getItem(TIMELINE_KEY) || "{}") || {}; }
+    catch (_) { return {}; }
+  };
+
+  const pushTimelineEvent = (code, kind, title, detail) => {
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return;
+    const store = loadTimelineStore();
+    if (!Array.isArray(store[c])) store[c] = [];
+    const nowIso = new Date().toISOString();
+    // Evita duplicata identica no mesmo minuto
+    const last = store[c][0];
+    if (last && last.title === title && last.detail === detail && (Date.now() - new Date(last.ts).getTime()) < 45000) return;
+    store[c].unshift({ ts: nowIso, kind: kind || "edit", title, detail: String(detail || "").trim() });
+    if (store[c].length > 60) store[c] = store[c].slice(0, 60);
+    try { localStorage.setItem(TIMELINE_KEY, JSON.stringify(store)); } catch (_) {}
+  };
+
+  const formatTimelineDate = (ts) => {
+    if (!ts) return "Sem data";
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(String(ts))) return String(ts);
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return String(ts).slice(0, 16);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  /* -------------------- IDENTIFICACAO DO DRAWER DE INSTRUMENTO (EDICAO) -------------------- */
+  const findOpenEditInstrumentDrawer = () => {
+    const btns = Array.from(document.querySelectorAll("button")).filter((b) => isVisible(b) && !b.closest("#vu-sub-modal") && !b.closest("#vu-san-modal"));
+    const anchorBtn = btns.find((b) => {
+      const t = norm(b.textContent);
+      return t === "mover p/ perdidos" || t === "cautela";
+    });
+    if (!anchorBtn) return null;
+
+    let cur = anchorBtn.parentElement;
+    for (let d = 0; d < 10 && cur && cur !== document.body; d++) {
+      if (cur.id && cur.id.startsWith("vu-")) return null;
+      const headEl = Array.from(cur.querySelectorAll("h1, h2, h3, h4, div, span")).find((el) => {
+        if (!isVisible(el) || el.children.length > 2) return false;
+        const txt = String(el.textContent || "").trim();
+        return txt.length >= 6 && txt.length <= 95 && /\b[A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*\b/.test(txt);
+      });
+      const hasMainApp = Boolean(cur.querySelector("aside nav")) || String(cur.textContent || "").includes("Monitoramento de Frota");
+      if (headEl && !hasMainApp) {
+        const cm = String(headEl.textContent || "").match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/);
+        if (cm) return { drawer: cur, code: cm[1].toUpperCase(), headerText: String(headEl.textContent || "").trim() };
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  };
+
+  const navigateAndOpenInstrument = async (code) => {
+    const up = String(code || "").trim().toUpperCase();
+    if (!up) return;
+    const invNav = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, button")).find((b) => {
+      if (!isVisible(b) || b.closest("[id^='vu-']")) return false;
+      return norm(b.textContent).startsWith("inventario");
+    });
+    if (invNav) { invNav.click(); await sleep(300); }
+
+    const invSearch = Array.from(document.querySelectorAll("input")).find((el) => {
+      if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
+      const tp = String(el.type || "text").toLowerCase();
+      if (!["text", "search", ""].includes(tp)) return false;
+      const sig = norm([el.placeholder, el.id, el.name].filter(Boolean).join(" "));
+      return /buscar|pesquis|codigo|instrumento/.test(sig) && !String((el.parentElement && el.parentElement.textContent) || "").includes("Ctrl K");
+    });
+    if (invSearch) {
+      setControlValue(invSearch, up);
+      await sleep(360);
+    }
+
+    const hit = Array.from(document.querySelectorAll("table tbody tr button, table tbody tr a, table tbody tr td, table tbody tr")).find((el) => {
+      if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
+      const txt = String(el.textContent || "").toUpperCase();
+      return txt.includes(up);
+    });
+    if (hit) hit.click();
+  };
+
+  /* ============================================================================
+     MODULO 1: DEVOLUCAO EM MASSA (CAUTELA & CAMPO)
+     ============================================================================ */
+  let bulkReturnRunning = false;
+
+  const findCustodyTabsInfo = () => {
+    const todosBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("[id^='vu-']")) return false;
+      return norm(b.textContent) === "todos os itens";
+    });
+    if (!todosBtn) return null;
+    let cur = todosBtn.parentElement;
+    for (let d = 0; d < 3 && cur; d++) {
+      const txt = norm(cur.textContent || "");
+      if (txt.includes("por pessoa") && txt.includes("todos os itens")) return { container: cur, todosBtn };
+      cur = cur.parentElement;
+    }
+    return null;
+  };
+
+  const findCustodyItemsTable = () => {
+    const tables = Array.from(document.querySelectorAll("table")).filter((tb) => isVisible(tb) && !tb.closest("[id^='vu-']"));
+    for (let i = 0; i < tables.length; i++) {
+      const ths = Array.from(tables[i].querySelectorAll("thead th"));
+      const head = norm(ths.map((th) => th.textContent).join(" "));
+      if (head.includes("motivo") && (head.includes("em posse") || head.includes("retirada") || head.includes("devolver"))) {
+        const idxPosse = ths.findIndex((th) => norm(th.textContent).includes("posse"));
+        const idxDevolver = ths.findIndex((th) => norm(th.textContent).includes("devolver"));
+        const idxMotivo = ths.findIndex((th) => norm(th.textContent).includes("motivo"));
+        return { table: tables[i], idxPosse, idxDevolver, idxMotivo };
+      }
+    }
+    return null;
+  };
+
+  const getCustodyRowMeta = (tr, tableInfo) => {
+    const tds = Array.from(tr.querySelectorAll("td"));
+    const fullTxt = String(tr.textContent || "");
+    const cm = fullTxt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/);
+    const code = cm ? cm[1].toUpperCase() : "";
+    const instTxt = String((tds[0] && tds[0].textContent) || "").replace(/\s+/g, " ").trim();
+    const person = String((tableInfo.idxPosse >= 0 && tds[tableInfo.idxPosse] && tds[tableInfo.idxPosse].textContent) || "").replace(/\s+/g, " ").trim();
+    const dest = String((tableInfo.idxDevolver >= 0 && tds[tableInfo.idxDevolver] && tds[tableInfo.idxDevolver].textContent) || "").replace(/\s+/g, " ").trim();
+    const motivo = String((tableInfo.idxMotivo >= 0 && tds[tableInfo.idxMotivo] && tds[tableInfo.idxMotivo].textContent) || "").replace(/\s+/g, " ").trim();
+    const key = `${code || instTxt}|${person}|${dest}`;
+    return { code, instTxt, person, dest, motivo, key };
+  };
+
+  const triggerSingleRowReturn = async (tr, meta, returnNote) => {
+    const origConfirm = window.confirm;
+    const origPrompt = window.prompt;
+    try {
+      window.confirm = () => true;
+      window.prompt = (_msg, defVal) => returnNote || defVal || "Devolvido em lote";
+
+      // 1. Procura botao direto de devolucao na linha
+      const directBtn = Array.from(tr.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b) || b.classList.contains("vu-ret-chk")) return false;
+        const sig = norm(b.textContent + " " + (b.title || "") + " " + (b.getAttribute("aria-label") || ""));
+        return /(devolv|baixar|retorn|receb|conclu|finaliz|check)/.test(sig) && !/(excluir|delet|apagar|comprov|pdf|copiar)/.test(sig);
+      });
+
+      if (directBtn) {
+        directBtn.click();
+      } else {
+        // Fallback: clica na linha ou no ultimo botao de acao para abrir o modal de devolucao
+        const anyBtn = Array.from(tr.querySelectorAll("button")).find((b) => isVisible(b) && !b.classList.contains("vu-ret-chk"));
+        if (anyBtn) anyBtn.click();
+        else tr.click();
+      }
+
+      await sleep(320);
+
+      // 2. Verifica se abriu um modal de confirmacao de devolucao
+      const modalOverlay = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).reverse().find((el) => {
+        if (!isVisible(el) || (el.id && el.id.startsWith("vu-"))) return false;
+        const t = norm(el.textContent || "");
+        return /(devol|retorn|baixar cautela|confirmar receb|armario|devolver para)/.test(t);
+      });
+
+      if (modalOverlay) {
+        if (returnNote) {
+          const obsEl = Array.from(modalOverlay.querySelectorAll("input, textarea")).find((el) => {
+            if (!isVisible(el) || el.disabled) return false;
+            return /(obs|nota|motivo|coment|estado|condic)/.test(getFieldHint(el));
+          });
+          if (obsEl && !obsEl.value) setControlValue(obsEl, returnNote);
+        }
+
+        const confirmBtn = Array.from(modalOverlay.querySelectorAll("button")).find((b) => {
+          if (!isVisible(b) || b.disabled) return false;
+          const t = norm(b.textContent);
+          return /(confirmar|devolver|registrar devol|salvar|baixar|sim|concluir)/.test(t) && !/(cancelar|fechar)/.test(t);
+        });
+        if (confirmBtn) {
+          confirmBtn.click();
+          await waitForPendingWrites(2200);
+          await sleep(450);
+          return true;
+        }
+        return false;
+      }
+
+      await waitForPendingWrites(1800);
+      await sleep(320);
+      return true;
+    } finally {
+      window.confirm = origConfirm;
+      window.prompt = origPrompt;
+    }
+  };
+
+  const executeBulkReturnQueue = async (selectedMetas, returnNote) => {
+    bulkReturnRunning = true;
+    const modal = document.getElementById("vu-ret-modal");
+    if (modal) modal.remove();
+
+    let prog = document.getElementById("vu-ret-progress");
+    if (prog) prog.remove();
+    prog = document.createElement("div");
+    prog.id = "vu-ret-progress";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483120;width:min(460px,93vw);background:#064e3b;color:#ffffff;border:1px solid #34d399;border-radius:14px;padding:15px 18px;box-shadow:0 22px 55px rgba(0,0,0,.48);font-family:system-ui,-apple-system,sans-serif;";
+    document.body.appendChild(prog);
+
+    const ok = [], fail = [];
+    const draw = (idx, label, msg) => {
+      const pct = Math.round((idx / selectedMetas.length) * 100);
+      prog.innerHTML =
+        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
+          `<span>Devolu\u00e7\u00e3o em Massa (${idx}/${selectedMetas.length})</span><span style="color:#6ee7b7;">${pct}%</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:#d1fae5;margin:6px 0 8px;">${msg}${label ? " \u2014 <strong>" + escHtml(label) + "</strong>" : ""}</div>` +
+        `<div style="height:7px;background:rgba(255,255,255,.18);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#34d399;transition:width .2s;"></div></div>`;
+    };
+
+    try {
+      for (let i = 0; i < selectedMetas.length; i++) {
+        const meta = selectedMetas[i];
+        const label = meta.code || meta.instTxt;
+        draw(i, label, "Registrando devolu\u00e7\u00e3o ao arm\u00e1rio de origem");
+
+        const tInfo = findCustodyItemsTable();
+        if (!tInfo) { fail.push(`${label} (tabela n\u00e3o vis\u00edvel)`); continue; }
+
+        const curRows = Array.from(tInfo.table.querySelectorAll("tbody tr")).filter((r) => isVisible(r) && r.id !== "vu-custody-empty-row");
+        const targetRow = curRows.find((r) => {
+          const m = getCustodyRowMeta(r, tInfo);
+          return m.key === meta.key || (meta.code && m.code === meta.code && m.person === meta.person);
+        });
+
+        if (!targetRow) { fail.push(`${label} (linha n\u00e3o encontrada)`); continue; }
+
+        const success = await triggerSingleRowReturn(targetRow, meta, returnNote);
+        if (success) {
+          ok.push(label);
+          if (meta.code) {
+            pushTimelineEvent(
+              meta.code,
+              "cautela",
+              "Devolu\u00e7\u00e3o de Cautela (Lote)",
+              `Devolvido por ${meta.person || "t\u00e9cnico"}${meta.dest && meta.dest !== "-" ? " \u2192 " + meta.dest : ""}${returnNote ? " | " + returnNote : ""}`
+            );
+          }
+          draw(i + 1, label, "Devolvido com sucesso");
+        } else {
+          fail.push(`${label} (bot\u00e3o de devolu\u00e7\u00e3o n\u00e3o localizado)`);
+        }
+      }
+      if (ok.length > 0) await waitForPendingWrites(3500);
+    } finally {
+      bulkReturnRunning = false;
+    }
+
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#6ee7b7"};">Conclu\u00eddo: ${ok.length} de ${selectedMetas.length} devolvido(s)</div>` +
+        `<button type="button" id="vu-ret-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o conclu\u00eddos: ${escHtml(fail.join(", "))}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#d1fae5;">Todas as cautelas selecionadas foram baixadas e registradas no hist\u00f3rico.</div>`);
+    prog.querySelector("#vu-ret-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 6500);
+    scheduleUI(200);
+  };
+
+  const openBulkReturnModal = (selectedMetas) => {
+    const old = document.getElementById("vu-ret-modal");
+    if (old) old.remove();
+
+    const ov = document.createElement("div");
+    ov.id = "vu-ret-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147482800;background:rgba(15,23,42,.66);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,sans-serif;";
+    ov.innerHTML =
+      `<div style="width:min(540px,95vw);max-height:88vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 25px 65px rgba(0,0,0,.45);display:flex;flex-direction:column;">` +
+        `<div style="background:linear-gradient(90deg,#065f46,#059669);color:#ffffff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">` +
+          `<div>` +
+            `<div style="font-size:15.5px;font-weight:800;">Devolu\u00e7\u00e3o em Massa (${selectedMetas.length} item${selectedMetas.length > 1 ? "ns" : ""})</div>` +
+            `<div style="font-size:12px;color:#d1fae5;">Baixa todos os instrumentos selecionados de volta ao arm\u00e1rio de origem.</div>` +
+          `</div>` +
+          `<button type="button" id="vu-ret-close" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;">&times;</button>` +
+        `</div>` +
+        `<div style="padding:15px 18px;overflow-y:auto;display:grid;gap:12px;">` +
+          `<div style="max-height:230px;overflow-y:auto;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">` +
+            selectedMetas.map((m) =>
+              `<div style="padding:8px 11px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;">` +
+                `<div><strong style="color:#065f46;">${escHtml(m.code || m.instTxt)}</strong>${m.code ? ` <span style="color:#334155;">\u2014 ${escHtml(m.instTxt.replace(m.code, "").trim())}</span>` : ""}<div style="font-size:11px;color:#64748b;">Posse: ${escHtml(m.person || "-")} &bull; ${escHtml(m.motivo || "-")}</div></div>` +
+                `<span style="padding:3px 8px;border-radius:999px;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;font-size:11px;font-weight:800;white-space:nowrap;">${escHtml(m.dest && m.dest !== "-" ? m.dest : "Origem")}</span>` +
+              `</div>`
+            ).join("") +
+          `</div>` +
+          `<div style="display:grid;gap:5px;">` +
+            `<label style="font-size:11.5px;font-weight:800;color:#334155;text-transform:uppercase;">Observa\u00e7\u00e3o da devolu\u00e7\u00e3o (opcional)</label>` +
+            `<input id="vu-ret-note" type="text" placeholder="Ex: Conferido e devolvido intacto no arm\u00e1rio" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:12.5px;box-sizing:border-box;">` +
+          `</div>` +
+        `</div>` +
+        `<div style="padding:12px 18px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:flex-end;gap:9px;">` +
+          `<button type="button" id="vu-ret-cancel" style="padding:8px 15px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;">Cancelar</button>` +
+          `<button type="button" id="vu-ret-go" style="padding:8px 17px;border-radius:9px;border:none;background:#059669;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;">Confirmar Devolu\u00e7\u00e3o (${selectedMetas.length})</button>` +
+        `</div>` +
+      `</div>`;
+
+    document.body.appendChild(ov);
+    ov.querySelector("#vu-ret-close").onclick = () => ov.remove();
+    ov.querySelector("#vu-ret-cancel").onclick = () => ov.remove();
+    ov.querySelector("#vu-ret-go").onclick = () => {
+      const note = String(ov.querySelector("#vu-ret-note").value || "").trim();
+      executeBulkReturnQueue(selectedMetas, note);
+    };
+  };
+
+  const renderBulkReturnUI = () => {
+    if (bulkReturnRunning) return;
+    const tabsInfo = findCustodyTabsInfo();
+    const tableInfo = findCustodyItemsTable();
+    const existingBar = document.getElementById("vu-bulk-return-bar");
+
+    if (!tabsInfo || !tableInfo) {
+      if (existingBar) existingBar.remove();
+      return;
+    }
+
+    const tbody = tableInfo.table.querySelector("tbody");
+    if (!tbody) return;
+
+    const visibleRows = Array.from(tbody.querySelectorAll("tr")).filter((tr) => {
+      if (!isVisible(tr) || tr.id === "vu-custody-empty-row") return false;
+      const t = norm(tr.textContent || "");
+      return t.length > 0 && !/nenhum (item|instrumento|registro|resultado)/.test(t);
+    });
+
+    const personCounts = new Map();
+    const selectedMetas = [];
+
+    visibleRows.forEach((tr) => {
+      const meta = getCustodyRowMeta(tr, tableInfo);
+      if (meta.person && meta.person !== "-") {
+        personCounts.set(meta.person, (personCounts.get(meta.person) || 0) + 1);
+      }
+
+      const firstTd = tr.querySelector("td");
+      if (firstTd) {
+        let chk = firstTd.querySelector(".vu-ret-chk");
+        if (!chk) {
+          chk = document.createElement("input");
+          chk.type = "checkbox";
+          chk.className = "vu-ret-chk";
+          chk.title = "Selecionar para Devolu\u00e7\u00e3o em Massa";
+          chk.style.cssText = "width:15px;height:15px;accent-color:#059669;cursor:pointer;margin-right:7px;vertical-align:middle;flex-shrink:0;";
+          chk.addEventListener("click", (ev) => ev.stopPropagation());
+          chk.addEventListener("change", () => renderBulkReturnUI());
+          firstTd.insertBefore(chk, firstTd.firstChild);
+        }
+        chk.dataset.vuPerson = meta.person;
+        if (chk.checked) selectedMetas.push(meta);
+      }
+    });
+
+    const isDark = document.documentElement.classList.contains("dark") || document.body.classList.contains("dark");
+    let bar = existingBar;
+    const anchorEl = document.getElementById("vu-custody-reason-bar") || tabsInfo.container;
+    if (!bar || bar.previousElementSibling !== anchorEl) {
+      if (bar) bar.remove();
+      bar = document.createElement("div");
+      bar.id = "vu-bulk-return-bar";
+      anchorEl.insertAdjacentElement("afterend", bar);
+    }
+
+    const peopleList = Array.from(personCounts.entries()).sort((a, b) => b[1] - a[1]);
+    const sig = `${visibleRows.length}|${selectedMetas.length}|${peopleList.map((p) => p.join(":")).join(",")}|${isDark ? "d" : "l"}`;
+    if (bar.dataset.vuSig === sig) return;
+    bar.dataset.vuSig = sig;
+
+    const bg = isDark ? "rgba(6,78,59,.28)" : "#ecfdf5";
+    const bd = isDark ? "rgba(52,211,153,.35)" : "#a7f3d0";
+    const col = isDark ? "#6ee7b7" : "#065f46";
+
+    bar.style.cssText =
+      `margin:6px 0 10px;padding:8px 11px;border-radius:12px;background:${bg};border:1px solid ${bd};` +
+      `display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-family:system-ui,-apple-system,Segoe UI,sans-serif;`;
+
+    bar.innerHTML =
+      `<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">` +
+        `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:${col};">Devolu\u00e7\u00e3o em Massa:</span>` +
+        `<select id="vu-ret-person-sel" style="padding:5px 9px;border-radius:8px;border:1px solid ${bd};background:${isDark ? "#0f172a" : "#ffffff"};color:${isDark ? "#f8fafc" : "#0f172a"};font-size:12px;font-weight:700;cursor:pointer;">` +
+          `<option value="">Selecionar por pessoa...</option>` +
+          peopleList.map(([p, c]) => `<option value="${escHtml(p)}">${escHtml(p)} (${c})</option>`).join("") +
+        `</select>` +
+        `<button type="button" id="vu-ret-sel-all" style="padding:5px 10px;border-radius:8px;border:1px solid ${bd};background:${isDark ? "#1e293b" : "#ffffff"};color:${col};font-size:11.5px;font-weight:800;cursor:pointer;">${selectedMetas.length === visibleRows.length && visibleRows.length > 0 ? "Desmarcar" : "Marcar vis\u00edveis"}</button>` +
+      `</div>` +
+      `<button type="button" id="vu-ret-run-btn" ${selectedMetas.length ? "" : "disabled"} style="padding:6px 13px;border-radius:9px;border:none;background:${selectedMetas.length ? "#059669" : "#94a3b8"};color:#ffffff;font-size:12px;font-weight:800;cursor:${selectedMetas.length ? "pointer" : "not-allowed"};white-space:nowrap;">Devolver Selecionados (${selectedMetas.length})</button>`;
+
+    const personSel = bar.querySelector("#vu-ret-person-sel");
+    personSel.onchange = () => {
+      const chosen = personSel.value;
+      if (!chosen) return;
+      visibleRows.forEach((tr) => {
+        const chk = tr.querySelector(".vu-ret-chk");
+        if (chk) chk.checked = (chk.dataset.vuPerson === chosen);
+      });
+      renderBulkReturnUI();
+    };
+
+    bar.querySelector("#vu-ret-sel-all").onclick = () => {
+      const checkTarget = !(selectedMetas.length === visibleRows.length && visibleRows.length > 0);
+      visibleRows.forEach((tr) => {
+        const chk = tr.querySelector(".vu-ret-chk");
+        if (chk) chk.checked = checkTarget;
+      });
+      renderBulkReturnUI();
+    };
+
+    bar.querySelector("#vu-ret-run-btn").onclick = () => {
+      if (selectedMetas.length) openBulkReturnModal(selectedMetas);
+    };
+  };
+
+  /* ============================================================================
+     MODULO 2: BOTAO "ENCONTRAR SUBSTITUTO" (NO DRAWER DO INSTRUMENTO)
+     ============================================================================ */
+  const openSubstituteModal = (targetCode) => {
+    const old = document.getElementById("vu-sub-modal");
+    if (old) old.remove();
+
+    const snap = getFleetSnapshot();
+    const target = snap.uniqueMap.get(targetCode) || { code: targetCode, desc: targetCode, typeId: "outro", typeLabel: "Instrumento", rangeObj: null, setor: "", local: "" };
+    const tRange = target.rangeObj;
+
+    const exactMatches = [];
+    const altMatches = [];
+
+    snap.uniqueList.forEach((cand) => {
+      if (cand.code === target.code) return;
+      if (cand.typeId !== target.typeId) return;
+
+      // Verifica se esta Em Dia e Livre (nao vencido, nao em cautela, nao em lab)
+      const isValidDate = cand.dateInfo.valid && cand.dateInfo.daysLeft >= 0;
+      const inCustody = snap.custodyCodes.has(cand.code);
+      const inLab = snap.labCodes.has(cand.code);
+      if (!isValidDate || inCustody || inLab) return;
+
+      const sameSectorBonus = target.setor && norm(cand.setor) === norm(target.setor) ? 1 : 0;
+      const hasLocalBonus = cand.local && norm(cand.local) !== "sem local" && cand.local !== "-" ? 1 : 0;
+
+      if (tRange && cand.rangeObj) {
+        const covers = cand.rangeObj.min <= tRange.min && cand.rangeObj.max >= tRange.max;
+        if (covers) {
+          const spanDiff = (cand.rangeObj.max - cand.rangeObj.min) - (tRange.max - tRange.min);
+          exactMatches.push({ cand, spanDiff, sameSectorBonus, hasLocalBonus });
+        } else {
+          altMatches.push({ cand, sameSectorBonus, hasLocalBonus, note: "Faixa diferente" });
+        }
+      } else {
+        exactMatches.push({ cand, spanDiff: 0, sameSectorBonus, hasLocalBonus, noRange: !tRange });
+      }
+    });
+
+    exactMatches.sort((a, b) => a.spanDiff - b.spanDiff || b.sameSectorBonus - a.sameSectorBonus || b.hasLocalBonus - a.hasLocalBonus || b.cand.dateInfo.daysLeft - a.cand.dateInfo.daysLeft);
+    altMatches.sort((a, b) => b.sameSectorBonus - a.sameSectorBonus || b.hasLocalBonus - a.hasLocalBonus || b.cand.dateInfo.daysLeft - a.cand.dateInfo.daysLeft);
+
+    const renderCard = (entry, isIdeal) => {
+      const c = entry.cand;
+      const badge = isIdeal
+        ? (entry.noRange
+            ? `<span style="padding:2px 8px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:10.5px;font-weight:800;">Mesmo tipo &bull; Livre</span>`
+            : `<span style="padding:2px 8px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:10.5px;font-weight:800;">Cobre 100% da faixa</span>`)
+        : `<span style="padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:10.5px;font-weight:800;">Faixa parcial</span>`;
+
+      const locTxt = c.local && norm(c.local) !== "sem local" ? c.local : "Sem local cadastrado";
+      return (
+        `<div style="padding:11px 13px;border-radius:11px;border:1px solid ${isIdeal ? "#bbf7d0" : "#e2e8f0"};background:${isIdeal ? "#f0fdf4" : "#ffffff"};display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">` +
+          `<div style="display:grid;gap:3px;min-width:220px;flex:1;">` +
+            `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+              `<strong style="font-size:13.5px;color:#003399;">${escHtml(c.code)}</strong>` +
+              `<span style="font-size:12.5px;font-weight:700;color:#0f172a;">${escHtml(c.desc)}</span>` +
+              badge +
+            `</div>` +
+            `<div style="font-size:11.5px;color:#475569;display:flex;gap:10px;flex-wrap:wrap;">` +
+              `<span><strong>Faixa:</strong> ${escHtml(c.faixa || "N\u00e3o informada")}</span>` +
+              `<span><strong>Local:</strong> <span style="color:#0f172a;font-weight:700;">${escHtml(locTxt)}</span></span>` +
+              `<span><strong>Setor:</strong> ${escHtml(c.setor || "-")}</span>` +
+              `<span><strong>Validade:</strong> ${escHtml(c.dateInfo.str)} (+${c.dateInfo.daysLeft}d)</span>` +
+            `</div>` +
+          `</div>` +
+          `<div style="display:flex;gap:6px;flex-shrink:0;">` +
+            `<button type="button" data-sub-copy="${escHtml(c.code)}" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#334155;font-size:11.5px;font-weight:700;cursor:pointer;">Copiar</button>` +
+            `<button type="button" data-sub-open="${escHtml(c.code)}" style="padding:6px 11px;border-radius:8px;border:none;background:#004899;color:#ffffff;font-size:11.5px;font-weight:800;cursor:pointer;">Abrir</button>` +
+          `</div>` +
+        `</div>`
+      );
+    };
+
+    const ov = document.createElement("div");
+    ov.id = "vu-sub-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147482850;background:rgba(15,23,42,.66);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,sans-serif;";
+    ov.innerHTML =
+      `<div style="width:min(760px,96vw);max-height:90vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 26px 70px rgba(0,0,0,.48);display:flex;flex-direction:column;">` +
+        `<div style="background:linear-gradient(90deg,#002466,#0284c7);color:#ffffff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+          `<div>` +
+            `<div style="font-size:15.5px;font-weight:800;">Substitutos Dispon\u00edveis \u2014 ${escHtml(target.code)}</div>` +
+            `<div style="font-size:12px;color:#dbeafe;">${escHtml(target.desc || "Instrumento")} &bull; Tipo: <strong>${escHtml(target.typeLabel)}</strong> &bull; Faixa alvo: <strong>${escHtml(target.faixa || "N\u00e3o informada")}</strong></div>` +
+          `</div>` +
+          `<button type="button" id="vu-sub-close" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;">&times;</button>` +
+        `</div>` +
+        `<div style="padding:15px 18px;overflow-y:auto;display:grid;gap:12px;">` +
+          (exactMatches.length
+            ? `<div style="font-size:11.5px;font-weight:800;color:#15803d;text-transform:uppercase;">Dispon\u00edveis Em Dia e Livres (${exactMatches.length})</div>` +
+              `<div style="display:grid;gap:8px;">${exactMatches.slice(0, 25).map((e) => renderCard(e, true)).join("")}</div>`
+            : `<div style="padding:16px;border-radius:10px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:12.5px;font-weight:700;">Nenhum substituto livre e Em Dia encontrado cobrindo exatamente a faixa <strong>${escHtml(target.faixa || target.typeLabel)}</strong>.</div>`) +
+          (altMatches.length
+            ? `<div style="font-size:11.5px;font-weight:800;color:#b45309;text-transform:uppercase;margin-top:4px;">Outros ${escHtml(target.typeLabel)}s livres (faixa diferente: ${altMatches.length})</div>` +
+              `<div style="display:grid;gap:8px;">${altMatches.slice(0, 12).map((e) => renderCard(e, false)).join("")}</div>`
+            : "") +
+        `</div>` +
+        `<div style="padding:11px 18px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#64748b;">` +
+          `<span>Crit\u00e9rio: Em Dia, fora de cautela e fora de laborat\u00f3rio.</span>` +
+          `<button type="button" id="vu-sub-ok" style="padding:7px 15px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;cursor:pointer;">Fechar</button>` +
+        `</div>` +
+      `</div>`;
+
+    document.body.appendChild(ov);
+    ov.querySelector("#vu-sub-close").onclick = () => ov.remove();
+    ov.querySelector("#vu-sub-ok").onclick = () => ov.remove();
+
+    ov.querySelectorAll("[data-sub-copy]").forEach((btn) => {
+      btn.onclick = async () => {
+        const c = snap.uniqueMap.get(btn.getAttribute("data-sub-copy"));
+        if (!c) return;
+        const msg = `Substituto dispon\u00edvel para ${target.code}: ${c.code} \u2014 ${c.desc} | Faixa: ${c.faixa || "-"} | Local: ${c.local || "Sem local"} | Setor: ${c.setor || "-"} | Validade: ${c.dateInfo.str}`;
+        await copyToClipboard(msg);
+        showMiniToast(`Dados de ${c.code} copiados para colar no Teams/WhatsApp!`, "#064e3b", "#34d399");
+      };
+    });
+
+    ov.querySelectorAll("[data-sub-open]").forEach((btn) => {
+      btn.onclick = () => {
+        const code = btn.getAttribute("data-sub-open");
+        ov.remove();
+        navigateAndOpenInstrument(code);
+      };
+    });
+  };
+
+  /* ============================================================================
+     MODULO 3: HISTORICO / LINHA DO TEMPO (NO DRAWER DO INSTRUMENTO)
+     ============================================================================ */
+  const getCombinedTimeline = (code) => {
+    const up = String(code || "").toUpperCase();
+    const stored = (loadTimelineStore()[up] || []).map((e) => ({ ...e, source: "local" }));
+    const snap = getFleetSnapshot();
+    const extra = snap.extraTimelineEvents.filter((e) => e.code === up).map((e) => ({ ...e, source: "sync" }));
+
+    const merged = [...stored, ...extra];
+    const dedup = [];
+    const seen = new Set();
+    merged.forEach((ev) => {
+      const k = `${norm(ev.title)}|${norm(ev.detail)}|${String(ev.ts || "").slice(0, 10)}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      dedup.push(ev);
+    });
+
+    dedup.sort((a, b) => {
+      const ta = a.ts ? new Date(a.ts).getTime() : 0;
+      const tb = b.ts ? new Date(b.ts).getTime() : 0;
+      return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
+    });
+    return dedup;
+  };
+
+  const hookDrawerSaveForTimeline = (drawer, code) => {
+    if (drawer.dataset.vuTimelineHooked === code) return;
+    drawer.dataset.vuTimelineHooked = code;
+
+    const readFormState = () => {
+      const out = { local: "", validade: "", resp: "", status: "" };
+      Array.from(drawer.querySelectorAll("input, select")).forEach((el) => {
+        if (!isVisible(el) || el.closest("#vu-timeline-card")) return;
+        const h = getFieldHint(el);
+        if (/(localiz|local|armario)/.test(h)) out.local = String(el.value || "").trim();
+        else if (/(calibr|valid|prox)/.test(h)) out.validade = String(el.value || "").trim();
+        else if (/(respons|tecnic)/.test(h)) out.resp = String(el.value || "").trim();
+        else if (/(status|metrolog)/.test(h)) out.status = String(el.value || "").trim();
+      });
+      return out;
+    };
+
+    const initialState = readFormState();
+    const saveBtns = Array.from(drawer.querySelectorAll("button")).filter((b) => {
+      if (!isVisible(b) || b.closest("#vu-timeline-card")) return false;
+      const t = norm(b.textContent);
+      return t === "salvar" || t.startsWith("salvar &");
+    });
+
+    saveBtns.forEach((sb) => {
+      if (sb.dataset.vuTlClickBound === "1") return;
+      sb.dataset.vuTlClickBound = "1";
+      sb.addEventListener("mousedown", () => {
+        const cur = readFormState();
+        const diffs = [];
+        if (cur.local && cur.local !== initialState.local) diffs.push(`Local: ${initialState.local || "vazio"} \u2192 ${cur.local}`);
+        if (cur.validade && cur.validade !== initialState.validade) diffs.push(`Validade: ${initialState.validade || "vazia"} \u2192 ${cur.validade}`);
+        if (cur.resp && cur.resp !== initialState.resp) diffs.push(`Resp.: ${initialState.resp || "vazio"} \u2192 ${cur.resp}`);
+        if (cur.status && cur.status !== initialState.status) diffs.push(`Status alterado`);
+        if (diffs.length) {
+          pushTimelineEvent(code, "edit", "Cadastro Atualizado", diffs.join(" | "));
+          Object.assign(initialState, cur);
+        }
+      }, true);
+    });
+  };
+
+  const enhanceInstrumentDrawer = () => {
+    const info = findOpenEditInstrumentDrawer();
+    if (!info) return;
+    const { drawer, code } = info;
+
+    // 1. Injeta botao "Substituto" ao lado do botao "Cautela"
+    const cautelaBtn = Array.from(drawer.querySelectorAll("button")).find((b) => isVisible(b) && norm(b.textContent) === "cautela");
+    if (cautelaBtn && cautelaBtn.parentElement) {
+      let subBtn = drawer.querySelector("#vu-find-sub-btn");
+      if (!subBtn) {
+        subBtn = document.createElement("button");
+        subBtn.id = "vu-find-sub-btn";
+        subBtn.type = "button";
+        subBtn.textContent = "Substituto";
+        subBtn.title = "Buscar outro instrumento Em Dia e livre que cubra a mesma faixa";
+        subBtn.style.cssText = "padding:6px 11px;border-radius:8px;border:1px solid #0284c7;background:#e0f2fe;color:#0369a1;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;";
+        cautelaBtn.insertAdjacentElement("afterend", subBtn);
+      }
+      subBtn.onclick = (ev) => { ev.stopPropagation(); openSubstituteModal(code); };
+    }
+
+    // 2. Registra alteracoes ao salvar
+    hookDrawerSaveForTimeline(drawer, code);
+
+    // 3. Injeta card "Historico / Linha do Tempo"
+    let card = drawer.querySelector("#vu-timeline-card");
+    const events = getCombinedTimeline(code);
+    const sig = `${code}|${events.length}|${events[0] ? events[0].ts : ""}`;
+
+    if (card && card.dataset.vuSig === sig) return;
+
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "vu-timeline-card";
+      card.style.cssText = "margin:14px 0 10px;padding:11px 12px;border-radius:12px;border:1px solid #cbd5e1;background:#f8fafc;display:grid;gap:9px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;";
+
+      const moveBtn = Array.from(drawer.querySelectorAll("button")).find((b) => isVisible(b) && norm(b.textContent).includes("mover p/ perdidos"));
+      const anchorParent = moveBtn && moveBtn.parentElement;
+      if (anchorParent && anchorParent.parentElement) {
+        anchorParent.parentElement.insertBefore(card, anchorParent);
+      } else {
+        drawer.appendChild(card);
+      }
+    }
+
+    card.dataset.vuSig = sig;
+    const countCautela = events.filter((e) => e.kind === "cautela").length;
+    const countReparo = events.filter((e) => e.kind === "reparo").length;
+    const countLab = events.filter((e) => e.kind === "lab").length;
+
+    const kindMeta = {
+      cautela: { color: "#2563eb", bg: "#dbeafe", lbl: "Cautela" },
+      reparo:  { color: "#dc2626", bg: "#fee2e2", lbl: "Reparo" },
+      lab:     { color: "#d97706", bg: "#fef3c7", lbl: "Lab / Cal." },
+      edit:    { color: "#475569", bg: "#e2e8f0", lbl: "Registro" }
+    };
+
+    card.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+        `<div style="font-size:12px;font-weight:800;color:#002466;text-transform:uppercase;letter-spacing:.03em;">Hist\u00f3rico &amp; Linha do Tempo (${events.length})</div>` +
+        `<button type="button" id="vu-tl-copy" style="padding:3px 8px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:11px;font-weight:700;cursor:pointer;">Copiar Hist\u00f3rico</button>` +
+      `</div>` +
+      `<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;font-weight:800;">` +
+        `<span style="padding:3px 8px;border-radius:999px;background:#dbeafe;color:#1d4ed8;">Cautelas: ${countCautela}</span>` +
+        `<span style="padding:3px 8px;border-radius:999px;background:${countReparo >= 2 ? "#dc2626" : "#fee2e2"};color:${countReparo >= 2 ? "#ffffff" : "#b91c1c"};">Reparos: ${countReparo}${countReparo >= 2 ? " \u2022 Recorrente!" : ""}</span>` +
+        `<span style="padding:3px 8px;border-radius:999px;background:#fef3c7;color:#92400e;">Lab: ${countLab}</span>` +
+      `</div>` +
+      `<div style="display:flex;gap:5px;flex-wrap:wrap;">` +
+        `<select id="vu-tl-kind" style="padding:5px 7px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11.5px;font-weight:700;color:#0f172a;">` +
+          `<option value="reparo">Reparo / Defeito</option>` +
+          `<option value="lab">Envio / Retorno Lab</option>` +
+          `<option value="cautela">Cautela / Posse</option>` +
+          `<option value="edit">Observa\u00e7\u00e3o</option>` +
+        `</select>` +
+        `<input id="vu-tl-note" type="text" placeholder="Registrar ocorr\u00eancia..." style="flex:1;min-width:130px;padding:5px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11.5px;color:#0f172a;">` +
+        `<button type="button" id="vu-tl-add" style="padding:5px 10px;border-radius:7px;border:none;background:#004899;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;">+ Salvar</button>` +
+      `</div>` +
+      `<div style="max-height:175px;overflow-y:auto;display:grid;gap:6px;padding-right:2px;">` +
+        (events.length
+          ? events.slice(0, 25).map((e) => {
+              const km = kindMeta[e.kind] || kindMeta.edit;
+              return (
+                `<div style="padding:6px 8px;border-radius:8px;background:#ffffff;border:1px solid #e2e8f0;border-left:3px solid ${km.color};font-size:11.5px;">` +
+                  `<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;">` +
+                    `<strong style="color:#0f172a;">${escHtml(e.title)}</strong>` +
+                    `<span style="font-size:10px;color:#64748b;white-space:nowrap;">${escHtml(formatTimelineDate(e.ts))}</span>` +
+                  `</div>` +
+                  (e.detail ? `<div style="color:#475569;margin-top:2px;">${escHtml(e.detail)}</div>` : "") +
+                `</div>`
+              );
+            }).join("")
+          : `<div style="font-size:11.5px;color:#64748b;padding:4px 2px;">Nenhuma movimenta\u00e7\u00e3o registrada ainda para ${escHtml(code)}. Novas cautelas, devolu\u00e7\u00f5es, reparos e altera\u00e7\u00f5es aparecer\u00e3o aqui automaticamente.</div>`) +
+      `</div>`;
+
+    card.querySelector("#vu-tl-add").onclick = () => {
+      const k = card.querySelector("#vu-tl-kind").value;
+      const txt = String(card.querySelector("#vu-tl-note").value || "").trim();
+      if (!txt) return;
+      const titles = { reparo: "Ocorr\u00eancia de Reparo / Defeito", lab: "Movimenta\u00e7\u00e3o de Laborat\u00f3rio", cautela: "Registro de Cautela", edit: "Observa\u00e7\u00e3o T\u00e9cnica" };
+      pushTimelineEvent(code, k, titles[k] || "Registro", txt);
+      card.dataset.vuSig = "";
+      enhanceInstrumentDrawer();
+    };
+
+    card.querySelector("#vu-tl-copy").onclick = async () => {
+      const lines = [
+        `HIST\u00d3RICO DO INSTRUMENTO: ${code}`,
+        `Resumo: ${countCautela} cautela(s) | ${countReparo} reparo(s) | ${countLab} envio(s) lab`,
+        "---",
+        ...events.map((e) => `[${formatTimelineDate(e.ts)}] ${e.title}${e.detail ? " - " + e.detail : ""}`)
+      ];
+      await copyToClipboard(lines.join("\n"));
+      showMiniToast(`Hist\u00f3rico de ${code} copiado!`, "#002466", "#60a5fa");
+    };
+  };
+
+  /* ============================================================================
+     MODULO 4: PAINEL DE SANEAMENTO DO CADASTRO (DIAGNOSTICO + CORRECAO EM LOTE)
+     ============================================================================ */
+  const buildSanitationReport = () => {
+    const snap = getFleetSnapshot();
+    const duplicates = [];
+    const noLocal = [];
+    const noRange = [];
+    const badDate = [];
+    const badSector = [];
+
+    snap.dupGroups.forEach((arr, code) => {
+      if (arr.length > 1) {
+        duplicates.push({
+          code,
+          count: arr.length,
+          desc: arr[0].desc,
+          detail: arr.map((x) => `${x.local || "Sem local"} (${x.dateInfo.str || "s/ data"})`).join(" | ")
+        });
+      }
+    });
+
+    const officialNormSet = new Set(OFFICIAL_SECTORS.map(norm));
+
+    snap.uniqueList.forEach((it) => {
+      const locN = norm(it.local);
+      if (!locN || locN === "-" || locN === "\u2014" || locN === "sem local" || locN === "n/a") {
+        noLocal.push(it);
+      }
+      if (!it.rangeObj) {
+        noRange.push(it);
+      }
+      if (!it.dateInfo.valid) {
+        badDate.push(it);
+      }
+      if (!it.setor || !officialNormSet.has(norm(it.setor))) {
+        const sug = suggestOfficialSector(it.setor);
+        badSector.push({ ...it, suggestedSector: sug });
+      }
+    });
+
+    const totalIssues = duplicates.length + noLocal.length + noRange.length + badDate.length + badSector.length;
+    return { totalFleet: snap.uniqueList.length, totalIssues, duplicates, noLocal, noRange, badDate, badSector };
+  };
+
+  const executeBatchFieldFix = async (tasks, fieldType) => {
+    const modal = document.getElementById("vu-san-modal");
+    if (modal) modal.remove();
+
+    let prog = document.getElementById("vu-san-progress");
+    if (prog) prog.remove();
+    prog = document.createElement("div");
+    prog.id = "vu-san-progress";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483150;width:min(470px,93vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:15px 18px;box-shadow:0 22px 55px rgba(0,0,0,.48);font-family:system-ui,-apple-system,sans-serif;";
+    document.body.appendChild(prog);
+
+    const ok = [], fail = [];
+    const draw = (idx, code, msg) => {
+      const pct = Math.round((idx / tasks.length) * 100);
+      prog.innerHTML =
+        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
+          `<span>Saneamento em Lote (${idx}/${tasks.length})</span><span style="color:#7dd3fc;">${pct}%</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + escHtml(code) + "</strong>" : ""}</div>` +
+        `<div style="height:7px;background:rgba(255,255,255,.16);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#38bdf8;transition:width .2s;"></div></div>`;
+    };
+
+    const closeAnyDrawer = () => {
+      const info = findOpenEditInstrumentDrawer();
+      if (!info) return;
+      const xBtn = Array.from(info.drawer.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b)) return false;
+        const r = String(b.textContent || "").trim();
+        return r === "\u00d7" || r === "x" || r === "X" || norm(r) === "fechar";
+      });
+      if (xBtn) xBtn.click();
+    };
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      draw(i, task.code, `Atualizando ${fieldType}`);
+
+      closeAnyDrawer();
+      await sleep(160);
+      await navigateAndOpenInstrument(task.code);
+
+      let info = null;
+      for (let w = 0; w < 22; w++) {
+        await sleep(110);
+        const cur = findOpenEditInstrumentDrawer();
+        if (cur && cur.code === task.code) { info = cur; break; }
+      }
+
+      if (!info) { fail.push(`${task.code} (n\u00e3o abriu)`); continue; }
+
+      const controls = Array.from(info.drawer.querySelectorAll("input, select, textarea")).filter((el) => {
+        if (!isVisible(el) || el.disabled || el.readOnly || el.closest("#vu-timeline-card")) return false;
+        const tp = String(el.type || "").toLowerCase();
+        return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
+      });
+
+      let filled = false;
+      if (fieldType === "local") {
+        const tgt = controls.find((el) => /(localiz|local|armario)/.test(getFieldHint(el)));
+        if (tgt) filled = setControlValue(tgt, task.value);
+      } else if (fieldType === "setor") {
+        const tgt = controls.find((el) => /(setor|sector|area)/.test(getFieldHint(el)) && !/(local|armario)/.test(getFieldHint(el)));
+        if (tgt) filled = setControlValue(tgt, task.value);
+      } else if (fieldType === "data") {
+        const tgt = controls.find((el) => /(calibr|valid|prox)/.test(getFieldHint(el)) && !/(ultima|status)/.test(getFieldHint(el)));
+        if (tgt) filled = setControlValue(tgt, task.value);
+      } else if (fieldType === "faixa") {
+        const parts = String(task.value || "").split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
+        const minEl = controls.find((el) => /(faixa\s*min|minima|\bmin\b|inicial)/.test(getFieldHint(el)));
+        const maxEl = controls.find((el) => /(faixa\s*max|maxima|\bmax\b|final)/.test(getFieldHint(el)));
+        if (minEl && maxEl && parts.length >= 2) {
+          filled = setControlValue(minEl, parts[0]) && setControlValue(maxEl, parts[1]);
+        } else {
+          const single = controls.find((el) => /(faixa|capac|range|medicao|escala)/.test(getFieldHint(el)));
+          if (single) filled = setControlValue(single, task.value);
+        }
+      }
+
+      if (!filled) {
+        fail.push(`${task.code} (campo n\u00e3o encontrado)`);
+        closeAnyDrawer();
+        continue;
+      }
+
+      await sleep(140);
+      const saveBtn = Array.from(info.drawer.querySelectorAll("button")).find((b) => isVisible(b) && !b.disabled && norm(b.textContent) === "salvar");
+      if (!saveBtn) {
+        fail.push(`${task.code} (bot\u00e3o Salvar ausente)`);
+        closeAnyDrawer();
+        continue;
+      }
+
+      saveBtn.click();
+      await waitForPendingWrites(2000);
+      await sleep(450);
+      closeAnyDrawer();
+
+      pushTimelineEvent(task.code, "edit", "Saneamento em Lote", `${fieldType.toUpperCase()} definido para: ${task.value}`);
+      ok.push(task.code);
+      draw(i + 1, task.code, "Salvo no banco");
+    }
+
+    // Limpa barra de busca do inventario ao finalizar
+    const invSearch = Array.from(document.querySelectorAll("input")).find((el) => {
+      if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
+      const sig = norm([el.placeholder, el.id, el.name].filter(Boolean).join(" "));
+      return /buscar|pesquis|codigo|instrumento/.test(sig) && !String((el.parentElement && el.parentElement.textContent) || "").includes("Ctrl K");
+    });
+    if (invSearch) setControlValue(invSearch, "");
+
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Saneamento conclu\u00eddo: ${ok.length} de ${tasks.length} atualizado(s)</div>` +
+        `<button type="button" id="vu-san-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o atualizados: ${escHtml(fail.join(", "))}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Todos os cadastros corrigidos foram gravados no banco de dados.</div>`);
+    prog.querySelector("#vu-san-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 6500);
+  };
+
+  const openSanitationModal = () => {
+    const old = document.getElementById("vu-san-modal");
+    if (old) old.remove();
+
+    const rep = buildSanitationReport();
+    const tabs = [
+      { id: "duplicates", label: `Duplicados (${rep.duplicates.length})`,         count: rep.duplicates.length, color: "#dc2626" },
+      { id: "noLocal",    label: `Sem Local (${rep.noLocal.length})`,             count: rep.noLocal.length,    color: "#d97706" },
+      { id: "noRange",    label: `Sem Faixa (${rep.noRange.length})`,             count: rep.noRange.length,    color: "#0284c7" },
+      { id: "badDate",    label: `Datas Inv\u00e1lidas (${rep.badDate.length})`,  count: rep.badDate.length,    color: "#9333ea" },
+      { id: "badSector",  label: `Setores (${rep.badSector.length})`,             count: rep.badSector.length,  color: "#059669" }
+    ];
+
+    let activeTab = (tabs.find((t) => t.count > 0) || tabs[0]).id;
+
+    const ov = document.createElement("div");
+    ov.id = "vu-san-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147482820;background:rgba(15,23,42,.68);display:flex;align-items:center;justify-content:center;padding:12px;font-family:system-ui,-apple-system,sans-serif;";
+    ov.innerHTML =
+      `<div style="width:min(980px,97vw);max-height:92vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.48);display:flex;flex-direction:column;">` +
+        `<div style="background:linear-gradient(90deg,#1e1b4b,#4338ca);color:#ffffff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
+          `<div>` +
+            `<div style="font-size:16px;font-weight:800;">Painel de Saneamento do Cadastro</div>` +
+            `<div style="font-size:12px;color:#c7d2fe;">Frota analisada: <strong>${rep.totalFleet}</strong> instrumento(s) &bull; <strong>${rep.totalIssues}</strong> pend\u00eancia(s) encontrada(s)</div>` +
+          `</div>` +
+          `<div style="display:flex;gap:8px;align-items:center;">` +
+            `<button type="button" id="vu-san-copy-rep" style="padding:6px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;font-size:11.5px;font-weight:700;cursor:pointer;">Copiar Diagn\u00f3stico</button>` +
+            `<button type="button" id="vu-san-close" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;font-size:18px;cursor:pointer;">&times;</button>` +
+          `</div>` +
+        `</div>` +
+        `<div id="vu-san-tabs" style="display:flex;gap:6px;padding:10px 18px;background:#f1f5f9;border-bottom:1px solid #cbd5e1;flex-wrap:wrap;"></div>` +
+        `<div id="vu-san-batch" style="padding:10px 18px;background:#eef2ff;border-bottom:1px solid #c7d2fe;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"></div>` +
+        `<div id="vu-san-body" style="padding:14px 18px;overflow-y:auto;flex:1;"></div>` +
+      `</div>`;
+
+    document.body.appendChild(ov);
+    ov.querySelector("#vu-san-close").onclick = () => ov.remove();
+
+    ov.querySelector("#vu-san-copy-rep").onclick = async () => {
+      const txt = [
+        `DIAGN\u00d3STICO DE SANEAMENTO \u2014 VOITH METROLOGIA (${rep.totalFleet} instrumentos)`,
+        `- C\u00f3digos duplicados: ${rep.duplicates.length}${rep.duplicates.length ? " (" + rep.duplicates.map((d) => d.code).join(", ") + ")" : ""}`,
+        `- Sem Local: ${rep.noLocal.length}`,
+        `- Sem Faixa de medi\u00e7\u00e3o: ${rep.noRange.length}`,
+        `- Datas fora do padr\u00e3o/vazias: ${rep.badDate.length}`,
+        `- Setores fora do padr\u00e3o oficial: ${rep.badSector.length}`
+      ].join("\n");
+      await copyToClipboard(txt);
+      showMiniToast("Resumo do diagn\u00f3stico copiado!", "#312e81", "#818cf8");
+    };
+
+    const tabsHost = ov.querySelector("#vu-san-tabs");
+    const batchHost = ov.querySelector("#vu-san-batch");
+    const bodyHost = ov.querySelector("#vu-san-body");
+
+    const renderTab = () => {
+      tabsHost.innerHTML = tabs.map((t) => {
+        const act = activeTab === t.id;
+        return `<button type="button" data-san-tab="${t.id}" style="padding:7px 12px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ${act ? t.color : "#cbd5e1"};background:${act ? t.color : "#ffffff"};color:${act ? "#ffffff" : "#334155"};">${t.label}</button>`;
+      }).join("");
+
+      tabsHost.querySelectorAll("[data-san-tab]").forEach((b) => {
+        b.onclick = () => { activeTab = b.getAttribute("data-san-tab"); renderTab(); };
+      });
+
+      const list = rep[activeTab] || [];
+
+      if (activeTab === "duplicates") {
+        batchHost.innerHTML = `<span style="font-size:12px;font-weight:700;color:#991b1b;">Clique em <strong>Abrir</strong> para conferir o item duplicado no Invent\u00e1rio e excluir a c\u00f3pia sobrando.</span>`;
+      } else if (activeTab === "noLocal") {
+        batchHost.innerHTML =
+          `<span style="font-size:12px;font-weight:800;color:#312e81;">Corrigir em lote:</span>` +
+          `<input id="vu-san-val" type="text" placeholder="Ex: Armario T1, Tridimensional, Pintura..." style="padding:6px 9px;border-radius:8px;border:1px solid #a5b4fc;font-size:12px;min-width:230px;background:#fff;">` +
+          `<button type="button" id="vu-san-apply" style="padding:7px 13px;border-radius:8px;border:none;background:#4338ca;color:#fff;font-size:12px;font-weight:800;cursor:pointer;">Aplicar Local nos Selecionados</button>`;
+      } else if (activeTab === "noRange") {
+        batchHost.innerHTML =
+          `<span style="font-size:12px;font-weight:800;color:#312e81;">Aplicar faixa em lote:</span>` +
+          `<input id="vu-san-val" type="text" placeholder="Ex: 0 ~ 150 ou 200 ~ 500" style="padding:6px 9px;border-radius:8px;border:1px solid #a5b4fc;font-size:12px;min-width:210px;background:#fff;">` +
+          `<button type="button" id="vu-san-apply" style="padding:7px 13px;border-radius:8px;border:none;background:#0284c7;color:#fff;font-size:12px;font-weight:800;cursor:pointer;">Aplicar Faixa nos Selecionados</button>`;
+      } else if (activeTab === "badDate") {
+        batchHost.innerHTML =
+          `<span style="font-size:12px;font-weight:800;color:#312e81;">Aplicar validade em lote:</span>` +
+          `<input id="vu-san-val" type="text" placeholder="DD/MM/AAAA" style="padding:6px 9px;border-radius:8px;border:1px solid #a5b4fc;font-size:12px;width:130px;background:#fff;">` +
+          `<button type="button" id="vu-san-apply" style="padding:7px 13px;border-radius:8px;border:none;background:#7e22ce;color:#fff;font-size:12px;font-weight:800;cursor:pointer;">Aplicar Data nos Selecionados</button>`;
+      } else if (activeTab === "badSector") {
+        batchHost.innerHTML =
+          `<span style="font-size:12px;font-weight:800;color:#065f46;">Padronizar setor:</span>` +
+          `<select id="vu-san-val" style="padding:6px 9px;border-radius:8px;border:1px solid #a5b4fc;font-size:12px;background:#fff;">` +
+            `<option value="__SUG__">Usar sugest\u00e3o autom\u00e1tica de cada linha</option>` +
+            OFFICIAL_SECTORS.map((s) => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join("") +
+          `</select>` +
+          `<button type="button" id="vu-san-apply" style="padding:7px 13px;border-radius:8px;border:none;background:#059669;color:#fff;font-size:12px;font-weight:800;cursor:pointer;">Padronizar Selecionados</button>`;
+      }
+
+      if (!list.length) {
+        bodyHost.innerHTML = `<div style="padding:26px;text-align:center;color:#15803d;font-size:13.5px;font-weight:800;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;">\u2713 Nenhuma pend\u00eancia nesta categoria! Cadastro limpo.</div>`;
+        return;
+      }
+
+      const showChk = activeTab !== "duplicates";
+      bodyHost.innerHTML =
+        `<div style="overflow-x:auto;border:1px solid #cbd5e1;border-radius:10px;">` +
+          `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:680px;">` +
+            `<thead><tr style="background:#f8fafc;color:#334155;text-align:left;border-bottom:1px solid #cbd5e1;">` +
+              (showChk ? `<th style="padding:8px;width:30px;"><input type="checkbox" id="vu-san-chk-all"></th>` : "") +
+              `<th style="padding:8px;width:110px;">C\u00f3digo</th>` +
+              `<th style="padding:8px;">Instrumento</th>` +
+              `<th style="padding:8px;">Situa\u00e7\u00e3o Atual</th>` +
+              (activeTab === "badSector" ? `<th style="padding:8px;">Sugest\u00e3o Oficial</th>` : "") +
+              `<th style="padding:8px;width:78px;">A\u00e7\u00e3o</th>` +
+            `</tr></thead>` +
+            `<tbody>` +
+              list.slice(0, 150).map((it) => {
+                let curInfo = "";
+                if (activeTab === "duplicates") curInfo = `${it.count}x no cadastro \u2014 ${it.detail}`;
+                else if (activeTab === "noLocal") curInfo = `Local: ${it.local || "Vazio"} | Setor: ${it.setor || "-"}`;
+                else if (activeTab === "noRange") curInfo = `Faixa: ${it.faixa || "N\u00e3o cadastrada"} | Local: ${it.local || "-"}`;
+                else if (activeTab === "badDate") curInfo = `Data atual: ${it.validadeRaw || "Vazia"}`;
+                else if (activeTab === "badSector") curInfo = `Setor atual: ${it.setor || "Vazio"}`;
+
+                return (
+                  `<tr style="border-top:1px solid #e2e8f0;">` +
+                    (showChk ? `<td style="padding:7px 8px;"><input type="checkbox" class="vu-san-chk" data-code="${escHtml(it.code)}" data-sug="${escHtml(it.suggestedSector || "")}"></td>` : "") +
+                    `<td style="padding:7px 8px;font-weight:800;color:#003399;">${escHtml(it.code)}</td>` +
+                    `<td style="padding:7px 8px;font-weight:600;color:#0f172a;">${escHtml(it.desc || "-")}</td>` +
+                    `<td style="padding:7px 8px;color:#64748b;">${escHtml(curInfo)}</td>` +
+                    (activeTab === "badSector" ? `<td style="padding:7px 8px;font-weight:700;color:#047857;">${escHtml(it.suggestedSector || "Escolher acima")}</td>` : "") +
+                    `<td style="padding:7px 8px;"><button type="button" data-san-open="${escHtml(it.code)}" style="padding:4px 9px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#004899;font-size:11px;font-weight:800;cursor:pointer;">Abrir</button></td>` +
+                  `</tr>`
+                );
+              }).join("") +
+            `</tbody>` +
+          `</table>` +
+        `</div>` +
+        (list.length > 150 ? `<div style="margin-top:6px;font-size:11px;color:#64748b;">Exibindo os primeiros 150 de ${list.length} registros.</div>` : "");
+
+      const chkAll = bodyHost.querySelector("#vu-san-chk-all");
+      if (chkAll) {
+        chkAll.onchange = () => {
+          bodyHost.querySelectorAll(".vu-san-chk").forEach((c) => { c.checked = chkAll.checked; });
+        };
+      }
+
+      bodyHost.querySelectorAll("[data-san-open]").forEach((btn) => {
+        btn.onclick = () => {
+          const code = btn.getAttribute("data-san-open");
+          ov.remove();
+          navigateAndOpenInstrument(code);
+        };
+      });
+
+      const applyBtn = batchHost.querySelector("#vu-san-apply");
+      if (applyBtn) {
+        applyBtn.onclick = () => {
+          const checked = Array.from(bodyHost.querySelectorAll(".vu-san-chk:checked"));
+          if (!checked.length) { showMiniToast("Marque pelo menos um instrumento na lista.", "#991b1b", "#fca5a5"); return; }
+          const rawVal = String((batchHost.querySelector("#vu-san-val") && batchHost.querySelector("#vu-san-val").value) || "").trim();
+
+          const tasks = [];
+          if (activeTab === "badSector") {
+            checked.forEach((c) => {
+              const val = rawVal === "__SUG__" ? c.getAttribute("data-sug") : rawVal;
+              if (val) tasks.push({ code: c.getAttribute("data-code"), value: val });
+            });
+            if (!tasks.length) { showMiniToast("Selecione um setor oficial acima para os itens sem sugest\u00e3o.", "#991b1b", "#fca5a5"); return; }
+            executeBatchFieldFix(tasks, "setor");
+          } else {
+            if (!rawVal) { showMiniToast("Preencha o valor que deseja aplicar em lote.", "#991b1b", "#fca5a5"); return; }
+            if (activeTab === "badDate" && !parseDateInfo(rawVal).valid) { showMiniToast("Digite a data no formato DD/MM/AAAA.", "#991b1b", "#fca5a5"); return; }
+            checked.forEach((c) => tasks.push({ code: c.getAttribute("data-code"), value: rawVal }));
+            const mapType = { noLocal: "local", noRange: "faixa", badDate: "data" };
+            executeBatchFieldFix(tasks, mapType[activeTab]);
+          }
+        };
+      }
+    };
+
+    renderTab();
+  };
+
+  const injectSanitationButton = () => {
+    const existing = document.getElementById("vu-saneamento-btn");
+    const anchorBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("[id^='vu-']")) return false;
+      const t = norm(b.textContent);
+      return t === "pdf iso" || t === "preencher locais" || t === "ronda recolhimento";
+    });
+
+    if (!anchorBtn || !anchorBtn.parentElement) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const rep = buildSanitationReport();
+    let btn = existing;
+    if (!btn || !anchorBtn.parentElement.contains(btn)) {
+      if (btn) btn.remove();
+      btn = document.createElement("button");
+      btn.id = "vu-saneamento-btn";
+      btn.type = "button";
+      btn.title = "Diagnosticar e corrigir pend\u00eancias do cadastro (Duplicados, Sem Local, Sem Faixa, Datas, Setores)";
+      btn.onclick = openSanitationModal;
+      anchorBtn.parentElement.appendChild(btn);
+    }
+
+    const sig = `${rep.totalIssues}`;
+    if (btn.dataset.vuSig === sig) return;
+    btn.dataset.vuSig = sig;
+
+    const hasIss = rep.totalIssues > 0;
+    btn.style.cssText =
+      `display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;` +
+      `border:1px solid ${hasIss ? "#6366f1" : "#10b981"};background:${hasIss ? "#eef2ff" : "#ecfdf5"};color:${hasIss ? "#3730a3" : "#047857"};`;
+    btn.innerHTML =
+      `<span>Saneamento</span>` +
+      (hasIss ? `<span style="padding:1px 6px;border-radius:999px;background:#4f46e5;color:#ffffff;font-size:10.5px;">${rep.totalIssues}</span>` : `<span style="font-size:11px;">\u2713</span>`);
+  };
+
+  /* -------------------- ORQUESTRADOR GERAL -------------------- */
+  let uiTimer = null;
+  const scheduleUI = (delay = 120) => {
+    if (uiTimer) return;
+    uiTimer = setTimeout(() => {
+      uiTimer = null;
+      injectSanitationButton();
+      enhanceInstrumentDrawer();
+      renderBulkReturnUI();
+    }, delay);
+  };
+
+  const init = () => {
+    scheduleUI(160);
+    document.addEventListener("click", (ev) => {
+      if (ev.target && ev.target.closest && ev.target.closest("#vu-bulk-return-bar, #vu-timeline-card, #vu-sub-modal, #vu-san-modal, #vu-ret-modal")) return;
+      scheduleUI(130);
+    }, true);
+    document.addEventListener("input", () => scheduleUI(160), true);
+    window.addEventListener("hashchange", () => scheduleUI(150));
+
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (!tgt) continue;
+        if (tgt.id && tgt.id.startsWith("vu-")) continue;
+        if (tgt.closest && tgt.closest("[id^='vu-']")) continue;
+        scheduleUI(160);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, {
+    openSanitationModal,
+    openSubstituteModal,
+    pushTimelineEvent
+  });
+})();
+/* VOITH_PRO_OPS_SUITE_V1_END */
