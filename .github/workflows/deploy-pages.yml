@@ -1,0 +1,56 @@
+name: Deploy Voith Metrologia (Minificado)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Preparar pasta _site e minificar scripts JS
+        run: |
+          mkdir -p _site
+          rsync -av --exclude='.git' --exclude='.github' --exclude='_site' ./ _site/
+          if [ -d "_site/modules" ]; then
+            for jsfile in _site/modules/*.js; do
+              [ -f "$jsfile" ] || continue
+              npx --yes esbuild "$jsfile" --minify --charset=utf8 --outfile="${jsfile}.min"
+              mv "${jsfile}.min" "$jsfile"
+            done
+          fi
+          ls -lh _site/modules/
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Enviar artefato do Pages (retenção 1 dia)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
