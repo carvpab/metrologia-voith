@@ -3698,1932 +3698,7 @@
 })();
 /* VOITH_AUTOCOMPLETE_AUTOCORRECT_V1_END */
 
-/* VOITH_IMAGE_IMPORTER_V1_START */
-(() => {
-  "use strict";
 
-  const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-  const LOST_CAT_STORAGE_KEY = "voith_lost_categories_v1";
-
-  const LOST_CATEGORIES = {
-    perdido:    { id: "perdido",    tag: "[PERDIDO]",    label: "Perdido",    fullLabel: "Perdido / Extraviado",       bg: "#fee2e2", color: "#b91c1c", border: "#fca5a5", placeholder: "Extraviado em campo / Não localizado" },
-    vencido:    { id: "vencido",    tag: "[VENCIDO]",    label: "Vencido",    fullLabel: "Vencido (Retido / Baixa)",   bg: "#fef3c7", color: "#b45309", border: "#fcd34d", placeholder: "Vencido fora de uso / Aguardando decisão" },
-    desativado: { id: "desativado", tag: "[DESATIVADO]", label: "Desativado", fullLabel: "Desativado (Reativável)",    bg: "#e0f2fe", color: "#0369a1", border: "#7dd3fc", placeholder: "Desativado temporariamente — pode ser reativado" }
-  };
-
-  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const isVisible = (el) => {
-    if (!el || !el.isConnected) return false;
-    const cs = window.getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
-  };
-
-  const escHtml = (s) => String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-  const setControlValue = (el, val) => {
-    if (!el) return false;
-    const str = String(val == null ? "" : val).trim();
-
-    if (el.tagName === "SELECT") {
-      if (!str) return false;
-      const target = norm(str);
-      const opts = Array.from(el.options || []);
-      const hit =
-        opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
-        opts.find((o) => norm(o.textContent).includes(target) || (target.length >= 4 && target.includes(norm(o.textContent))));
-      if (hit) el.value = hit.value;
-      else return false;
-    } else {
-      let finalVal = str;
-      if (String(el.type || "").toLowerCase() === "date" && str) {
-        const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-        if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
-      }
-      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const desc = Object.getOwnPropertyDescriptor(proto, "value");
-      if (desc && desc.set) desc.set.call(el, finalVal);
-      else el.value = finalVal;
-    }
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
-  };
-
-  const getFieldHint = (el) => {
-    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label")];
-    if (el.id) {
-      const lbl = document.querySelector(`label[for="${el.id}"]`);
-      if (lbl) parts.push(lbl.textContent);
-    }
-    const closestLbl = el.closest("label");
-    if (closestLbl) parts.push(closestLbl.textContent);
-    if (el.previousElementSibling && String(el.previousElementSibling.textContent || "").length < 80) {
-      parts.push(el.previousElementSibling.textContent);
-    }
-    if (el.parentElement) {
-      const sib = el.parentElement.querySelector("label, span, p");
-      if (sib && sib !== el && String(sib.textContent || "").length < 80) {
-        parts.push(sib.textContent);
-      }
-      if (el.parentElement.previousElementSibling && String(el.parentElement.previousElementSibling.textContent || "").length < 80) {
-        parts.push(el.parentElement.previousElementSibling.textContent);
-      }
-    }
-    return norm(parts.filter(Boolean).join(" "));
-  };
-
-  /* -------------------- PERSISTENCIA DE CATEGORIAS DE PERDIDOS -------------------- */
-  const loadLostCatMap = () => {
-    try { return JSON.parse(localStorage.getItem(LOST_CAT_STORAGE_KEY) || "{}") || {}; }
-    catch (_) { return {}; }
-  };
-
-  const saveLostCat = (code, catId) => {
-    const c = String(code || "").trim().toUpperCase();
-    if (!c || !LOST_CATEGORIES[catId]) return;
-    const map = loadLostCatMap();
-    map[c] = catId;
-    try { localStorage.setItem(LOST_CAT_STORAGE_KEY, JSON.stringify(map)); } catch (_) {}
-  };
-
-  const removeLostCat = (code) => {
-    const c = String(code || "").trim().toUpperCase();
-    if (!c) return;
-    const map = loadLostCatMap();
-    if (map[c]) {
-      delete map[c];
-      try { localStorage.setItem(LOST_CAT_STORAGE_KEY, JSON.stringify(map)); } catch (_) {}
-    }
-  };
-
-  const stripCategoryTag = (txt) => String(txt || "").replace(/^\s*\[(PERDIDO|VENCIDO|DESATIVADO)\]\s*/i, "").trim();
-
-  const applyCategoryTag = (txt, catId) => {
-    const cfg = LOST_CATEGORIES[catId] || LOST_CATEGORIES.perdido;
-    const body = stripCategoryTag(txt);
-    return body ? `${cfg.tag} ${body}` : `${cfg.tag} ${cfg.fullLabel}`;
-  };
-
-  const detectCategoryFromRow = (code, fullText) => {
-    const raw = String(fullText || "");
-    if (/\[DESATIVADO\]/i.test(raw)) return "desativado";
-    if (/\[VENCIDO\]/i.test(raw)) return "vencido";
-    if (/\[PERDIDO\]/i.test(raw)) return "perdido";
-
-    const map = loadLostCatMap();
-    const c = String(code || "").trim().toUpperCase();
-    if (c && map[c] && LOST_CATEGORIES[map[c]]) return map[c];
-
-    const n = norm(raw);
-    if (/\b(desativad|inativ|suspens|reativ|reserva|fora de uso|standby)\b/.test(n)) return "desativado";
-    if (/\b(vencid|expirad|calibracao vencida)\b/.test(n)) return "vencido";
-    return "perdido";
-  };
-
-  /* -------------------- DICIONARIO DA FROTA PARA AUTOCORRECAO POS-OCR -------------------- */
-  const getFleetKnownValues = () => {
-    const codes = new Set();
-    const resps = new Set();
-    const descs = new Set();
-    const sources = [window.instruments, window.ITEMS, window.allInstruments, window.state && window.state.instruments];
-    sources.forEach((arr) => {
-      if (!Array.isArray(arr)) return;
-      arr.forEach((it) => {
-        if (!it || typeof it !== "object") return;
-        const c = String(it.code || it.codigo || it.cod || "").trim().toUpperCase();
-        if (c) codes.add(c);
-        const r = String(it.responsavel || it.responsible || it.tecnico || it.owner || "").trim();
-        if (r && r.length >= 3) resps.add(r);
-        const d = String(it.name || it.descricao || it.description || it.instrumento || "").trim();
-        if (d && d.length >= 4) descs.add(d);
-      });
-    });
-    document.querySelectorAll("table tbody tr").forEach((tr) => {
-      const m = String(tr.textContent || "").match(/\b([A-Z]{2}\d{5,7}[A-Z0-9-]*)\b/);
-      if (m) codes.add(m[1].toUpperCase());
-    });
-    return { codes, resps: Array.from(resps), descs: Array.from(descs) };
-  };
-
-  const levenshtein = (a, b) => {
-    const m = a.length, n = b.length;
-    if (!m) return n;
-    if (!n) return m;
-    let prev = Array.from({ length: n + 1 }, (_, j) => j);
-    let curr = new Array(n + 1);
-    for (let i = 1; i <= m; i++) {
-      curr[0] = i;
-      for (let j = 1; j <= n; j++) {
-        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-        curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-      }
-      const tmp = prev; prev = curr; curr = tmp;
-    }
-    return prev[n];
-  };
-
-  const bestKnownMatch = (raw, candidates, minSim = 0.72) => {
-    const q = norm(raw);
-    if (!q || q.length < 4 || !candidates.length) return raw;
-    let best = raw, bestScore = 0;
-    for (let i = 0; i < candidates.length; i++) {
-      const c = norm(candidates[i]);
-      const maxL = Math.max(q.length, c.length);
-      if (!maxL) continue;
-      const sim = 1 - levenshtein(q, c) / maxL;
-      if (sim > bestScore) {
-        bestScore = sim;
-        best = candidates[i];
-      }
-    }
-    return bestScore >= minSim ? best : raw;
-  };
-
-  const mapSectorName = (raw) => {
-    const s = norm(raw);
-    if (!s) return "";
-    if (s.includes("ferrovi") && s.includes("redutor")) return "Voith Turbo (Ferrovi\u00e1ria Redutor)";
-    if (s.includes("ferrovi") || s.includes("ferrov")) return "Voith Turbo (Ferrovi\u00e1ria)";
-    if (s.includes("assist") && s.includes("automot")) return "Assist\u00eancia T\u00e9cnica Automotive";
-    if (s.includes("automot") || s.includes("engate")) return "Voith Turbo (Automotive)";
-    if (s.includes("assist") && s.includes("industr")) return "Assist\u00eancia T\u00e9cnica Industrial";
-    if (s.includes("industr")) return "Voith Turbo (Industrial)";
-    if (s.includes("qualid")) return "Qualidade";
-    if (s.includes("vorecon")) return "Vorecon";
-    if (s.includes("metrolog")) return "Metrologia / Turbo";
-    const paren = String(raw || "").match(/\(([^)]+)\)/);
-    return paren ? `Voith Turbo (${paren[1].trim()})` : String(raw || "").trim();
-  };
-
-  const normalizeDateBR = (raw) => {
-    const s = String(raw || "").replace(/[^0-9/.-]/g, "").trim();
-    let m = s.match(/(\d{2})[\/.-](\d{2})[\/.-](\d{4})/);
-    if (m) return `${m[1]}/${m[2]}/${m[3]}`;
-    m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-    const digits = s.replace(/\D/g, "");
-    if (digits.length === 8) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
-    return "";
-  };
-
-  const cleanCodeOcr = (raw) => {
-    let s = String(raw || "").toUpperCase().replace(/[^A-Z0-9-]/g, "");
-    if (!s) return "";
-    // Corrige erro classico de borda virando letra extra (ex: ACA424778 -> AC424778)
-    s = s.replace(/^AC[A-Z](\d{5,7})$/, "AC$1");
-    s = s.replace(/^[1IL|]?AC(\d{5,7})$/, "AC$1");
-    s = s.replace(/^4C(\d{5,7})$/, "AC$1");
-    s = s.replace(/^AO(\d{5,7})$/, "AC$1");
-    const m = s.match(/^([A-Z]{2})([A-Z0-9]{5,7})(-[A-Z0-9]+)?$/);
-    if (m) {
-      const fixedNums = m[2].replace(/O/g, "0").replace(/[IL]/g, "1").replace(/S/g, "5").replace(/B/g, "8").replace(/Z/g, "2");
-      if (/^\d{5,7}$/.test(fixedNums)) s = m[1] + fixedNums + (m[3] || "");
-    }
-    return s;
-  };
-
-  const cleanDescOcr = (raw, knownDescs) => {
-    let s = String(raw || "").replace(/[|\u00a6\[\]{}_~`^]+/g, " ").replace(/\s+/g, " ").trim();
-    if (!s) return "";
-    const fixes = [
-      [/\bp[ao]g?qu?[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Paqu\u00edmetro"],
-      [/\bmicr[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Micr\u00f4metro"],
-      [/\btorqu[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Torqu\u00edmetro"],
-      [/\bman[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Man\u00f4metro"],
-      [/\bterm[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Term\u00f4metro"],
-      [/\bdinam[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Dinam\u00f4metro"],
-      [/\bmult[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Mult\u00edmetro"],
-      [/\brel[oó0]g[ií1l][o0]/gi, "Rel\u00f3gio"],
-      [/\b[aá\u00e1]niv[ea]r[a-z\u00e0-\u00ff]*/gi, "Universal"],
-      [/\bunivers[a-z\u00e0-\u00ff]*/gi, "Universal"],
-      [/\bdig[ií1l]t[a-z\u00e0-\u00ff]*/gi, "Digital"],
-      [/\bmedid[o0]r\b/gi, "Medidor"],
-      [/\bbrilh[o0]\b/gi, "Brilho"],
-      [/\bcalibrad[o0]r\b/gi, "Calibrador"]
-    ];
-    fixes.forEach(([re, rep]) => { s = s.replace(re, rep); });
-    s = s.replace(/\s+[Iil1|.:,;]{1,2}$/, "").replace(/^[Iil1|.:,;]{1,2}\s+/, "").trim();
-    return bestKnownMatch(s, knownDescs, 0.78);
-  };
-
-  const cleanRespOcr = (raw, knownResps) => {
-    let s = String(raw || "")
-      .replace(/[0-9°ºª|\u00a6\[\]{}()\/\\.,;:'"`~]+/g, " ")
-      .replace(/vo[ji]?ith\s*turbo/ig, " ")
-      .replace(/([a-z\u00e0-\u00ff])([A-Z\u00c0-\u00dd])/g, "$1 $2")
-      .replace(/\s+/g, " ")
-      .trim();
-    s = s.replace(/\b[a-zA-Z]\b$/g, "").replace(/^\b[a-zA-Z]\b\s+/g, "").trim();
-    if (!s) return "";
-    return bestKnownMatch(s, knownResps, 0.70);
-  };
-
-  const cleanRangeNumOcr = (raw) => {
-    const s = String(raw || "").replace(/[^\d,.-]/g, "").replace(/\.+/g, ",").replace(/,+/g, ",").replace(/^,+|,+$/g, "").trim();
-    return s;
-  };
-
-  const cleanCcOcr = (raw) => {
-    let s = String(raw || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-    const m = s.match(/(\d{4})\s*([A-Z])?/);
-    return m ? (m[2] ? `${m[1]} ${m[2]}` : m[1]) : s;
-  };
-
-  const formatRange = (ini, fim) => {
-    const a = cleanRangeNumOcr(ini);
-    const b = cleanRangeNumOcr(fim);
-    if (a && b) return `${a} ~ ${b}`;
-    return a || b || "";
-  };
-
-  /* -------------------- MOTOR OCR POR GRADE E CELULA (v3.0) -------------------- */
-  const loadTesseract = () => {
-    if (window.Tesseract && (typeof window.Tesseract.createWorker === "function" || typeof window.Tesseract.recognize === "function")) {
-      return Promise.resolve(window.Tesseract);
-    }
-    return new Promise((resolve, reject) => {
-      const existing = document.querySelector(`script[src="${TESSERACT_CDN}"]`);
-      if (existing) {
-        existing.addEventListener("load", () => resolve(window.Tesseract));
-        existing.addEventListener("error", () => reject(new Error("Falha ao carregar OCR.")));
-        return;
-      }
-      const sc = document.createElement("script");
-      sc.src = TESSERACT_CDN;
-      sc.async = true;
-      sc.onload = () => resolve(window.Tesseract);
-      sc.onerror = () => reject(new Error("N\u00e3o foi poss\u00edvel carregar o motor OCR (Tesseract)."));
-      document.head.appendChild(sc);
-    });
-  };
-
-  const blobToImage = (blob) => new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Imagem inv\u00e1lida ou corrompida.")); };
-    img.src = url;
-  });
-
-  const groupPositions = (arr, gap = 3) => {
-    if (!arr.length) return [];
-    const groups = [];
-    let s = arr[0], e = arr[0];
-    for (let i = 1; i < arr.length; i++) {
-      if (arr[i] <= e + gap) e = arr[i];
-      else { groups.push({ start: s, end: e, mid: Math.round((s + e) / 2), thick: e - s + 1 }); s = e = arr[i]; }
-    }
-    groups.push({ start: s, end: e, mid: Math.round((s + e) / 2), thick: e - s + 1 });
-    return groups;
-  };
-
-  const detectExcelGrid = (rawCanvas) => {
-    const W = rawCanvas.width, H = rawCanvas.height;
-    if (W < 250 || H < 60) return null;
-    const ctx = rawCanvas.getContext("2d", { willReadFrequently: true });
-    const data = ctx.getImageData(0, 0, W, H).data;
-
-    const xScanStart = Math.floor(W * 0.03);
-    const xScanEnd = Math.ceil(W * 0.97);
-    const xSpan = Math.max(1, xScanEnd - xScanStart);
-
-    // 1. Detecta linhas horizontais (bordas da tabela)
-    const hLineYs = [];
-    for (let y = 0; y < H; y++) {
-      let nonWhite = 0;
-      let bluePx = 0;
-      for (let x = xScanStart; x < xScanEnd; x++) {
-        const idx = (y * W + x) * 4;
-        const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-        if (b > r + 18 && b > 140) bluePx++;
-        if (gray < 224) nonWhite++;
-      }
-      if (bluePx / xSpan > 0.35) continue; // ignora barra azul "Informacoes do Instrumento"
-      if (nonWhite / xSpan > 0.62) hLineYs.push(y);
-    }
-
-    const hGroups = groupPositions(hLineYs, 2);
-    const yBounds = [];
-    hGroups.forEach((g) => {
-      if (g.thick <= 7) {
-        yBounds.push(g.mid);
-      } else {
-        // Faixa cinza sombreada (ex: cabecalho) -> borda superior e inferior
-        yBounds.push(g.start);
-        yBounds.push(g.end);
-      }
-    });
-    if (!yBounds.length || yBounds[0] > 8) yBounds.unshift(0);
-    if (yBounds[yBounds.length - 1] < H - 8) yBounds.push(H - 1);
-
-    const uniqueY = [];
-    yBounds.sort((a, b) => a - b).forEach((y) => {
-      if (!uniqueY.length || y - uniqueY[uniqueY.length - 1] >= 10) uniqueY.push(y);
-    });
-
-    const rowBands = [];
-    for (let i = 0; i < uniqueY.length - 1; i++) {
-      const y1 = uniqueY[i], y2 = uniqueY[i + 1];
-      const rh = y2 - y1;
-      if (rh < 12 || rh > Math.max(95, H * 0.42)) continue;
-
-      // Verifica se a banda e a barra azul do titulo
-      let blueCnt = 0, sampleCnt = 0;
-      const midY = Math.floor((y1 + y2) / 2);
-      for (let x = xScanStart; x < xScanEnd; x += 4) {
-        const idx = (midY * W + x) * 4;
-        if (data[idx + 2] > data[idx] + 16 && data[idx + 2] > 145) blueCnt++;
-        sampleCnt++;
-      }
-      if (sampleCnt > 0 && blueCnt / sampleCnt > 0.30) continue;
-      rowBands.push({ y1, y2, h: rh });
-    }
-
-    if (rowBands.length < 2) return null;
-
-    // 2. Detecta linhas verticais dentro da regiao das linhas da tabela
-    const tableTop = rowBands[0].y1;
-    const tableBot = rowBands[rowBands.length - 1].y2;
-    const tHeight = Math.max(1, tableBot - tableTop);
-
-    const vLineXs = [];
-    for (let x = 0; x < W; x++) {
-      let darkCnt = 0;
-      for (let y = tableTop; y < tableBot; y++) {
-        const idx = (y * W + x) * 4;
-        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-        if (gray < 222) darkCnt++;
-      }
-      if (darkCnt / tHeight > 0.68) vLineXs.push(x);
-    }
-
-    const vGroups = groupPositions(vLineXs, 3);
-    const xBounds = vGroups.map((g) => g.mid);
-    if (!xBounds.length || xBounds[0] > 12) xBounds.unshift(0);
-    if (xBounds[xBounds.length - 1] < W - 12) xBounds.push(W - 1);
-
-    const uniqueX = [];
-    xBounds.sort((a, b) => a - b).forEach((x) => {
-      if (!uniqueX.length || x - uniqueX[uniqueX.length - 1] >= 24) uniqueX.push(x);
-    });
-
-    const colBands = [];
-    for (let i = 0; i < uniqueX.length - 1; i++) {
-      colBands.push({ x1: uniqueX[i], x2: uniqueX[i + 1], w: uniqueX[i + 1] - uniqueX[i] });
-    }
-
-    if (colBands.length < 4 || colBands.length > 14) return null;
-    return { rowBands, colBands };
-  };
-
-  const cropCleanCellCanvas = (rawCanvas, x1, y1, x2, y2, isHeader = false) => {
-    const rawW = x2 - x1, rawH = y2 - y1;
-    const insetX = Math.min(4, Math.max(2, Math.floor(rawW * 0.03)));
-    const insetRight = isHeader && rawW > 46 ? Math.min(18, Math.floor(rawW * 0.22)) : insetX;
-    const insetY = Math.min(3, Math.max(2, Math.floor(rawH * 0.10)));
-
-    const sx = Math.max(0, x1 + insetX);
-    const sy = Math.max(0, y1 + insetY);
-    const sw = Math.max(4, x2 - insetRight - sx);
-    const sh = Math.max(4, y2 - insetY - sy);
-
-    const rawCtx = rawCanvas.getContext("2d", { willReadFrequently: true });
-    const src = rawCtx.getImageData(sx, sy, sw, sh);
-    const d = src.data;
-
-    // Limpa triangulos verdes do Excel no canto superior esquerdo e calcula contraste
-    let darkCount = 0;
-    let minG = 255;
-    for (let py = 0; py < sh; py++) {
-      for (let px = 0; px < sw; px++) {
-        const idx = (py * sw + px) * 4;
-        const r = d[idx], g = d[idx + 1], b = d[idx + 2];
-        const isCornerGreen = px < 12 && py < 12 && (g > r + 8 && g > b + 8);
-        const isStrongGreen = g > r + 18 && g > b + 18;
-        if (isCornerGreen || isStrongGreen) {
-          d[idx] = d[idx + 1] = d[idx + 2] = 255;
-          continue;
-        }
-        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-        if (gray < 195) darkCount++;
-        if (gray < minG) minG = gray;
-        d[idx] = d[idx + 1] = d[idx + 2] = gray;
-      }
-    }
-
-    if (darkCount < 5) return null;
-
-    // Estira contraste suavemente mantendo fundo branco puro e texto nitido (ideal para LSTM)
-    const whitePoint = isHeader ? 205 : 222;
-    const blackPoint = Math.min(120, Math.max(20, minG + 10));
-    const span = Math.max(30, whitePoint - blackPoint);
-    for (let i = 0; i < d.length; i += 4) {
-      const g = d[i];
-      let v;
-      if (g >= whitePoint) v = 255;
-      else if (g <= blackPoint) v = 0;
-      else v = Math.round(((g - blackPoint) / span) * 255);
-      d[i] = d[i + 1] = d[i + 2] = v;
-    }
-
-    const tmp = document.createElement("canvas");
-    tmp.width = sw;
-    tmp.height = sh;
-    tmp.getContext("2d").putImageData(src, 0, 0);
-
-    // Upscale para altura alvo ~100px (caracteres ~40-50px) com margem branca generosa
-    const scale = Math.min(5, Math.max(3, Math.round(100 / Math.max(sh, 10))));
-    const pad = 28;
-    const out = document.createElement("canvas");
-    out.width = sw * scale + pad * 2;
-    out.height = sh * scale + pad * 2;
-    const octx = out.getContext("2d");
-    octx.fillStyle = "#ffffff";
-    octx.fillRect(0, 0, out.width, out.height);
-    octx.imageSmoothingEnabled = true;
-    octx.imageSmoothingQuality = "high";
-    octx.drawImage(tmp, pad, pad, sw * scale, sh * scale);
-    return out;
-  };
-
-  const preprocessWholeImageFallback = (img) => {
-    const scale = Math.min(4, Math.max(2.5, 2800 / Math.max(img.width, 1)));
-    const w = Math.min(3800, Math.round(img.width * scale));
-    const h = Math.round(img.height * (w / img.width));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, w, h);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, 0, 0, w, h);
-
-    const imgData = ctx.getImageData(0, 0, w, h);
-    const d = imgData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      if ((g > r + 16 && g > b + 16) || (b > r + 22 && b > 155)) {
-        d[i] = d[idxOr(i, 1)] = d[idxOr(i, 2)] = 255;
-        continue;
-      }
-      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      const v = gray > 218 ? 255 : (gray < 65 ? 0 : Math.round(((gray - 65) / 153) * 255));
-      d[i] = d[i + 1] = d[i + 2] = v;
-    }
-    ctx.putImageData(imgData, 0, 0);
-    return canvas;
-  };
-
-  const idxOr = (i, off) => i + off;
-
-  const mapHeaderToField = (txt, colIdx, totalCols) => {
-    const h = norm(txt);
-    if (/instrument|cod|tag|patrim/.test(h)) return "code";
-    if (/descri|equip|nome/.test(h)) return "desc";
-    if (/data|proxim|valid|cal/.test(h)) return "validade";
-    if (/centro|custo|\bcc\b/.test(h)) return "cc";
-    if (/setor|chapa|area/.test(h)) return "setor";
-    if (/respons|tecnic|gestor/.test(h)) return "responsavel";
-    if (/faixa.*inic|min/.test(h)) return "faixaIni";
-    if (/faixa.*fin|max/.test(h)) return "faixaFim";
-    if (/faixa|capac/.test(h)) return "faixa";
-    if (totalCols === 8) {
-      return ["code", "desc", "validade", "cc", "setor", "responsavel", "faixaIni", "faixaFim"][colIdx] || "";
-    }
-    return "";
-  };
-
-  const runSmartOcrOnBlob = async (blob, onProgress) => {
-    const [Tesseract, img] = await Promise.all([loadTesseract(), blobToImage(blob)]);
-    const known = getFleetKnownValues();
-
-    const rawCanvas = document.createElement("canvas");
-    rawCanvas.width = img.width;
-    rawCanvas.height = img.height;
-    const rctx = rawCanvas.getContext("2d", { willReadFrequently: true });
-    rctx.fillStyle = "#ffffff";
-    rctx.fillRect(0, 0, rawCanvas.width, rawCanvas.height);
-    rctx.drawImage(img, 0, 0);
-
-    const grid = detectExcelGrid(rawCanvas);
-
-    // MODO A: Grade de Excel / Listagem Voith detectada -> OCR celula por celula com alta precisao
-    if (grid && typeof Tesseract.createWorker === "function") {
-      onProgress("Grade de tabela detectada! Iniciando leitura de alta precis\u00e3o...");
-      const worker = await Tesseract.createWorker("por");
-      try {
-        // Filtra apenas linhas que realmente possuem conteudo (pula linhas em branco no rodape)
-        const nonEmptyRows = [];
-        for (let r = 0; r < grid.rowBands.length; r++) {
-          const rb = grid.rowBands[r];
-          let filledCols = 0;
-          for (let c = 0; c < grid.colBands.length; c++) {
-            const cb = grid.colBands[c];
-            if (cropCleanCellCanvas(rawCanvas, cb.x1, rb.y1, cb.x2, rb.y2, false)) filledCols++;
-          }
-          if (filledCols >= 2) nonEmptyRows.push(rb);
-        }
-
-        if (nonEmptyRows.length >= 2) {
-          const readCell = async (canvas, whitelist = "") => {
-            if (!canvas) return "";
-            await worker.setParameters({
-              tessedit_pageseg_mode: "7",
-              tessedit_char_whitelist: whitelist
-            });
-            const res = await worker.recognize(canvas);
-            return String((res && res.data && res.data.text) || "").replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
-          };
-
-          // Verifica se a primeira linha preenchida e cabecalho
-          let startRow = 0;
-          const colMap = new Array(grid.colBands.length).fill("");
-          const firstRow = nonEmptyRows[0];
-          const probe0 = await readCell(cropCleanCellCanvas(rawCanvas, grid.colBands[0].x1, firstRow.y1, grid.colBands[0].x2, firstRow.y2, true));
-          const probe1 = await readCell(cropCleanCellCanvas(rawCanvas, grid.colBands[1].x1, firstRow.y1, grid.colBands[1].x2, firstRow.y2, true));
-
-          if (/instrument|cod|tag|patrim/i.test(norm(probe0)) || /descri|equip/i.test(norm(probe1))) {
-            startRow = 1;
-            colMap[0] = mapHeaderToField(probe0, 0, grid.colBands.length) || "code";
-            colMap[1] = mapHeaderToField(probe1, 1, grid.colBands.length) || "desc";
-            onProgress("Mapeando colunas do cabe\u00e7alho...");
-            for (let c = 2; c < grid.colBands.length; c++) {
-              const hCell = cropCleanCellCanvas(rawCanvas, grid.colBands[c].x1, firstRow.y1, grid.colBands[c].x2, firstRow.y2, true);
-              const hTxt = await readCell(hCell);
-              colMap[c] = mapHeaderToField(hTxt, c, grid.colBands.length);
-            }
-          }
-
-          // Garante fallback padrao das 8 colunas Voith se algum cabecalho ficou vazio
-          const std8 = ["code", "desc", "validade", "cc", "setor", "responsavel", "faixaIni", "faixaFim"];
-          if (grid.colBands.length === 8) {
-            for (let c = 0; c < 8; c++) {
-              if (!colMap[c]) colMap[c] = std8[c];
-            }
-          } else {
-            for (let c = 0; c < grid.colBands.length; c++) {
-              if (!colMap[c] && std8[c]) colMap[c] = std8[c];
-            }
-          }
-
-          const dataRows = nonEmptyRows.slice(startRow);
-          const items = [];
-          const tsvLines = [];
-
-          for (let r = 0; r < dataRows.length; r++) {
-            const rb = dataRows[r];
-            onProgress(`Lendo linha ${r + 1} de ${dataRows.length} (precis\u00e3o por c\u00e9lula)...`);
-
-            const rowObj = { code: "", desc: "", validade: "", cc: "", setor: "", responsavel: "", faixaIni: "", faixaFim: "", faixa: "" };
-
-            for (let c = 0; c < grid.colBands.length; c++) {
-              const field = colMap[c];
-              if (!field) continue;
-              const cb = grid.colBands[c];
-              const cellCanvas = cropCleanCellCanvas(rawCanvas, cb.x1, rb.y1, cb.x2, rb.y2, false);
-              if (!cellCanvas) continue;
-
-              let wl = "";
-              if (field === "code") wl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-";
-              else if (field === "validade") wl = "0123456789/.-";
-              else if (field === "faixaIni" || field === "faixaFim") wl = "0123456789,.-";
-              else if (field === "cc") wl = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -";
-
-              const rawCellTxt = await readCell(cellCanvas, wl);
-              if (field === "code") rowObj.code = cleanCodeOcr(rawCellTxt);
-              else if (field === "desc") rowObj.desc = cleanDescOcr(rawCellTxt, known.descs);
-              else if (field === "validade") rowObj.validade = normalizeDateBR(rawCellTxt);
-              else if (field === "cc") rowObj.cc = cleanCcOcr(rawCellTxt);
-              else if (field === "setor") rowObj.setor = mapSectorName(rawCellTxt);
-              else if (field === "responsavel") rowObj.responsavel = cleanRespOcr(rawCellTxt, known.resps);
-              else if (field === "faixaIni") rowObj.faixaIni = cleanRangeNumOcr(rawCellTxt);
-              else if (field === "faixaFim") rowObj.faixaFim = cleanRangeNumOcr(rawCellTxt);
-              else if (field === "faixa") rowObj.faixa = rawCellTxt;
-            }
-
-            if (!rowObj.faixa) rowObj.faixa = formatRange(rowObj.faixaIni, rowObj.faixaFim);
-
-            if (rowObj.code || rowObj.desc) {
-              items.push(rowObj);
-              tsvLines.push([rowObj.code, rowObj.desc, rowObj.validade, rowObj.cc, rowObj.setor, rowObj.responsavel, rowObj.faixaIni, rowObj.faixaFim].join("\t"));
-            }
-          }
-
-          if (items.length > 0) {
-            return { items, rawText: tsvLines.join("\n"), mode: "grid" };
-          }
-        }
-      } finally {
-        await worker.terminate();
-      }
-    }
-
-    // MODO B: Fallback para fotos sem grade (ex: foto de celular ou lista sem bordas)
-    onProgress("Lendo texto da imagem (modo livre)...");
-    const cleanCanvas = preprocessWholeImageFallback(img);
-    const res = await Tesseract.recognize(cleanCanvas, "por", {
-      logger: (m) => {
-        if (m && m.status === "recognizing text" && typeof m.progress === "number") {
-          onProgress(`Lendo dados da imagem (${Math.round(m.progress * 100)}%)...`);
-        }
-      }
-    });
-    const text = (res && res.data && res.data.text) || "";
-    return { items: parseVoithLines(text), rawText: text, mode: "free" };
-  };
-
-  /* -------------------- PARSER DE TEXTO / EXCEL COLADO -------------------- */
-  const parseTrailingDetails = (restRaw, known) => {
-    let rest = String(restRaw || "").trim();
-    let cc = "", setor = "", responsavel = "", faixaIni = "", faixaFim = "";
-    if (!rest) return { cc, setor, responsavel, faixaIni, faixaFim };
-
-    const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
-    if (ccm) {
-      cc = ccm[1].trim().toUpperCase();
-      rest = rest.slice(ccm[0].length).trim();
-    }
-
-    const fm = rest.match(/['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s+['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s*$/);
-    if (fm) {
-      faixaIni = cleanRangeNumOcr(fm[1]);
-      faixaFim = cleanRangeNumOcr(fm[2]);
-      rest = rest.slice(0, fm.index).trim();
-    }
-
-    const sm = rest.match(/(?:vo[ji]?ith\s*turbo\s*)?\(([^)]+)\)/i);
-    if (sm) {
-      setor = mapSectorName(sm[1]);
-      rest = (rest.slice(0, sm.index) + " " + rest.slice(sm.index + sm[0].length)).trim();
-    } else {
-      const kw = rest.match(/(ferrovi[a\u00e1]ria(?:\s+redutor)?|automotive(?:\/engates)?|industrial|qualidade|vorecon|metrologia)/i);
-      if (kw) {
-        setor = mapSectorName(kw[1]);
-        rest = (rest.slice(0, kw.index) + " " + rest.slice(kw.index + kw[0].length)).trim();
-      }
-    }
-
-    responsavel = cleanRespOcr(rest, known.resps);
-    return { cc, setor, responsavel, faixaIni, faixaFim };
-  };
-
-  const parseVoithLines = (rawText) => {
-    const known = getFleetKnownValues();
-    const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const items = [];
-    const seen = new Set();
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.includes("\t")) {
-        const cols = line.split("\t").map((c) => c.trim());
-        while (cols.length && !cols[0]) cols.shift();
-        if (cols.length < 2) continue;
-
-        const c0Norm = norm(cols[0]);
-        if (/^(instrumento|codigo|cod|patrimonio|tag|informacoes|listagem|total)$/.test(c0Norm)) continue;
-
-        const code = cleanCodeOcr(cols[0]);
-        if (!code || code.length < 3 || code.length > 30 || !/[A-Z0-9]/.test(code)) continue;
-        if (seen.has(code)) continue;
-        seen.add(code);
-
-        const desc = cols[1] || "";
-        let validade = normalizeDateBR(cols[2] || "");
-        let cc = cols[3] || "";
-        let setor = mapSectorName(cols[4] || "");
-        let responsavel = cols[5] || "";
-        let faixaIni = cols[6] || "";
-        let faixaFim = cols[7] || "";
-
-        if (!validade) {
-          for (let c = 1; c < cols.length; c++) {
-            const d = normalizeDateBR(cols[c]);
-            if (d) { validade = d; break; }
-          }
-        }
-
-        items.push({ code, desc, validade, cc, setor, responsavel, faixaIni, faixaFim, faixa: formatRange(faixaIni, faixaFim) });
-        continue;
-      }
-
-      const clean = line.replace(/[|\u00a6\[\]{}]/g, " ").replace(/[_\u2014\u2013]+/g, " ").replace(/\s+/g, " ").trim();
-      const cm = clean.match(/\b([A-Z]{2,4}\s*[-]?\s*\d{4,7}[A-Z0-9-]*)\b/i);
-      if (!cm) continue;
-
-      const code = cleanCodeOcr(cm[1]);
-      if (!code || seen.has(code)) continue;
-      seen.add(code);
-
-      const afterCode = clean.slice(cm.index + cm[0].length).trim();
-      const dm = afterCode.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
-
-      let desc = "", validade = "", rest = "";
-      if (dm) {
-        desc = cleanDescOcr(afterCode.slice(0, dm.index), known.descs);
-        validade = normalizeDateBR(dm[1]);
-        rest = afterCode.slice(dm.index + dm[0].length).trim();
-      } else {
-        desc = cleanDescOcr(afterCode, known.descs);
-      }
-
-      const det = parseTrailingDetails(rest, known);
-      items.push({
-        code, desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
-        faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim)
-      });
-    }
-
-    if (!items.length && lines.length) {
-      const joined = lines.join(" ").replace(/[|\u00a6\[\]{}]/g, " ").replace(/\s*:\s*/g, " ").replace(/\s+/g, " ").trim();
-      const dm = joined.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
-      if (dm) {
-        const desc = cleanDescOcr(joined.slice(0, dm.index), known.descs);
-        const validade = normalizeDateBR(dm[1]);
-        const rest = joined.slice(dm.index + dm[0].length).trim();
-        const det = parseTrailingDetails(rest, known);
-        items.push({
-          code: "", desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
-          faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim), missingCode: true
-        });
-      }
-    }
-    return items;
-  };
-
-  /* -------------------- LOCALIZADORES DE MODAIS NATIVOS (INVENTARIO + PERDIDOS) -------------------- */
-  const findSaveBtnIn = (root, requireEnabled = false) => {
-    if (!root) return null;
-    const btns = Array.from(root.querySelectorAll("button")).filter((b) => isVisible(b) && (!requireEnabled || !b.disabled));
-    const exact = btns.find((b) => /^(salvar|cadastrar|criar|adicionar|gravar|confirmar)$/.test(norm(b.textContent)));
-    if (exact) return exact;
-    return btns.find((b) => {
-      const t = norm(b.textContent);
-      return /(salvar|cadastrar|criar|gravar)/.test(t) && !/(proximo|cancelar|fechar|novo item|imagem|limpar|atalho|perdido)/.test(t);
-    }) || null;
-  };
-
-  const closeNativeModal = (card) => {
-    if (!card || !isVisible(card)) return;
-    const cBtn = Array.from(card.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b)) return false;
-      const raw = String(b.textContent || "").trim();
-      const t = norm(b.textContent);
-      return raw === "\u00d7" || raw === "x" || raw === "X" || raw === "\u2715" || t === "cancelar" || t === "fechar";
-    });
-    if (cBtn) cBtn.click();
-  };
-
-  // 1. Modal nativo vermelho: "Cadastrar Perdido / Desativado"
-  const findOpenLostCreateModal = () => {
-    const headers = Array.from(document.querySelectorAll("h1, h2, h3, h4, div, span")).filter((el) => {
-      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress")) return false;
-      if (el.children.length > 3) return false;
-      const t = norm(el.textContent);
-      return t.length <= 50 && (t.includes("cadastrar perdido") || t === "perdido / desativado");
-    });
-
-    for (let i = headers.length - 1; i >= 0; i--) {
-      let cur = headers[i].parentElement;
-      for (let depth = 0; depth < 8 && cur && cur !== document.body; depth++) {
-        if (cur.id && cur.id.startsWith("vu-")) break;
-        const inputs = Array.from(cur.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), textarea, select")).filter(isVisible);
-        const saveBtn = findSaveBtnIn(cur, false);
-        if (inputs.length >= 4 && saveBtn && !String(cur.textContent || "").includes("Monitoramento de Frota")) {
-          return cur;
-        }
-        cur = cur.parentElement;
-      }
-    }
-    return null;
-  };
-
-  const findLostTabButton = () => {
-    return Array.from(document.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-lost-subbar")) return false;
-      const t = norm(b.textContent);
-      return /^perdidos\s*\(\d+\)$/.test(t) || t === "perdidos" || t.includes("perdidos / desativados");
-    }) || null;
-  };
-
-  const findOpenLostCreateButton = () => {
-    return Array.from(document.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-lost-subbar")) return false;
-      const t = norm(b.textContent);
-      return (
-        t.includes("cadastrar perdido") ||
-        t.includes("novo perdido") ||
-        t.includes("adicionar perdido") ||
-        t.includes("registrar perdido") ||
-        t.includes("+ perdido") ||
-        t.includes("perdido / desativado")
-      );
-    }) || null;
-  };
-
-  const ensureOnLabBaixasLostTab = async () => {
-    let btn = findOpenLostCreateButton();
-    if (btn) return btn;
-
-    const labNav = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, button")).find((b) => {
-      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-img-progress")) return false;
-      const t = norm(b.textContent);
-      return t.includes("lab & baixas") || t.includes("lab e baixas") || t === "baixas";
-    });
-    if (labNav) {
-      labNav.click();
-      await sleep(360);
-    }
-
-    const lostTab = findLostTabButton();
-    if (lostTab) {
-      lostTab.click();
-      await sleep(320);
-    }
-
-    for (let k = 0; k < 10; k++) {
-      btn = findOpenLostCreateButton();
-      if (btn) return btn;
-      await sleep(120);
-    }
-    return null;
-  };
-
-  // 2. Drawer nativo: "+ Novo Item" (Inventario)
-  const findNewItemButton = () => {
-    return Array.from(document.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-bulk-modal")) return false;
-      const t = norm(b.textContent);
-      if (t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento")) return true;
-      if (t === "+" && b.getBoundingClientRect().top < 90) return true;
-      return false;
-    }) || null;
-  };
-
-  const findInstrumentFormDrawer = () => {
-    const anchors = Array.from(document.querySelectorAll("label, span, p, div, h1, h2, h3")).filter((el) => {
-      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress") || el.closest("#vu-bulk-modal")) return false;
-      if (el.children.length > 2) return false;
-      const t = norm(el.textContent);
-      return (
-        t.length >= 5 &&
-        t.length <= 50 &&
-        /^(descricao do instrumento|localizacao fisica|status metrologico|faixa minima|novo instrumento|novo item)/.test(t)
-      );
-    });
-
-    for (let i = anchors.length - 1; i >= 0; i--) {
-      let cur = anchors[i].parentElement;
-      for (let depth = 0; depth < 10 && cur && cur !== document.body; depth++) {
-        if (cur.id && cur.id.startsWith("vu-")) break;
-        const controls = Array.from(cur.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).filter(isVisible);
-        const saveBtn = findSaveBtnIn(cur, false);
-        const hasMainApp = Boolean(cur.querySelector("aside nav")) || String(cur.textContent || "").includes("Monitoramento de Frota");
-        if (controls.length >= 4 && saveBtn && !hasMainApp) return cur;
-        cur = cur.parentElement;
-      }
-    }
-    return null;
-  };
-
-  const isDrawerInEditMode = (card) => {
-    if (!card || !isVisible(card)) return true;
-    const visBtns = Array.from(card.querySelectorAll("button")).filter(isVisible);
-    if (visBtns.some((b) => {
-      const t = norm(b.textContent);
-      return t === "excluir" || t.includes("mover p/ perdidos") || t === "cautela" || t === "copiar";
-    })) return true;
-
-    const visHeads = Array.from(card.querySelectorAll("h1, h2, h3, h4, span, div")).filter((el) => {
-      if (!isVisible(el) || el.children.length > 2) return false;
-      const len = String(el.textContent || "").trim().length;
-      return len > 0 && len <= 75;
-    });
-    if (visHeads.some((el) => /^novo (instrumento|item)/.test(norm(el.textContent)))) return false;
-    return visHeads.some((el) => /\b[a-z]{2}\d{4,}\b/.test(norm(el.textContent)));
-  };
-
-  const isOnLostScreen = () => {
-    if (findOpenLostCreateModal()) return true;
-    if (findOpenLostCreateButton()) return true;
-    const hash = norm(window.location.hash || "");
-    if (hash.includes("lab") || hash.includes("lost") || hash.includes("baixa")) return true;
-    return Boolean(findLostTabButton());
-  };
-
-  /* -------------------- FILA 1: CRIAR NOVOS NO INVENTARIO -------------------- */
-  const createInventoryQueue = async (rows) => {
-    const impModal = document.getElementById("vu-img-modal");
-    if (impModal) impModal.remove();
-
-    let prog = document.getElementById("vu-img-progress");
-    if (prog) prog.remove();
-    prog = document.createElement("div");
-    prog.id = "vu-img-progress";
-    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483050;width:min(470px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
-    document.body.appendChild(prog);
-
-    const ok = [], fail = [];
-    const drawProg = (idx, code, msg) => {
-      const pct = Math.round((idx / rows.length) * 100);
-      prog.innerHTML =
-        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
-          `<span>Criando Instrumentos (${idx}/${rows.length})</span><span style="color:#7dd3fc;">${pct}%</span>` +
-        `</div>` +
-        `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + escHtml(code) + "</strong>" : ""}</div>` +
-        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#22c55e;transition:width .2s;"></div></div>`;
-    };
-
-    for (let i = 0; i < rows.length; i++) {
-      const it = rows[i];
-      drawProg(i, it.code, "Abrindo cadastro e preenchendo dados");
-
-      let card = findInstrumentFormDrawer();
-      if (card && isDrawerInEditMode(card)) {
-        closeNativeModal(card);
-        await sleep(250);
-        card = null;
-      }
-
-      if (!card) {
-        const newBtn = findNewItemButton();
-        if (!newBtn) { fail.push(`${it.code} (bot\u00e3o + Novo Item n\u00e3o encontrado)`); continue; }
-        newBtn.click();
-        for (let t = 0; t < 30; t++) {
-          await sleep(100);
-          card = findInstrumentFormDrawer();
-          if (card) break;
-        }
-      }
-
-      if (!card) { fail.push(`${it.code} (janela de cadastro n\u00e3o abriu)`); continue; }
-
-      const controls = Array.from(card.querySelectorAll("input, select, textarea")).filter((el) => {
-        if (!isVisible(el) || el.disabled || el.readOnly) return false;
-        const tp = String(el.type || "").toLowerCase();
-        return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
-      });
-
-      const used = new Set();
-      const fillBy = (val, regex, excludeRegex, tagFilter) => {
-        if (!val) return false;
-        const target = controls.find((el) => {
-          if (used.has(el)) return false;
-          if (tagFilter && !tagFilter(el)) return false;
-          const h = getFieldHint(el);
-          if (excludeRegex && excludeRegex.test(h)) return false;
-          return regex.test(h);
-        });
-        if (target && setControlValue(target, val)) { used.add(target); return true; }
-        return false;
-      };
-
-      const filledCode = fillBy(it.code, /(codigo|code|patrimonio|tag|identif|ac4)/, /(setor|centro|custo)/);
-      if (!filledCode && controls[0]) { setControlValue(controls[0], it.code); used.add(controls[0]); }
-      if (it.cc) fillBy(it.cc, /(centro|custo|cc)/, /(obs)/);
-      fillBy(it.desc, /(descri|instrument|nome|equip|modelo|tipo)/, /(codigo|code|setor|respons|faixa|obs|centro)/);
-
-      const filledIni = fillBy(it.faixaIni, /(faixa\s*min|minima|min|inicial)/, /(final|max)/);
-      const filledFim = fillBy(it.faixaFim, /(faixa\s*max|maxima|max|final)/, /(inic|min)/);
-      if (!filledIni && !filledFim) fillBy(it.faixa, /(faixa|capac|range|medicao|escala)/, /(setor|data|valid)/);
-
-      fillBy(it.setor, /(setor|sector|area|chapa|divis|depart)/, /(local|armario|respons)/);
-      fillBy(it.responsavel, /(respons|tecnic|colaborad|gestor|owner|holder)/, /(setor|local|armario)/);
-
-      const filledDate =
-        fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast)/, (el) => el.type === "date") ||
-        fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast|period|meses)/);
-      if (!filledDate && it.validade) {
-        const anyDate = controls.find((el) => !used.has(el) && el.type === "date");
-        if (anyDate && setControlValue(anyDate, it.validade)) used.add(anyDate);
-      }
-
-      await sleep(200);
-      const saveBtn = findSaveBtnIn(card, true) || findSaveBtnIn(card, false);
-      if (!saveBtn) { fail.push(`${it.code} (bot\u00e3o salvar n\u00e3o encontrado)`); closeNativeModal(card); continue; }
-
-      saveBtn.click();
-      await sleep(950);
-
-      const stillOpen = findInstrumentFormDrawer();
-      if (stillOpen) { closeNativeModal(stillOpen); await sleep(240); }
-
-      ok.push(it.code);
-      drawProg(i + 1, it.code, "Cadastrado com sucesso");
-    }
-
-    prog.innerHTML =
-      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
-        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} instrumento(s) criado(s)</div>` +
-        `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
-      `</div>` +
-      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${escHtml(fail.join(", "))}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Itens adicionados ao Invent\u00e1rio.</div>`);
-    prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
-    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 7000);
-  };
-
-  /* -------------------- FILA 2: CRIAR PERDIDOS / VENCIDOS / DESATIVADOS NO MODAL NATIVO -------------------- */
-  const createLostQueue = async (rows) => {
-    const impModal = document.getElementById("vu-img-modal");
-    if (impModal) impModal.remove();
-
-    let prog = document.getElementById("vu-img-progress");
-    if (prog) prog.remove();
-    prog = document.createElement("div");
-    prog.id = "vu-img-progress";
-    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483050;width:min(470px,92vw);background:#4c0519;color:#ffffff;border:1px solid #fb7185;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
-    document.body.appendChild(prog);
-
-    const ok = [], fail = [];
-    const drawProg = (idx, code, msg) => {
-      const pct = Math.round((idx / rows.length) * 100);
-      prog.innerHTML =
-        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
-          `<span>Cadastrando Perdidos / Desativados (${idx}/${rows.length})</span><span style="color:#fda4af;">${pct}%</span>` +
-        `</div>` +
-        `<div style="font-size:12px;color:#ffe4e6;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + escHtml(code) + "</strong>" : ""}</div>` +
-        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#fb7185;transition:width .2s;"></div></div>`;
-    };
-
-    for (let i = 0; i < rows.length; i++) {
-      const it = rows[i];
-      const catId = LOST_CATEGORIES[it.category] ? it.category : "perdido";
-      drawProg(i, it.code, `Abrindo cadastro (${LOST_CATEGORIES[catId].label})`);
-
-      let modal = findOpenLostCreateModal();
-      if (!modal) {
-        const openBtn = await ensureOnLabBaixasLostTab();
-        if (!openBtn) {
-          fail.push(`${it.code} (bot\u00e3o Cadastrar Perdido n\u00e3o encontrado)`);
-          continue;
-        }
-        openBtn.click();
-        for (let t = 0; t < 25; t++) {
-          await sleep(100);
-          modal = findOpenLostCreateModal();
-          if (modal) break;
-        }
-      }
-
-      if (!modal) {
-        fail.push(`${it.code} (modal Cadastrar Perdido n\u00e3o abriu)`);
-        continue;
-      }
-
-      const controls = Array.from(modal.querySelectorAll("input, textarea, select")).filter((el) => {
-        if (!isVisible(el) || el.disabled || el.readOnly) return false;
-        const tp = String(el.type || "").toLowerCase();
-        return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
-      });
-
-      const used = new Set();
-      const fillBy = (val, regex, excludeRegex) => {
-        if (!val) return false;
-        const target = controls.find((el) => {
-          if (used.has(el)) return false;
-          const h = getFieldHint(el);
-          if (excludeRegex && excludeRegex.test(h)) return false;
-          return regex.test(h);
-        });
-        if (target && setControlValue(target, val)) { used.add(target); return true; }
-        return false;
-      };
-
-      // Ordem exata do modal "Cadastrar Perdido / Desativado": CODIGO, C. CUSTO, DESCRICAO, SETOR, ULTIMA CALIBRACAO, MOTIVO / OBSERVACAO
-      if (!fillBy(it.code, /(codigo|code|patrimonio)/, /(custo|setor)/) && controls[0]) {
-        setControlValue(controls[0], it.code); used.add(controls[0]);
-      }
-      if (it.cc) {
-        if (!fillBy(it.cc, /(c\.?\s*custo|centro|custo|cc)/, /(codigo|obs)/) && controls[1] && !used.has(controls[1])) {
-          setControlValue(controls[1], it.cc); used.add(controls[1]);
-        }
-      }
-      if (it.desc) {
-        if (!fillBy(it.desc, /(descri|instrument|equip)/, /(codigo|custo|motivo|obs)/) && controls[2] && !used.has(controls[2])) {
-          setControlValue(controls[2], it.desc); used.add(controls[2]);
-        }
-      }
-      if (it.setor) {
-        if (!fillBy(it.setor, /(setor|sector|area)/, /(motivo|obs)/) && controls[3] && !used.has(controls[3])) {
-          setControlValue(controls[3], it.setor); used.add(controls[3]);
-        }
-      }
-      if (it.validade) {
-        if (!fillBy(it.validade, /(ultima|calibr|data|dd\/mm)/, /(motivo|obs)/) && controls[4] && !used.has(controls[4])) {
-          setControlValue(controls[4], it.validade); used.add(controls[4]);
-        }
-      }
-
-      const motivoFinal = applyCategoryTag(it.motivo || "", catId);
-      if (!fillBy(motivoFinal, /(motivo|observ|extraviad|sucat|obs)/, /(codigo|setor)/)) {
-        const lastCtrl = controls[controls.length - 1];
-        if (lastCtrl && !used.has(lastCtrl)) setControlValue(lastCtrl, motivoFinal);
-      }
-
-      saveLostCat(it.code, catId);
-      await sleep(180);
-
-      const saveBtn = findSaveBtnIn(modal, true) || findSaveBtnIn(modal, false);
-      if (!saveBtn) {
-        fail.push(`${it.code} (bot\u00e3o Salvar n\u00e3o encontrado)`);
-        closeNativeModal(modal);
-        continue;
-      }
-
-      saveBtn.click();
-      await sleep(900);
-
-      const stillOpen = findOpenLostCreateModal();
-      if (stillOpen) { closeNativeModal(stillOpen); await sleep(220); }
-
-      ok.push(it.code);
-      drawProg(i + 1, it.code, `Salvo em ${LOST_CATEGORIES[catId].label}`);
-    }
-
-    prog.innerHTML =
-      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
-        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} cadastrado(s) em Perdidos/Baixas</div>` +
-        `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
-      `</div>` +
-      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${escHtml(fail.join(", "))}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#ffe4e6;">Use os subfiltros (Perdidos / Vencidos / Desativados) para visualizar ou reativar os itens.</div>`);
-    prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
-    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 7000);
-    setTimeout(() => refreshLostSubfiltersUI(), 600);
-  };
-
-  /* -------------------- MODAL PRINCIPAL COM DUAS ABAS (NOVOS | PERDIDOS/DESATIVADOS) -------------------- */
-  const openImageImportModal = (initialTab = null) => {
-    const old = document.getElementById("vu-img-modal");
-    if (old) old.remove();
-
-    let activeTab = initialTab || (isOnLostScreen() ? "lost" : "inventory");
-    let defaultLostCat = "perdido";
-    let parsedRows = [];
-    const existingCodes = getFleetKnownValues().codes;
-
-    const overlay = document.createElement("div");
-    overlay.id = "vu-img-modal";
-    overlay.style.cssText = "position:fixed;inset:0;z-index:10900;background:rgba(15,23,42,.68);display:flex;align-items:center;justify-content:center;padding:12px;font-family:system-ui,-apple-system,sans-serif;";
-    overlay.innerHTML =
-      `<div style="width:min(1020px,97vw);max-height:93vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;">` +
-        `<div id="vu-img-hdr" style="background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
-          `<div>` +
-            `<div style="font-size:16px;font-weight:800;">Importar Instrumentos por Imagem ou Excel (v3.0)</div>` +
-            `<div style="font-size:12px;opacity:.9;">Leitor por grade de alta precis\u00e3o &bull; Aceita print/foto da Listagem Voith ou Ctrl+C &rarr; Ctrl+V direto do Excel.</div>` +
-          `</div>` +
-          `<button type="button" id="vu-img-close" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:19px;line-height:1;cursor:pointer;">&times;</button>` +
-        `</div>` +
-        `<div style="display:flex;gap:8px;padding:10px 20px;background:#f1f5f9;border-bottom:1px solid #cbd5e1;flex-wrap:wrap;">` +
-          `<button type="button" id="vu-tab-inv" style="padding:8px 15px;border-radius:10px;border:1px solid #cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer;">Novos Instrumentos (Invent\u00e1rio)</button>` +
-          `<button type="button" id="vu-tab-lost" style="padding:8px 15px;border-radius:10px;border:1px solid #cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer;">Perdidos / Vencidos / Desativados</button>` +
-        `</div>` +
-        `<div style="padding:16px 20px;overflow-y:auto;display:grid;gap:13px;">` +
-          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">` +
-            `<label id="vu-img-drop" style="border:2px dashed #60a5fa;border-radius:12px;background:#eff6ff;padding:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;cursor:pointer;">` +
-              `<input id="vu-img-file" type="file" accept="image/*" style="display:none;">` +
-              `<div style="font-weight:800;font-size:13.5px;color:#003399;">Clique para escolher imagem ou arraste aqui</div>` +
-              `<div style="font-size:11.5px;color:#475569;">Tamb\u00e9m aceita <strong>Ctrl + V</strong> de print/imagem (PNG / JPG)</div>` +
-            `</label>` +
-            `<div style="border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;padding:12px;display:grid;gap:6px;">` +
-              `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">` +
-                `<span style="font-weight:800;font-size:12px;color:#334155;">Ou cole linhas do Excel / texto aqui:</span>` +
-                `<button type="button" id="vu-img-parse-txt" style="padding:5px 10px;border-radius:7px;border:none;background:#004899;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Ler Texto</button>` +
-              `</div>` +
-              `<textarea id="vu-img-raw" rows="3" placeholder="Cole linhas da planilha (Ctrl+C no Excel -> Ctrl+V aqui)..." style="width:100%;padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:12px;font-family:monospace;resize:vertical;"></textarea>` +
-            `</div>` +
-          `</div>` +
-          `<div id="vu-lost-opts-panel" style="display:none;padding:11px 13px;border-radius:12px;border:1px solid #fecdd3;background:#fff1f2;gap:10px;">` +
-            `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">` +
-              `<span style="font-size:12px;font-weight:800;color:#9f1239;">Categoria padr\u00e3o para os itens importados:</span>` +
-              `<div id="vu-lost-cat-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>` +
-            `</div>` +
-            `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
-              `<label style="font-size:11.5px;font-weight:700;color:#881337;white-space:nowrap;">Motivo / Obs. padr\u00e3o:</label>` +
-              `<input id="vu-lost-def-motivo" type="text" placeholder="Ex: Extraviado em campo / Aguardando calibra\u00e7\u00e3o / Fora de uso" style="flex:1;min-width:220px;padding:6px 9px;border-radius:8px;border:1px solid #fda4af;font-size:12px;background:#fff;color:#0f172a;">` +
-            `</div>` +
-          `</div>` +
-          `<div id="vu-img-status" style="font-size:12.5px;font-weight:700;color:#0369a1;min-height:18px;"></div>` +
-          `<div id="vu-img-preview-wrap" style="display:none;gap:8px;">` +
-            `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">` +
-              `<span id="vu-img-count" style="font-size:12.5px;font-weight:800;color:#002466;">Itens detectados (0)</span>` +
-              `<span style="font-size:11.5px;color:#64748b;">Revise ou edite qualquer campo abaixo antes de cadastrar.</span>` +
-            `</div>` +
-            `<div style="overflow-x:auto;border:1px solid #cbd5e1;border-radius:10px;">` +
-              `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px;">` +
-                `<thead id="vu-img-thead"></thead>` +
-                `<tbody id="vu-img-tbody"></tbody>` +
-              `</table>` +
-            `</div>` +
-          `</div>` +
-        `</div>` +
-        `<div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
-          `<button type="button" id="vu-img-add-manual" style="padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12px;cursor:pointer;">+ Adicionar linha manual</button>` +
-          `<div style="display:flex;gap:10px;">` +
-            `<button type="button" id="vu-img-cancel" style="padding:9px 16px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;">Cancelar</button>` +
-            `<button type="button" id="vu-img-create" disabled style="padding:9px 18px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;opacity:.55;">Criar Instrumentos (0)</button>` +
-          `</div>` +
-        `</div>` +
-      `</div>`;
-
-    document.body.appendChild(overlay);
-
-    const hdr = overlay.querySelector("#vu-img-hdr");
-    const tabInvBtn = overlay.querySelector("#vu-tab-inv");
-    const tabLostBtn = overlay.querySelector("#vu-tab-lost");
-    const lostOptsPanel = overlay.querySelector("#vu-lost-opts-panel");
-    const lostCatPills = overlay.querySelector("#vu-lost-cat-pills");
-    const defMotivoInp = overlay.querySelector("#vu-lost-def-motivo");
-    const fileInp = overlay.querySelector("#vu-img-file");
-    const dropZone = overlay.querySelector("#vu-img-drop");
-    const rawTxt = overlay.querySelector("#vu-img-raw");
-    const statusEl = overlay.querySelector("#vu-img-status");
-    const prevWrap = overlay.querySelector("#vu-img-preview-wrap");
-    const thead = overlay.querySelector("#vu-img-thead");
-    const tbody = overlay.querySelector("#vu-img-tbody");
-    const countEl = overlay.querySelector("#vu-img-count");
-    const createBtn = overlay.querySelector("#vu-img-create");
-
-    const syncTableToState = () => {
-      const trs = Array.from(tbody.querySelectorAll("tr"));
-      if (!trs.length) return;
-      trs.forEach((tr) => {
-        const idx = Number(tr.getAttribute("data-idx"));
-        if (!parsedRows[idx]) return;
-        const g = (sel) => { const el = tr.querySelector(sel); return el ? el.value : null; };
-        const c = g(".vu-c-code"); if (c !== null) parsedRows[idx].code = c.trim().toUpperCase();
-        const d = g(".vu-c-desc"); if (d !== null) parsedRows[idx].desc = d.trim();
-        const v = g(".vu-c-val");  if (v !== null) parsedRows[idx].validade = v.trim();
-        const s = g(".vu-c-setor"); if (s !== null) parsedRows[idx].setor = s.trim();
-        const r = g(".vu-c-resp"); if (r !== null) parsedRows[idx].responsavel = r.trim();
-        const f = g(".vu-c-faixa"); if (f !== null) parsedRows[idx].faixa = f.trim();
-        const cc = g(".vu-c-cc"); if (cc !== null) parsedRows[idx].cc = cc.trim();
-        const cat = g(".vu-c-cat"); if (cat !== null) parsedRows[idx].category = cat;
-        const mot = g(".vu-c-motivo"); if (mot !== null) parsedRows[idx].motivo = mot.trim();
-      });
-    };
-
-    const updateCreateBtn = () => {
-      const n = tbody.querySelectorAll(".vu-row-chk:checked").length;
-      const isLost = activeTab === "lost";
-      createBtn.textContent = isLost ? `Cadastrar em Perdidos/Baixas (${n})` : `Criar no Invent\u00e1rio (${n})`;
-      createBtn.style.background = isLost ? "#e11d48" : "#16a34a";
-      createBtn.disabled = n === 0;
-      createBtn.style.opacity = n === 0 ? ".55" : "1";
-    };
-
-    const renderLostCatPills = () => {
-      lostCatPills.innerHTML = Object.values(LOST_CATEGORIES).map((c) => {
-        const active = defaultLostCat === c.id;
-        return `<button type="button" data-def-cat="${c.id}" style="padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:800;cursor:pointer;border:1px solid ${active ? c.color : c.border};background:${active ? c.color : c.bg};color:${active ? "#ffffff" : c.color};">${c.fullLabel}</button>`;
-      }).join("");
-
-      lostCatPills.querySelectorAll("[data-def-cat]").forEach((btn) => {
-        btn.onclick = () => {
-          syncTableToState();
-          defaultLostCat = btn.getAttribute("data-def-cat");
-          parsedRows.forEach((r) => { r.category = defaultLostCat; });
-          renderLostCatPills();
-          renderTable();
-        };
-      });
-    };
-
-    const updateTabStyles = () => {
-      const isLost = activeTab === "lost";
-      hdr.style.background = isLost ? "linear-gradient(90deg,#9f1239,#e11d48)" : "linear-gradient(90deg,#002466,#0055b8)";
-      tabInvBtn.style.background = !isLost ? "#004899" : "#ffffff";
-      tabInvBtn.style.color = !isLost ? "#ffffff" : "#334155";
-      tabInvBtn.style.borderColor = !isLost ? "#004899" : "#cbd5e1";
-
-      tabLostBtn.style.background = isLost ? "#e11d48" : "#ffffff";
-      tabLostBtn.style.color = isLost ? "#ffffff" : "#334155";
-      tabLostBtn.style.borderColor = isLost ? "#e11d48" : "#cbd5e1";
-
-      lostOptsPanel.style.display = isLost ? "grid" : "none";
-      renderLostCatPills();
-      renderTable();
-    };
-
-    const renderTable = () => {
-      prevWrap.style.display = parsedRows.length ? "grid" : "none";
-      countEl.textContent = `Itens detectados (${parsedRows.length})`;
-      const inpCss = "width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;color:#0f172a;background:#fff;box-sizing:border-box;";
-
-      if (activeTab === "lost") {
-        thead.innerHTML =
-          `<tr style="background:#fff1f2;color:#881337;text-align:left;">` +
-            `<th style="padding:8px;width:30px;"><input type="checkbox" id="vu-img-chk-all" checked></th>` +
-            `<th style="padding:8px;width:115px;">C\u00f3digo</th>` +
-            `<th style="padding:8px;">Descri\u00e7\u00e3o</th>` +
-            `<th style="padding:8px;width:142px;">Categoria</th>` +
-            `<th style="padding:8px;width:85px;">C. Custo</th>` +
-            `<th style="padding:8px;">Setor</th>` +
-            `<th style="padding:8px;width:105px;">\u00daltima Cal.</th>` +
-            `<th style="padding:8px;">Motivo / Obs.</th>` +
-          `</tr>`;
-
-        tbody.innerHTML = parsedRows.map((r, idx) => {
-          const cat = r.category || defaultLostCat;
-          const mot = r.motivo != null ? r.motivo : (defMotivoInp.value || "");
-          const needsCode = !r.code;
-          return (
-            `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${needsCode ? "#fef2f2" : "#ffffff"};">` +
-              `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" checked></td>` +
-              `<td style="padding:6px;"><input class="vu-c-code" value="${escHtml(r.code)}" placeholder="C\u00f3digo" style="${inpCss}font-weight:800;${needsCode ? "border-color:#dc2626;" : ""}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-desc" value="${escHtml(r.desc)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;">` +
-                `<select class="vu-c-cat" style="${inpCss}font-weight:700;">` +
-                  `<option value="perdido" ${cat === "perdido" ? "selected" : ""}>Perdido</option>` +
-                  `<option value="vencido" ${cat === "vencido" ? "selected" : ""}>Vencido</option>` +
-                  `<option value="desativado" ${cat === "desativado" ? "selected" : ""}>Desativado (Reativ\u00e1vel)</option>` +
-                `</select>` +
-              `</td>` +
-              `<td style="padding:6px;"><input class="vu-c-cc" value="${escHtml(r.cc)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-setor" value="${escHtml(r.setor)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-val" value="${escHtml(r.validade)}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-motivo" value="${escHtml(mot)}" placeholder="Motivo / observ." style="${inpCss}"></td>` +
-            `</tr>`
-          );
-        }).join("");
-      } else {
-        thead.innerHTML =
-          `<tr style="background:#f1f5f9;color:#334155;text-align:left;">` +
-            `<th style="padding:8px;width:30px;"><input type="checkbox" id="vu-img-chk-all" checked></th>` +
-            `<th style="padding:8px;width:115px;">C\u00f3digo</th>` +
-            `<th style="padding:8px;">Descri\u00e7\u00e3o</th>` +
-            `<th style="padding:8px;width:108px;">Pr\u00f3x. Cal.</th>` +
-            `<th style="padding:8px;">Setor</th>` +
-            `<th style="padding:8px;">Respons\u00e1vel</th>` +
-            `<th style="padding:8px;width:105px;">Faixa</th>` +
-            `<th style="padding:8px;width:85px;">CC</th>` +
-          `</tr>`;
-
-        tbody.innerHTML = parsedRows.map((r, idx) => {
-          const exists = r.code && existingCodes.has(String(r.code).toUpperCase());
-          const needsCode = !r.code;
-          return (
-            `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${exists ? "#fffbeb" : (needsCode ? "#fef2f2" : "#ffffff")};">` +
-              `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" ${exists ? "" : "checked"}></td>` +
-              `<td style="padding:6px;"><input class="vu-c-code" value="${escHtml(r.code)}" placeholder="C\u00f3digo" style="${inpCss}font-weight:800;${needsCode ? "border-color:#dc2626;" : ""}">${exists ? '<div style="font-size:10px;color:#b45309;font-weight:700;margin-top:2px;">J\u00e1 cadastrado</div>' : ""}</td>` +
-              `<td style="padding:6px;"><input class="vu-c-desc" value="${escHtml(r.desc)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-val" value="${escHtml(r.validade)}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-setor" value="${escHtml(r.setor)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-resp" value="${escHtml(r.responsavel)}" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-faixa" value="${escHtml(r.faixa)}" placeholder="0 ~ 150" style="${inpCss}"></td>` +
-              `<td style="padding:6px;"><input class="vu-c-cc" value="${escHtml(r.cc)}" style="${inpCss}"></td>` +
-            `</tr>`
-          );
-        }).join("");
-      }
-
-      const chkAll = thead.querySelector("#vu-img-chk-all");
-      if (chkAll) {
-        chkAll.onchange = () => {
-          tbody.querySelectorAll(".vu-row-chk").forEach((c) => { c.checked = chkAll.checked; });
-          updateCreateBtn();
-        };
-      }
-      tbody.querySelectorAll(".vu-row-chk").forEach((c) => { c.onchange = updateCreateBtn; });
-      updateCreateBtn();
-    };
-
-    tabInvBtn.onclick = () => { syncTableToState(); activeTab = "inventory"; updateTabStyles(); };
-    tabLostBtn.onclick = () => { syncTableToState(); activeTab = "lost"; updateTabStyles(); };
-
-    defMotivoInp.oninput = () => {
-      const v = defMotivoInp.value;
-      tbody.querySelectorAll(".vu-c-motivo").forEach((inp) => {
-        if (!inp.dataset.userEdited) inp.value = v;
-      });
-    };
-
-    const handleImageBlob = async (blob) => {
-      try {
-        statusEl.style.color = "#0369a1";
-        const result = await runSmartOcrOnBlob(blob, (msg) => { statusEl.textContent = msg; });
-        rawTxt.value = result.rawText || "";
-        parsedRows = (result.items || []).map((x) => ({ ...x, category: defaultLostCat }));
-        if (parsedRows.length) {
-          statusEl.style.color = "#15803d";
-          statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) ${result.mode === "grid" ? "com precis\u00e3o por c\u00e9lula" : "da imagem"}! Revise e clique no bot\u00e3o de cadastro.`;
-        } else {
-          statusEl.style.color = "#b45309";
-          statusEl.textContent = "Nenhuma linha v\u00e1lida encontrada na imagem. Ajuste o texto acima e clique em Ler Texto.";
-        }
-        renderTable();
-      } catch (err) {
-        statusEl.style.color = "#dc2626";
-        statusEl.textContent = "Erro ao ler imagem: " + (err && err.message ? err.message : err);
-      }
-    };
-
-    fileInp.onchange = () => { const f = fileInp.files && fileInp.files[0]; if (f) handleImageBlob(f); };
-    dropZone.ondragover = (ev) => { ev.preventDefault(); dropZone.style.background = "#dbeafe"; };
-    dropZone.ondragleave = () => { dropZone.style.background = "#eff6ff"; };
-    dropZone.ondrop = (ev) => {
-      ev.preventDefault();
-      dropZone.style.background = "#eff6ff";
-      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-      if (f) handleImageBlob(f);
-    };
-
-    const onPaste = (ev) => {
-      if (!overlay.isConnected) { document.removeEventListener("paste", onPaste); return; }
-      const cb = ev.clipboardData;
-      if (!cb) return;
-
-      // Prioridade ao texto do Excel (evita OCR acidental ao colar celulas do Excel)
-      const plainText = String(cb.getData("text/plain") || "").trim();
-      if (plainText) {
-        if (document.activeElement !== rawTxt && document.activeElement !== defMotivoInp && !document.activeElement.closest("tbody")) {
-          ev.preventDefault();
-          rawTxt.value = plainText;
-        } else if (document.activeElement !== rawTxt) {
-          return;
-        }
-        setTimeout(() => {
-          parsedRows = parseVoithLines(rawTxt.value).map((x) => ({ ...x, category: defaultLostCat }));
-          statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
-          statusEl.textContent = parsedRows.length
-            ? `${parsedRows.length} instrumento(s) lido(s) direto do Excel!`
-            : "Texto colado, mas nenhuma linha v\u00e1lida foi identificada.";
-          renderTable();
-        }, 40);
-        return;
-      }
-
-      const items = cb.items;
-      if (items) {
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].type && items[i].type.startsWith("image/")) {
-            ev.preventDefault();
-            const blob = items[i].getAsFile();
-            if (blob) handleImageBlob(blob);
-            return;
-          }
-        }
-      }
-    };
-    document.addEventListener("paste", onPaste);
-
-    overlay.querySelector("#vu-img-parse-txt").onclick = () => {
-      parsedRows = parseVoithLines(rawTxt.value).map((x) => ({ ...x, category: defaultLostCat }));
-      statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
-      statusEl.textContent = parsedRows.length ? `${parsedRows.length} instrumento(s) detectado(s).` : "Nenhuma linha v\u00e1lida encontrada.";
-      renderTable();
-    };
-
-    overlay.querySelector("#vu-img-add-manual").onclick = () => {
-      syncTableToState();
-      parsedRows.push({ code: "", desc: "", validade: "", cc: "", setor: "", responsavel: "", faixaIni: "", faixaFim: "", faixa: "", category: defaultLostCat, motivo: defMotivoInp.value || "" });
-      renderTable();
-    };
-
-    const closeModal = () => { document.removeEventListener("paste", onPaste); overlay.remove(); };
-    overlay.querySelector("#vu-img-close").onclick = closeModal;
-    overlay.querySelector("#vu-img-cancel").onclick = closeModal;
-
-    createBtn.onclick = () => {
-      syncTableToState();
-      const selected = [];
-      tbody.querySelectorAll("tr").forEach((tr) => {
-        const chk = tr.querySelector(".vu-row-chk");
-        if (!chk || !chk.checked) return;
-        const idx = Number(tr.getAttribute("data-idx"));
-        const r = parsedRows[idx];
-        if (!r || !r.code) return;
-        const parts = String(r.faixa || "").split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
-        selected.push({
-          ...r,
-          faixaIni: r.faixaIni || parts[0] || "",
-          faixaFim: r.faixaFim || parts[1] || "",
-          category: r.category || defaultLostCat,
-          motivo: r.motivo || defMotivoInp.value || ""
-        });
-      });
-
-      if (!selected.length) {
-        statusEl.style.color = "#dc2626";
-        statusEl.textContent = "Preencha o C\u00f3digo dos itens marcados antes de continuar.";
-        return;
-      }
-
-      document.removeEventListener("paste", onPaste);
-      if (activeTab === "lost") createLostQueue(selected);
-      else createInventoryQueue(selected);
-    };
-
-    updateTabStyles();
-  };
-
-  /* -------------------- SUBCATEGORIAS + REATIVACAO NA ABA PERDIDOS -------------------- */
-  let activeLostFilter = "all";
-
-  const isLostTabActive = () => {
-    const lostTab = findLostTabButton();
-    if (!lostTab) return false;
-    const cls = String(lostTab.className || "");
-    const cs = window.getComputedStyle(lostTab);
-    const bg = String(cs.backgroundColor || "");
-    // Botao ativo geralmente tem fundo preenchido (vermelho/azul/escuro) ou nao e branco/transparente
-    const looksActive =
-      /bg-(red|rose|blue|slate-9|voith|primary)|text-white/.test(cls) ||
-      (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent" && bg !== "rgb(255, 255, 255)" && bg !== "rgb(241, 245, 249)" && bg !== "rgb(248, 250, 252)");
-    if (looksActive) return true;
-
-    // Fallback: verifica se a tabela visivel nao tem coluna SLA/RPS de laboratorio externo
-    const thTxt = norm(Array.from(document.querySelectorAll("table thead th")).filter(isVisible).map((th) => th.textContent).join(" "));
-    if (thTxt && /(motivo|baixa|ultima cal|desativ|perdido|reativ|restaur)/.test(thTxt) && !thTxt.includes("sla")) return true;
-    return false;
-  };
-
-  const reactivateLostRow = async (tr, code, desc, cc, setor, lastCal) => {
-    // 1. Se a linha ja tiver um botao nativo de Reativar/Restaurar, aciona ele direto
-    const nativeRestore = Array.from(tr.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b) || b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
-      return /(reativ|restaur|recuper|voltar)/.test(norm(b.textContent));
-    });
-    if (nativeRestore) {
-      removeLostCat(code);
-      nativeRestore.click();
-      return;
-    }
-
-    // 2. Caso contrario, recria o instrumento no Inventario ativo e oferece remover da lista de Perdidos
-    if (!window.confirm(`Reativar o instrumento ${code} (${desc || "sem descri\u00e7\u00e3o"}) devolvendo-o ao Invent\u00e1rio ativo?`)) return;
-
-    removeLostCat(code);
-    await createInventoryQueue([{
-      code,
-      desc: desc || "",
-      cc: cc || "",
-      setor: setor || "",
-      validade: lastCal || "",
-      responsavel: "",
-      faixa: "",
-      faixaIni: "",
-      faixaFim: ""
-    }]);
-
-    // Se a linha em Perdidos tiver botao de excluir, aciona para nao ficar duplicado
-    const delBtn = Array.from(tr.querySelectorAll("button")).find((b) => {
-      if (!b.isConnected || b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
-      const t = norm(b.textContent + " " + (b.title || "") + " " + (b.getAttribute("aria-label") || ""));
-      return /(excluir|deletar|remover|apagar|lixeira)/.test(t);
-    });
-    if (delBtn) {
-      const origConfirm = window.confirm;
-      try {
-        window.confirm = () => true;
-        delBtn.click();
-      } finally {
-        window.confirm = origConfirm;
-      }
-    }
-  };
-
-  const refreshLostSubfiltersUI = () => {
-    const existingBar = document.getElementById("vu-lost-subbar");
-    const lostTab = findLostTabButton();
-
-    if (!lostTab || !isLostTabActive()) {
-      if (existingBar) existingBar.remove();
-      return;
-    }
-
-    // Encontra a tabela visivel de Perdidos (se houver)
-    const tables = Array.from(document.querySelectorAll("table")).filter((tb) => isVisible(tb) && !tb.closest("#vu-img-modal"));
-    const mainTable = tables[0] || null;
-    const rows = mainTable
-      ? Array.from(mainTable.querySelectorAll("tbody tr")).filter((tr) => {
-          const txt = String(tr.textContent || "").trim();
-          return txt.length > 0 && !/nenhum (item|instrumento|registro)/i.test(txt);
-        })
-      : [];
-
-    const counts = { all: 0, perdido: 0, vencido: 0, desativado: 0 };
-
-    rows.forEach((tr) => {
-      const rowTxt = String(tr.textContent || "");
-      const cm = rowTxt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/i);
-      const code = cm ? cm[1].toUpperCase() : "";
-      const catId = detectCategoryFromRow(code, rowTxt);
-      const cfg = LOST_CATEGORIES[catId];
-
-      counts.all++;
-      counts[catId]++;
-
-      // Aplica filtro de subcategoria
-      tr.style.display = (activeLostFilter === "all" || activeLostFilter === catId) ? "" : "none";
-
-      // Injeta badge de categoria clicavel + botao Reativar na linha
-      const tds = Array.from(tr.querySelectorAll("td"));
-      if (tds.length >= 2) {
-        const badgeCell = tds[tds.length - 1];
-        let badge = tr.querySelector(".vu-lost-cat-pill");
-        if (!badge) {
-          badge = document.createElement("button");
-          badge.type = "button";
-          badge.className = "vu-lost-cat-pill";
-          badge.title = "Clique para alterar a categoria (Perdido / Vencido / Desativado)";
-          badge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;cursor:pointer;margin-right:6px;margin-top:3px;vertical-align:middle;";
-          badgeCell.insertBefore(badge, badgeCell.firstChild);
-        }
-        badge.textContent = cfg.label.toUpperCase();
-        badge.style.background = cfg.bg;
-        badge.style.color = cfg.color;
-        badge.style.border = `1px solid ${cfg.border}`;
-        badge.onclick = (ev) => {
-          ev.stopPropagation();
-          const order = ["perdido", "vencido", "desativado"];
-          const next = order[(order.indexOf(catId) + 1) % order.length];
-          if (code) saveLostCat(code, next);
-          refreshLostSubfiltersUI();
-        };
-
-        // Garante botao de Reativar visivel se nao houver um nativo
-        const hasNativeRestore = Array.from(tr.querySelectorAll("button")).some((b) => {
-          if (b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
-          return /(reativ|restaur|recuper)/.test(norm(b.textContent));
-        });
-        let reactBtn = tr.querySelector(".vu-lost-reactivate-btn");
-        if (!hasNativeRestore && code) {
-          if (!reactBtn) {
-            reactBtn = document.createElement("button");
-            reactBtn.type = "button";
-            reactBtn.className = "vu-lost-reactivate-btn";
-            reactBtn.textContent = "Reativar";
-            reactBtn.title = "Devolver este instrumento ao Invent\u00e1rio ativo";
-            reactBtn.style.cssText = "display:inline-flex;align-items:center;padding:3px 9px;border-radius:7px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:800;cursor:pointer;margin-right:6px;margin-top:3px;vertical-align:middle;";
-            badge.insertAdjacentElement("afterend", reactBtn);
-          }
-          const descTxt = String((tds[1] && tds[1].textContent) || "").trim();
-          const dateM = rowTxt.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
-          const ccM = rowTxt.match(/\b(\d{4}\s*[A-Z])\b/);
-          const secM = rowTxt.match(/Voith Turbo\s*\([^)]+\)/i);
-          reactBtn.onclick = (ev) => {
-            ev.stopPropagation();
-            reactivateLostRow(tr, code, descTxt, ccM ? ccM[1] : "", secM ? secM[0] : "", dateM ? dateM[1] : "");
-          };
-        }
-      }
-    });
-
-    // Posiciona a barra de subcategorias logo abaixo da barra da aba Perdidos
-    const anchorBar = lostTab.parentElement;
-    let bar = existingBar;
-    if (!bar) {
-      bar = document.createElement("div");
-      bar.id = "vu-lost-subbar";
-      bar.style.cssText = "margin:10px 0 8px;padding:8px 11px;border-radius:12px;border:1px solid #fecdd3;background:#fff1f2;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-family:system-ui,-apple-system,sans-serif;";
-      anchorBar.insertAdjacentElement("afterend", bar);
-    }
-
-    const pills = [
-      { id: "all",        label: `Todos (${counts.all})`,                bg: "#ffffff", col: "#334155", bd: "#cbd5e1", actBg: "#0f172a" },
-      { id: "perdido",    label: `Perdidos (${counts.perdido})`,         bg: "#fee2e2", col: "#b91c1c", bd: "#fca5a5", actBg: "#dc2626" },
-      { id: "vencido",    label: `Vencidos (${counts.vencido})`,         bg: "#fef3c7", col: "#b45309", bd: "#fcd34d", actBg: "#d97706" },
-      { id: "desativado", label: `Desativados (${counts.desativado})`,   bg: "#e0f2fe", col: "#0369a1", bd: "#7dd3fc", actBg: "#0284c7" }
-    ];
-
-    bar.innerHTML =
-      `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
-        `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#9f1239;margin-right:2px;">Subcategoria:</span>` +
-        pills.map((p) => {
-          const act = activeLostFilter === p.id;
-          return `<button type="button" data-vu-lfilter="${p.id}" style="padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:800;cursor:pointer;border:1px solid ${act ? p.actBg : p.bd};background:${act ? p.actBg : p.bg};color:${act ? "#ffffff" : p.col};white-space:nowrap;">${p.label}</button>`;
-        }).join("") +
-      `</div>` +
-      `<button type="button" id="vu-lost-sub-import" style="padding:6px 11px;border-radius:9px;border:1px solid #e11d48;background:#e11d48;color:#ffffff;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;">+ Importar Perdidos (Imagem/Excel)</button>`;
-
-    bar.querySelectorAll("[data-vu-lfilter]").forEach((btn) => {
-      btn.onclick = () => {
-        activeLostFilter = btn.getAttribute("data-vu-lfilter");
-        refreshLostSubfiltersUI();
-      };
-    });
-    bar.querySelector("#vu-lost-sub-import").onclick = () => openImageImportModal("lost");
-  };
-
-  /* -------------------- MELHORIA DO MODAL NATIVO "CADASTRAR PERDIDO / DESATIVADO" -------------------- */
-  const enhanceNativeLostModal = () => {
-    const lostModal = findOpenLostCreateModal();
-    if (!lostModal) return;
-
-    // 1. Botao de importar por imagem/Excel no topo do formulario vermelho
-    if (!lostModal.querySelector("#vu-lost-modal-import-wrap")) {
-      const firstInput = Array.from(lostModal.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), textarea")).find(isVisible);
-      const bodyHost = (firstInput && (firstInput.closest("form") || (firstInput.parentElement && firstInput.parentElement.parentElement && firstInput.parentElement.parentElement.parentElement))) || lostModal;
-
-      const wrap = document.createElement("div");
-      wrap.id = "vu-lost-modal-import-wrap";
-      wrap.style.cssText = "width:100%;margin-bottom:12px;box-sizing:border-box;";
-      wrap.innerHTML =
-        `<button type="button" id="vu-lost-modal-import-btn" style="width:100%;padding:9px 12px;border-radius:10px;border:1px dashed #e11d48;background:#fff1f2;color:#be123c;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">` +
-          `<span>Importar v\u00e1rios Perdidos por Imagem / Excel</span>` +
-        `</button>`;
-      wrap.querySelector("#vu-lost-modal-import-btn").onclick = () => {
-        closeNativeModal(lostModal);
-        setTimeout(() => openImageImportModal("lost"), 120);
-      };
-
-      const gridRow = firstInput && firstInput.parentElement && firstInput.parentElement.parentElement;
-      if (gridRow && gridRow.parentElement) gridRow.parentElement.insertBefore(wrap, gridRow);
-      else if (bodyHost.firstChild) bodyHost.insertBefore(wrap, bodyHost.firstChild);
-    }
-
-    // 2. Seletor de categoria (Perdido | Vencido | Desativado) acima de MOTIVO / OBSERVACAO
-    if (!lostModal.querySelector("#vu-lost-modal-cat-wrap")) {
-      const controls = Array.from(lostModal.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), textarea")).filter(isVisible);
-      const codeInp = controls.find((el) => /(codigo|code)/.test(getFieldHint(el))) || controls[0];
-      const motivoInp = controls.find((el) => /(motivo|observ|extraviad|sucat)/.test(getFieldHint(el))) || controls[controls.length - 1];
-
-      if (motivoInp && motivoInp.parentElement) {
-        let chosenCat = "perdido";
-        const catWrap = document.createElement("div");
-        catWrap.id = "vu-lost-modal-cat-wrap";
-        catWrap.style.cssText = "width:100%;margin:8px 0 10px;display:grid;gap:6px;box-sizing:border-box;";
-
-        const renderCatButtons = () => {
-          catWrap.innerHTML =
-            `<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;">CATEGORIA DO REGISTRO</div>` +
-            `<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
-              Object.values(LOST_CATEGORIES).map((c) => {
-                const act = chosenCat === c.id;
-                return `<button type="button" data-mcat="${c.id}" style="flex:1;min-width:105px;padding:7px 8px;border-radius:8px;font-size:11.5px;font-weight:800;cursor:pointer;border:1px solid ${act ? c.color : c.border};background:${act ? c.color : c.bg};color:${act ? "#ffffff" : c.color};">${c.label}</button>`;
-              }).join("") +
-            `</div>`;
-
-          catWrap.querySelectorAll("[data-mcat]").forEach((b) => {
-            b.onclick = () => {
-              chosenCat = b.getAttribute("data-mcat");
-              const cfg = LOST_CATEGORIES[chosenCat];
-              motivoInp.placeholder = cfg.placeholder;
-              const curBody = stripCategoryTag(motivoInp.value);
-              setControlValue(motivoInp, curBody ? `${cfg.tag} ${curBody}` : `${cfg.tag} `);
-              renderCatButtons();
-            };
-          });
-        };
-
-        renderCatButtons();
-        motivoInp.parentElement.parentElement.insertBefore(catWrap, motivoInp.parentElement);
-
-        // Garante que a tag e o localStorage sejam gravados ao clicar em Salvar
-        const saveBtn = findSaveBtnIn(lostModal, false);
-        if (saveBtn && !saveBtn.dataset.vuLostSaveHooked) {
-          saveBtn.dataset.vuLostSaveHooked = "1";
-          saveBtn.addEventListener("mousedown", () => {
-            const codeVal = codeInp ? String(codeInp.value || "").trim().toUpperCase() : "";
-            if (codeVal) saveLostCat(codeVal, chosenCat);
-            const finalMot = applyCategoryTag(motivoInp.value, chosenCat);
-            setControlValue(motivoInp, finalMot);
-          }, true);
-        }
-      }
-    }
-  };
-
-  /* -------------------- INJECAO GERAL DOS BOTOES -------------------- */
-  const injectAllUI = () => {
-    // 1. Limpa botoes antigos fora do lugar
-    document.querySelectorAll("#vu-modal-img-wrap, #vu-modal-img-btn").forEach((el) => {
-      const card = findInstrumentFormDrawer();
-      if (!card || isDrawerInEditMode(card)) el.remove();
-    });
-
-    // 2. Botao "Ler Imagem" no topo (Desktop)
-    const existingTop = document.getElementById("vu-open-img-import");
-    if (window.innerWidth <= 768 && existingTop) {
-      existingTop.remove();
-    } else if (window.innerWidth > 768) {
-      if (existingTop) {
-        existingTop.onclick = () => openImageImportModal();
-      } else {
-        const newBtn = Array.from(document.querySelectorAll("button")).find((b) => {
-          if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
-          const t = norm(b.textContent);
-          return t.includes("novo item") || t.includes("novo instrumento");
-        });
-        if (newBtn && newBtn.parentElement) {
-          const b = document.createElement("button");
-          b.id = "vu-open-img-import";
-          b.type = "button";
-          b.textContent = "Ler Imagem";
-          b.title = "Importar instrumentos por Imagem (OCR v3.0) ou Excel";
-          b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
-          b.onclick = () => openImageImportModal();
-          newBtn.insertAdjacentElement("afterend", b);
-        }
-      }
-    }
-
-    // 3. Botao dentro do drawer "+ Novo Item"
-    const drawer = findInstrumentFormDrawer();
-    if (drawer && !isDrawerInEditMode(drawer) && !drawer.querySelector("#vu-modal-img-wrap")) {
-      const firstInput = Array.from(drawer.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).find(isVisible);
-      const formBody = (firstInput && (firstInput.closest("form") || (firstInput.parentElement && firstInput.parentElement.parentElement))) || drawer;
-      const wrap = document.createElement("div");
-      wrap.id = "vu-modal-img-wrap";
-      wrap.style.cssText = "width:100%;margin-bottom:12px;box-sizing:border-box;";
-      wrap.innerHTML =
-        `<button type="button" id="vu-modal-img-btn" style="width:100%;padding:9px 12px;border-radius:10px;border:1px dashed #0284c7;background:#eff6ff;color:#004899;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">` +
-          `<span>Importar v\u00e1rios por Imagem / Excel</span>` +
-        `</button>`;
-      wrap.querySelector("#vu-modal-img-btn").onclick = () => {
-        closeNativeModal(drawer);
-        setTimeout(() => openImageImportModal("inventory"), 120);
-      };
-      if (formBody.firstChild) formBody.insertBefore(wrap, formBody.firstChild);
-      else formBody.appendChild(wrap);
-    }
-
-    // 4. Melhora modal "Cadastrar Perdido / Desativado" e subfiltros da aba Perdidos
-    enhanceNativeLostModal();
-    refreshLostSubfiltersUI();
-  };
-
-  let t = null;
-  const schedule = (delay = 140) => {
-    if (t) return;
-    t = setTimeout(() => { t = null; injectAllUI(); }, delay);
-  };
-
-  const init = () => {
-    schedule(100);
-    document.addEventListener("click", () => schedule(140), true);
-    window.addEventListener("resize", () => schedule(150));
-    window.addEventListener("hashchange", () => schedule(160));
-    const obs = new MutationObserver((muts) => {
-      for (let i = 0; i < muts.length; i++) {
-        const tgt = muts[i].target;
-        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
-        if (tgt && tgt.closest && (tgt.closest("#vu-img-modal") || tgt.closest("#vu-lost-subbar"))) continue;
-        schedule(180);
-        break;
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
-  };
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
-
-  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, { openImageImportModal });
-})();
-/* VOITH_IMAGE_IMPORTER_V1_END */
 
 /* VOITH_TOP_COUNTER_V1_START */
 (() => {
@@ -5795,3 +3870,2604 @@
   else init();
 })();
 /* VOITH_TOP_COUNTER_V1_END */
+
+/* VOITH_IMAGE_IMPORTER_V1_START */
+(() => {
+  "use strict";
+
+  const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  const TESSDATA_BEST_URL = "https://tessdata.projectnaptha.com/4.0.0_best";
+  const LOST_CAT_STORAGE_KEY = "voith_lost_categories_v1";
+
+  const LOST_CATEGORIES = {
+    perdido:    { id: "perdido",    tag: "[PERDIDO]",    label: "Perdido",    fullLabel: "Perdido / Extraviado",    bg: "#fee2e2", color: "#b91c1c", border: "#fca5a5", placeholder: "Extraviado em campo / Não localizado" },
+    desativado: { id: "desativado", tag: "[DESATIVADO]", label: "Desativado", fullLabel: "Desativado (Reativável)", bg: "#e0f2fe", color: "#0369a1", border: "#7dd3fc", placeholder: "Desativado temporariamente — pode ser reativado" }
+  };
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const compact = (s) => norm(s).replace(/[^a-z0-9]/g, "");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const escHtml = (s) => String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  const setControlValue = (el, val) => {
+    if (!el) return false;
+    const str = String(val == null ? "" : val).trim();
+
+    if (el.tagName === "SELECT") {
+      if (!str) return false;
+      const target = norm(str);
+      const opts = Array.from(el.options || []);
+      const hit =
+        opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
+        opts.find((o) => norm(o.textContent).includes(target) || (target.length >= 4 && target.includes(norm(o.textContent))));
+      if (hit) el.value = hit.value;
+      else return false;
+    } else {
+      let finalVal = str;
+      if (String(el.type || "").toLowerCase() === "date" && str) {
+        const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
+      }
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (desc && desc.set) desc.set.call(el, finalVal);
+      else el.value = finalVal;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const getFieldHint = (el) => {
+    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label")];
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${el.id}"]`);
+      if (lbl) parts.push(lbl.textContent);
+    }
+    const closestLbl = el.closest("label");
+    if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.previousElementSibling && String(el.previousElementSibling.textContent || "").length < 80) {
+      parts.push(el.previousElementSibling.textContent);
+    }
+    if (el.parentElement) {
+      const sib = el.parentElement.querySelector("label, span, p");
+      if (sib && sib !== el && String(sib.textContent || "").length < 80) parts.push(sib.textContent);
+      if (el.parentElement.previousElementSibling && String(el.parentElement.previousElementSibling.textContent || "").length < 80) {
+        parts.push(el.parentElement.previousElementSibling.textContent);
+      }
+    }
+    return norm(parts.filter(Boolean).join(" "));
+  };
+
+  const levenshtein = (a, b) => {
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    let curr = new Array(n + 1);
+    for (let i = 1; i <= m; i++) {
+      curr[0] = i;
+      for (let j = 1; j <= n; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      }
+      const tmp = prev; prev = curr; curr = tmp;
+    }
+    return prev[n];
+  };
+
+  const similarity = (a, b) => {
+    const maxL = Math.max(a.length, b.length);
+    return maxL ? 1 - levenshtein(a, b) / maxL : 1;
+  };
+
+  const normalizeDateBR = (raw) => {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    let m = s.match(/(\d{2})[\/.-](\d{2})[\/.-](\d{4})/);
+    if (m) return `${m[1]}/${m[2]}/${m[3]}`;
+    m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    const digits = s.replace(/\D/g, "");
+    if (digits.length === 8) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+    return "";
+  };
+
+  /* -------------------- RASTREADOR DE ESCRITAS NA NUVEM + CATALOGO COMPLETO (v4.1) -------------------- */
+  let fetchedInventoryPool = [];
+  let cachedFleetList = [];
+  let cachedFleetMap = new Map();
+  let lastFleetScan = 0;
+  let inFlightWrites = 0;
+  let capturedCloudEndpoint = null;
+  let cloudPullAttempted = false;
+
+  const isInstrumentCodeLike = (val) => {
+    if (typeof val !== "string") return false;
+    const s = val.trim().toUpperCase();
+    if (s.length < 4 || s.length > 26) return false;
+    if (/^\d{2}:\d{2}/.test(s) || /^\d{4}-\d{2}-\d{2}/.test(s)) return false;
+    return /^[A-Z]{1,4}[-]?\d{4,8}[A-Z0-9-]*$/.test(s);
+  };
+
+  const extractInventoryRecord = (o) => {
+    if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+    let rawCode = o.code || o.codigo || o.cod || o.tag || o.patrimonio || o.instrument_code || o.id_instrumento || "";
+    if (!rawCode && isInstrumentCodeLike(o.id)) rawCode = o.id;
+    const code = String(rawCode || "").trim().toUpperCase();
+    if (!code || code.length < 3 || code.length > 32 || /^\d{2}:\d{2}/.test(code) || /^\d{4}-\d{2}-\d{2}/.test(code)) return null;
+
+    // Ignora registros claramente marcados como excluidos ou perdidos/baixados de outra tabela
+    const stNorm = norm(o.status || o.situacao || "");
+    if (o.deleted === true || o.isLost === true || o.lost === true) return null;
+    if (stNorm === "perdido" || stNorm === "desativado" || stNorm === "baixado") return null;
+
+    const desc = String(o.desc || o.descricao || o.description || o.name || o.instrumento || o.equipamento || o.nome || o.tipo || o.title || "").trim();
+    const cc = String(o.cc || o.c_custo || o.centro_custo || o.centroCusto || o.costCenter || o.cost_center || o.custo || "").trim();
+    const setor = String(o.setor || o.sector || o.setor_oficial || o.sec || o.area || o.departamento || o.dept || "").trim();
+    const resp = String(o.responsavel || o.responsible || o.resp || o.tecnico || o.tech || o.owner || o.holder || "").trim();
+    const local = String(o.local || o.loc || o.localizacao || o.location || o.armario || o.posse || "").trim();
+    const lastCal = normalizeDateBR(
+      o.ultima_calibracao || o.ultimaCalibracao || o.last_cal || o.lastCal || o.data_calibracao ||
+      o.validade || o.val || o.next_cal || o.nextCal || o.proxima_calibracao || o.prox_calibracao || o.cal || o.dueDate || o.due_date || o.vencimento || ""
+    );
+
+    if (!desc && !setor && !cc && !lastCal && !resp && !local) return null;
+    return { code, desc, cc, setor, resp, local, lastCal };
+  };
+
+  const upsertFleetRec = (rec, map) => {
+    if (!rec) return;
+    const prev = map.get(rec.code);
+    if (!prev) {
+      map.set(rec.code, rec);
+    } else {
+      map.set(rec.code, {
+        code: rec.code,
+        desc: prev.desc || rec.desc,
+        cc: prev.cc || rec.cc,
+        setor: prev.setor || rec.setor,
+        resp: prev.resp || rec.resp,
+        local: prev.local || rec.local,
+        lastCal: prev.lastCal || rec.lastCal
+      });
+    }
+  };
+
+  const deepCollectRecords = (node, map, depth = 0, seenObjs = new WeakSet()) => {
+    if (!node || typeof node !== "object" || depth > 4) return;
+    if (seenObjs.has(node)) return;
+    seenObjs.add(node);
+
+    if (Array.isArray(node)) {
+      const limit = Math.min(node.length, 2500);
+      for (let i = 0; i < limit; i++) {
+        const item = node[i];
+        if (!item || typeof item !== "object") continue;
+        const rec = extractInventoryRecord(item);
+        if (rec) upsertFleetRec(rec, map);
+        else if (depth < 3) deepCollectRecords(item, map, depth + 1, seenObjs);
+      }
+      return;
+    }
+
+    const recSelf = extractInventoryRecord(node);
+    if (recSelf) {
+      upsertFleetRec(recSelf, map);
+      return;
+    }
+
+    const keys = Object.keys(node);
+    const kLimit = Math.min(keys.length, 600);
+    for (let i = 0; i < kLimit; i++) {
+      const k = keys[i];
+      if (/^(audit|logs|history|hist|perdido|lost|baixa|cautela|custody|lab|external|sent)/i.test(k)) continue;
+      const val = node[k];
+      if (val && typeof val === "object") {
+        deepCollectRecords(val, map, depth + 1, seenObjs);
+      }
+    }
+  };
+
+  const waitForPendingWrites = async (maxMs = 4500) => {
+    const start = Date.now();
+    await sleep(350);
+    while (inFlightWrites > 0 && Date.now() - start < maxMs) {
+      await sleep(150);
+    }
+  };
+
+  if (!window.__vuImgFleetFetchHookedV41 && typeof window.fetch === "function") {
+    window.__vuImgFleetFetchHookedV41 = true;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = function (...args) {
+      const reqUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+      const initObj = args[1] || {};
+      const method = String(initObj.method || (args[0] && args[0].method) || "GET").toUpperCase();
+      const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      if (isWrite) inFlightWrites++;
+
+      try {
+        if (reqUrl.includes("/rest/v1/") && !/audit|log|perdido|lost|cautela|custody/i.test(reqUrl)) {
+          const base = reqUrl.split("?")[0];
+          const hdrs = initObj.headers || (args[0] && args[0].headers);
+          if (hdrs) {
+            const plainHdrs = {};
+            if (typeof hdrs.forEach === "function") hdrs.forEach((v, k) => { plainHdrs[k] = v; });
+            else Object.assign(plainHdrs, hdrs);
+            if (plainHdrs.apikey || plainHdrs.Apikey || plainHdrs.Authorization || plainHdrs.authorization) {
+              capturedCloudEndpoint = { url: base, headers: plainHdrs };
+            }
+          }
+        }
+      } catch (_) {}
+
+      const p = origFetch(...args);
+      p.then((res) => {
+        if (isWrite) inFlightWrites = Math.max(0, inFlightWrites - 1);
+        try {
+          if (!res || !res.ok) return;
+          if (!reqUrl.includes("/rest/v1/") && !reqUrl.includes("script.google.com")) return;
+          if (/audit|log|perdido|lost|cautela|custody/i.test(reqUrl)) return;
+          const ct = String((res.headers && res.headers.get("content-type")) || "");
+          if (!ct.includes("json")) return;
+          res.clone().json().then((data) => {
+            const tmp = new Map();
+            deepCollectRecords(data, tmp, 0);
+            if (tmp.size >= 5) {
+              fetchedInventoryPool = Array.from(tmp.values());
+              lastFleetScan = 0;
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      }).catch(() => {
+        if (isWrite) inFlightWrites = Math.max(0, inFlightWrites - 1);
+      });
+      return p;
+    };
+  }
+
+  // Descobre configuracao do Banco SQL (Supabase) salva no localStorage ou no script da pagina para puxar todos os codigos se necessario
+  const pullCloudCatalogIfIncomplete = async () => {
+    if (cloudPullAttempted) return;
+    cloudPullAttempted = true;
+    try {
+      if (capturedCloudEndpoint) {
+        const res = await window.fetch(`${capturedCloudEndpoint.url}?select=*&limit=2000`, {
+          method: "GET",
+          headers: capturedCloudEndpoint.headers
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          const tmp = new Map();
+          deepCollectRecords(data, tmp, 0);
+          if (tmp.size >= 5) {
+            fetchedInventoryPool = Array.from(tmp.values());
+            lastFleetScan = 0;
+            return;
+          }
+        }
+      }
+
+      let sbUrl = "", sbKey = "";
+      const scanText = (txt) => {
+        if (!txt || typeof txt !== "string") return;
+        if (!sbUrl) {
+          const um = txt.match(/https:\/\/[a-z0-9-]+\.supabase\.co/i);
+          if (um) sbUrl = um[0];
+        }
+        if (!sbKey) {
+          const km = txt.match(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/) || txt.match(/sb_publishable_[A-Za-z0-9_-]{20,}/);
+          if (km) sbKey = km[0];
+        }
+      };
+
+      for (let i = 0; i < localStorage.length; i++) {
+        scanText(localStorage.getItem(localStorage.key(i)));
+      }
+      if (!sbUrl || !sbKey) {
+        document.querySelectorAll("script").forEach((sc) => {
+          if (sc.textContent && sc.textContent.includes("supabase.co")) scanText(sc.textContent);
+        });
+      }
+
+      if (sbUrl && sbKey) {
+        const hdrs = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, Accept: "application/json" };
+        const candidateTables = ["instruments", "instrumentos", "voith_instruments", "metrologia_instruments", "metrologia_state", "app_state"];
+        for (let i = 0; i < candidateTables.length; i++) {
+          const tbl = candidateTables[i];
+          try {
+            const r = await window.fetch(`${sbUrl}/rest/v1/${tbl}?select=*&limit=2000`, { headers: hdrs });
+            if (!r || !r.ok) continue;
+            const d = await r.json();
+            const tmp = new Map();
+            deepCollectRecords(d, tmp, 0);
+            if (tmp.size >= 5) {
+              fetchedInventoryPool = Array.from(tmp.values());
+              capturedCloudEndpoint = { url: `${sbUrl}/rest/v1/${tbl}`, headers: hdrs };
+              lastFleetScan = 0;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  };
+
+  const getInventoryCatalog = (force = false) => {
+    const now = Date.now();
+    if (!force && cachedFleetList.length >= 10 && now - lastFleetScan < 3500) {
+      return { list: cachedFleetList, map: cachedFleetMap };
+    }
+
+    const map = new Map();
+    if (fetchedInventoryPool.length) {
+      fetchedInventoryPool.forEach((rec) => upsertFleetRec(rec, map));
+    }
+
+    // 1. Fontes conhecidas na janela
+    [
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.masterList,
+      window.db && window.db.instruments,
+      window.state && window.state.instruments,
+      window.state && window.state.items,
+      window.appState && window.appState.instruments
+    ].forEach((src) => { if (src) deepCollectRecords(src, map, 0); });
+
+    // 2. Varredura profunda em localStorage e sessionStorage (ignora logs e listas de perdidos)
+    const scanStorage = (store) => {
+      try {
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i) || "";
+          if (/voith_admin_audit|voith_lost_categories|audit|lost|perdido|baixa|cautela/i.test(k)) continue;
+          const raw = store.getItem(k);
+          if (!raw || raw.length < 30 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+          try {
+            const parsed = JSON.parse(raw);
+            deepCollectRecords(parsed, map, 0);
+          } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    scanStorage(localStorage);
+    scanStorage(sessionStorage);
+
+    // 3. Varredura em variaveis globais do window se ainda houver poucos itens
+    if (map.size < 20) {
+      try {
+        const keys = Object.keys(window);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator|VoithUpgrade)/i.test(k)) continue;
+          let v;
+          try { v = window[k]; } catch (_) { continue; }
+          if (v && typeof v === "object") {
+            if (Array.isArray(v) && v.length >= 5) deepCollectRecords(v, map, 0);
+            else if (v.instruments || v.items || v.frota) deepCollectRecords(v, map, 0);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 4. Complemento com linhas visiveis da tabela do Inventario (apenas fora da aba Perdidos)
+    if (!isLostTabActive()) {
+      document.querySelectorAll("table tbody tr").forEach((tr) => {
+        if (tr.closest("#vu-img-modal")) return;
+        const rowTxt = String(tr.textContent || "");
+        const cm = rowTxt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/);
+        if (!cm) return;
+        const code = cm[1].toUpperCase();
+        if (map.has(code)) return;
+        const tds = Array.from(tr.querySelectorAll("td"));
+        const dm = rowTxt.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+        const ccm = rowTxt.match(/\b(\d{4}\s*[A-Z])\b/);
+        const descTxt = String((tds[2] && tds[2].textContent) || "").replace(/Faixa:.*$/i, "").replace(/\s+/g, " ").trim();
+        const setTxt = String((tds[3] && tds[3].textContent) || "").replace(/\s+/g, " ").trim();
+        const locTxt = String((tds[4] && tds[4].textContent) || "").replace(/\s+/g, " ").trim();
+        if (descTxt || setTxt) {
+          map.set(code, { code, desc: descTxt, cc: ccm ? ccm[1] : "", setor: setTxt, resp: "", local: locTxt, lastCal: dm ? dm[1] : "" });
+        }
+      });
+    }
+
+    if (map.size > 0) {
+      cachedFleetMap = map;
+      cachedFleetList = Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+      lastFleetScan = now;
+    }
+
+    if (map.size < 50 && !cloudPullAttempted) {
+      pullCloudCatalogIfIncomplete();
+    }
+
+    return { list: cachedFleetList, map: cachedFleetMap };
+  };
+
+  // Verificacao extra ao vivo na tabela do Inventario (usada como garantia se o catalogo em memoria estiver incompleto)
+  const checkCodeViaLiveInventorySearch = async (code) => {
+    const up = String(code || "").trim().toUpperCase();
+    if (!up) return false;
+    const invSearch = Array.from(document.querySelectorAll("input")).find((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress")) return false;
+      const tp = String(el.type || "text").toLowerCase();
+      if (!["text", "search", ""].includes(tp)) return false;
+      const sig = norm([el.placeholder, el.id, el.name].filter(Boolean).join(" "));
+      return /buscar|pesquis|codigo|filtrar|instrumento/.test(sig) && !String((el.parentElement && el.parentElement.textContent) || "").includes("Ctrl K");
+    });
+    if (!invSearch) return false;
+    const prevVal = invSearch.value;
+    try {
+      setControlValue(invSearch, up);
+      await sleep(260);
+      const found = Array.from(document.querySelectorAll("table tbody tr")).some((tr) => {
+        if (!isVisible(tr) || tr.closest("#vu-img-modal")) return false;
+        const txt = String(tr.textContent || "").toUpperCase();
+        return new RegExp(`\\b${up.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(txt);
+      });
+      return found;
+    } finally {
+      setControlValue(invSearch, prevVal);
+      await sleep(100);
+    }
+  };
+
+  const getFleetKnownValues = () => {
+    const { list, map } = getInventoryCatalog();
+    const resps = new Set();
+    const descs = new Set();
+    const setores = new Set([
+      "Voith Turbo (Ferrovi\u00e1ria)",
+      "Voith Turbo (Ferrovi\u00e1ria Redutor)",
+      "Voith Turbo (Automotive)",
+      "Voith Turbo (Industrial)",
+      "Assist\u00eancia T\u00e9cnica Automotive",
+      "Assist\u00eancia T\u00e9cnica Industrial",
+      "Qualidade",
+      "Vorecon",
+      "Metrologia / Turbo"
+    ]);
+    const ccs = new Set();
+
+    list.forEach((it) => {
+      if (it.resp && it.resp.length >= 3) resps.add(it.resp);
+      if (it.desc && it.desc.length >= 4) descs.add(it.desc);
+      if (it.setor && it.setor.length >= 3) setores.add(it.setor);
+      if (it.cc && it.cc.length >= 3) ccs.add(it.cc);
+    });
+
+    return {
+      codes: new Set(map.keys()),
+      map,
+      resps: Array.from(resps),
+      descs: Array.from(descs),
+      setores: Array.from(setores),
+      ccs: Array.from(ccs)
+    };
+  };
+
+  /* -------------------- PERSISTENCIA DE CATEGORIAS DE PERDIDOS (PERDIDO / DESATIVADO) -------------------- */
+  const loadLostCatMap = () => {
+    try { return JSON.parse(localStorage.getItem(LOST_CAT_STORAGE_KEY) || "{}") || {}; }
+    catch (_) { return {}; }
+  };
+
+  const saveLostCat = (code, catId) => {
+    const c = String(code || "").trim().toUpperCase();
+    const safeCat = catId === "desativado" ? "desativado" : "perdido";
+    if (!c) return;
+    const map = loadLostCatMap();
+    map[c] = safeCat;
+    try { localStorage.setItem(LOST_CAT_STORAGE_KEY, JSON.stringify(map)); } catch (_) {}
+  };
+
+  const removeLostCat = (code) => {
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return;
+    const map = loadLostCatMap();
+    if (map[c]) {
+      delete map[c];
+      try { localStorage.setItem(LOST_CAT_STORAGE_KEY, JSON.stringify(map)); } catch (_) {}
+    }
+  };
+
+  const stripCategoryTag = (txt) => String(txt || "").replace(/^\s*\[(PERDIDO|VENCIDO|DESATIVADO)\]\s*/i, "").trim();
+
+  const applyCategoryTag = (txt, catId) => {
+    const safeCat = catId === "desativado" ? "desativado" : "perdido";
+    const cfg = LOST_CATEGORIES[safeCat];
+    const body = stripCategoryTag(txt);
+    return body ? `${cfg.tag} ${body}` : cfg.tag;
+  };
+
+  const detectCategoryFromRow = (code, fullText) => {
+    const raw = String(fullText || "");
+    if (/\[DESATIVADO\]/i.test(raw)) return "desativado";
+    if (/\[PERDIDO\]/i.test(raw)) return "perdido";
+    const map = loadLostCatMap();
+    const c = String(code || "").trim().toUpperCase();
+    if (c && map[c] === "desativado") return "desativado";
+    const n = norm(raw);
+    if (/\b(desativad|inativ|suspens|reativ|reserva|fora de uso|standby)\b/.test(n)) return "desativado";
+    return "perdido";
+  };
+
+  /* -------------------- LIMPEZA E CORRECAO POS-OCR -------------------- */
+  const bestKnownMatch = (raw, candidates, minSim = 0.72) => {
+    const q = norm(raw);
+    if (!q || q.length < 4 || !candidates.length) return raw;
+    let best = raw, bestScore = 0;
+    for (let i = 0; i < candidates.length; i++) {
+      const sim = similarity(q, norm(candidates[i]));
+      if (sim > bestScore) { bestScore = sim; best = candidates[i]; }
+    }
+    return bestScore >= minSim ? best : raw;
+  };
+
+  const mapSectorName = (raw) => {
+    const s = norm(raw);
+    if (!s) return "";
+    if (s.includes("ferrovi") && s.includes("redutor")) return "Voith Turbo (Ferrovi\u00e1ria Redutor)";
+    if (s.includes("ferrovi") || s.includes("ferrov")) return "Voith Turbo (Ferrovi\u00e1ria)";
+    if (s.includes("assist") && s.includes("automot")) return "Assist\u00eancia T\u00e9cnica Automotive";
+    if (s.includes("automot") || s.includes("engate")) return "Voith Turbo (Automotive)";
+    if (s.includes("assist") && s.includes("industr")) return "Assist\u00eancia T\u00e9cnica Industrial";
+    if (s.includes("industr")) return "Voith Turbo (Industrial)";
+    if (s.includes("qualid")) return "Qualidade";
+    if (s.includes("vorecon")) return "Vorecon";
+    if (s.includes("metrolog")) return "Metrologia / Turbo";
+    const paren = String(raw || "").match(/\(([^)]+)\)/);
+    return paren ? `Voith Turbo (${paren[1].trim()})` : String(raw || "").trim();
+  };
+
+  const cleanCodeOcr = (raw) => {
+    let s = String(raw || "").toUpperCase().replace(/[^A-Z0-9-]/g, "");
+    if (!s) return "";
+    s = s.replace(/^AC[A-Z](\d{5,7})$/, "AC$1");
+    s = s.replace(/^[1IL|]?AC(\d{5,7})$/, "AC$1");
+    s = s.replace(/^(4C|AO|AG|A0)(\d{5,7})$/, "AC$2");
+    const m = s.match(/^([A-Z]{2})([A-Z0-9]{5,7})(-[A-Z0-9]+)?$/);
+    if (m) {
+      const fixedNums = m[2]
+        .replace(/[OQ]/g, "0").replace(/[IL]/g, "1").replace(/S/g, "5")
+        .replace(/B/g, "8").replace(/Z/g, "2").replace(/G/g, "6");
+      if (/^\d{5,7}$/.test(fixedNums)) s = m[1] + fixedNums + (m[3] || "");
+    }
+    return s;
+  };
+
+  const cleanDescOcr = (raw, knownDescs) => {
+    let s = String(raw || "").replace(/[|\u00a6\[\]{}_~`^]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    const fixes = [
+      [/\bp[ao]g?qu?[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Paqu\u00edmetro"],
+      [/\bmicr[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Micr\u00f4metro"],
+      [/\btorqu[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Torqu\u00edmetro"],
+      [/\bman[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Man\u00f4metro"],
+      [/\bterm[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Term\u00f4metro"],
+      [/\bdinam[oô0]m[a-z\u00e0-\u00ff:]*/gi, "Dinam\u00f4metro"],
+      [/\bmult[ií1l]m[a-z\u00e0-\u00ff:]*/gi, "Mult\u00edmetro"],
+      [/\brel[oó0]g[ií1l][o0]/gi, "Rel\u00f3gio"],
+      [/\bs[uú]bit[o0]/gi, "S\u00fabito"],
+      [/\b[aá\u00e1]niv[ea]r[a-z\u00e0-\u00ff]*/gi, "Universal"],
+      [/\bunivers[a-z\u00e0-\u00ff]*/gi, "Universal"],
+      [/\bdig[ií1l]t[a-z\u00e0-\u00ff]*/gi, "Digital"],
+      [/\bmedid[o0]r\b/gi, "Medidor"],
+      [/\bbrilh[o0]\b/gi, "Brilho"],
+      [/\bcalibrad[o0]r\b/gi, "Calibrador"],
+      [/\bcomparad[o0]r\b/gi, "Comparador"],
+      [/\bapalp[a-z\u00e0-\u00ff]*/gi, "Apalpador"],
+      [/\bcamada\b/gi, "Camada"],
+      [/\bespessura\b/gi, "Espessura"],
+      [/\bprofund[a-z\u00e0-\u00ff]*/gi, "Profundidade"]
+    ];
+    fixes.forEach(([re, rep]) => { s = s.replace(re, rep); });
+    s = s.replace(/\s+[Iil1|.:,;]{1,2}$/, "").replace(/^[Iil1|.:,;]{1,2}\s+/, "").trim();
+    return bestKnownMatch(s, knownDescs, 0.74);
+  };
+
+  const cleanRespOcr = (raw, knownResps) => {
+    let s = String(raw || "")
+      .replace(/[0-9°ºª|\u00a6\[\]{}()\/\\.,;:'"`~]+/g, " ")
+      .replace(/vo[ji]?ith\s*turbo/ig, " ")
+      .replace(/([a-z\u00e0-\u00ff])([A-Z\u00c0-\u00dd])/g, "$1 $2")
+      .replace(/\s+/g, " ")
+      .trim();
+    s = s.replace(/\s+[a-zA-Z]$/g, "").replace(/^[a-zA-Z]\s+/g, "").trim();
+    if (!s) return "";
+    return bestKnownMatch(s, knownResps, 0.66);
+  };
+
+  const cleanRangeNumOcr = (raw) => {
+    return String(raw || "").trim()
+      .replace(/[oO]/g, "0").replace(/[lI]/g, "1")
+      .replace(/[^\d,.-]/g, "").replace(/\.+/g, ",").replace(/,+/g, ",")
+      .replace(/^,+|,+$/g, "").trim();
+  };
+
+  const cleanCcOcr = (raw) => {
+    let s = String(raw || "").toUpperCase().replace(/O/g, "0").replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    const m = s.match(/(\d{4})\s*([A-Z])?/);
+    return m ? (m[2] ? `${m[1]} ${m[2]}` : m[1]) : s;
+  };
+
+  const formatRange = (ini, fim) => {
+    const a = cleanRangeNumOcr(ini), b = cleanRangeNumOcr(fim);
+    if (a && b) return `${a} ~ ${b}`;
+    return a || b || "";
+  };
+
+  /* -------------------- MOTOR OCR HD (TESSDATA_BEST + GRADE ADAPTATIVA + UNSHARP MASK) -------------------- */
+  const loadTesseract = () => {
+    if (window.Tesseract && (typeof window.Tesseract.createWorker === "function" || typeof window.Tesseract.recognize === "function")) {
+      return Promise.resolve(window.Tesseract);
+    }
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${TESSERACT_CDN}"]`);
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.Tesseract));
+        existing.addEventListener("error", () => reject(new Error("Falha ao carregar OCR.")));
+        return;
+      }
+      const sc = document.createElement("script");
+      sc.src = TESSERACT_CDN;
+      sc.async = true;
+      sc.onload = () => resolve(window.Tesseract);
+      sc.onerror = () => reject(new Error("N\u00e3o foi poss\u00edvel carregar o motor OCR."));
+      document.head.appendChild(sc);
+    });
+  };
+
+  const createBestWorker = async (Tesseract, onProgress) => {
+    try {
+      onProgress("Carregando motor OCR de alta precis\u00e3o (tessdata_best)...");
+      return await Tesseract.createWorker("por", 1, { langPath: TESSDATA_BEST_URL });
+    } catch (_) {
+      onProgress("Carregando motor OCR padr\u00e3o...");
+      return await Tesseract.createWorker("por");
+    }
+  };
+
+  const blobToImage = (blob) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Imagem inv\u00e1lida ou corrompida.")); };
+    img.src = url;
+  });
+
+  const groupPositions = (arr, gap = 3) => {
+    if (!arr.length) return [];
+    const groups = [];
+    let s = arr[0], e = arr[0];
+    for (let i = 1; i < arr.length; i++) {
+      if (arr[i] <= e + gap) e = arr[i];
+      else { groups.push({ start: s, end: e, mid: Math.round((s + e) / 2), thick: e - s + 1 }); s = e = arr[i]; }
+    }
+    groups.push({ start: s, end: e, mid: Math.round((s + e) / 2), thick: e - s + 1 });
+    return groups;
+  };
+
+  const applyUnsharpMask = (ctx, w, h, amount = 1.15) => {
+    const srcImg = ctx.getImageData(0, 0, w, h);
+    const src = srcImg.data;
+    const out = new Uint8ClampedArray(src.length);
+    for (let y = 0; y < h; y++) {
+      const ym = Math.max(0, y - 1), yp = Math.min(h - 1, y + 1);
+      for (let x = 0; x < w; x++) {
+        const xm = Math.max(0, x - 1), xp = Math.min(w - 1, x + 1);
+        const c = (y * w + x) * 4;
+        const blur = (
+          src[(ym * w + xm) * 4] + src[(ym * w + x) * 4] * 2 + src[(ym * w + xp) * 4] +
+          src[(y  * w + xm) * 4] * 2 + src[c] * 4 + src[(y  * w + xp) * 4] * 2 +
+          src[(yp * w + xm) * 4] + src[(yp * w + x) * 4] * 2 + src[(yp * w + xp) * 4]
+        ) / 16;
+        const sharp = Math.max(0, Math.min(255, Math.round(src[c] + amount * (src[c] - blur))));
+        out[c] = out[c + 1] = out[c + 2] = sharp;
+        out[c + 3] = 255;
+      }
+    }
+    ctx.putImageData(new ImageData(out, w, h), 0, 0);
+  };
+
+  const detectAdaptiveGrid = (rawCanvas) => {
+    const W = rawCanvas.width, H = rawCanvas.height;
+    if (W < 240 || H < 55) return null;
+    const ctx = rawCanvas.getContext("2d", { willReadFrequently: true });
+    const data = ctx.getImageData(0, 0, W, H).data;
+
+    const xStart = Math.floor(W * 0.02), xEnd = Math.ceil(W * 0.98);
+    const xSpan = Math.max(1, xEnd - xStart);
+
+    const rowDarkRatio = new Float32Array(H);
+    const rowBlueRatio = new Float32Array(H);
+    const rowMean = new Float32Array(H);
+
+    for (let y = 0; y < H; y++) {
+      let dark = 0, blue = 0, sum = 0;
+      for (let x = xStart; x < xEnd; x++) {
+        const idx = (y * W + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        sum += gray;
+        if (gray < 236) dark++;
+        if (b > r + 15 && b > 140) blue++;
+      }
+      rowDarkRatio[y] = dark / xSpan;
+      rowBlueRatio[y] = blue / xSpan;
+      rowMean[y] = sum / xSpan;
+    }
+
+    const hLineYs = [];
+    for (let y = 0; y < H; y++) {
+      if (rowBlueRatio[y] > 0.30) continue;
+      const prevM = rowMean[Math.max(0, y - 2)];
+      const nextM = rowMean[Math.min(H - 1, y + 2)];
+      const localDrop = ((prevM + nextM) / 2) - rowMean[y];
+      if (rowDarkRatio[y] > 0.54 || (rowDarkRatio[y] > 0.42 && localDrop > 10)) hLineYs.push(y);
+    }
+
+    const hGroups = groupPositions(hLineYs, 2);
+    const yBounds = [];
+    hGroups.forEach((g) => {
+      if (g.thick <= 7) yBounds.push(g.mid);
+      else { yBounds.push(g.start); yBounds.push(g.end); }
+    });
+    if (!yBounds.length || yBounds[0] > 8) yBounds.unshift(0);
+    if (yBounds[yBounds.length - 1] < H - 8) yBounds.push(H - 1);
+
+    const uniqueY = [];
+    yBounds.sort((a, b) => a - b).forEach((y) => {
+      if (!uniqueY.length || y - uniqueY[uniqueY.length - 1] >= 10) uniqueY.push(y);
+    });
+
+    const rowBands = [];
+    for (let i = 0; i < uniqueY.length - 1; i++) {
+      const y1 = uniqueY[i], y2 = uniqueY[i + 1], rh = y2 - y1;
+      if (rh < 11 || rh > Math.max(95, H * 0.42)) continue;
+      if (rowBlueRatio[Math.floor((y1 + y2) / 2)] > 0.25) continue;
+      rowBands.push({ y1, y2, h: rh });
+    }
+    if (rowBands.length < 2) return null;
+
+    const tableTop = rowBands[0].y1, tableBot = rowBands[rowBands.length - 1].y2;
+    const tHeight = Math.max(1, tableBot - tableTop);
+
+    const vLineXs = [];
+    for (let x = 0; x < W; x++) {
+      let dark = 0;
+      for (let y = tableTop; y < tableBot; y++) {
+        const idx = (y * W + x) * 4;
+        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        if (gray < 235) dark++;
+      }
+      if (dark / tHeight > 0.56) vLineXs.push(x);
+    }
+
+    const vGroups = groupPositions(vLineXs, 3);
+    const xBounds = vGroups.map((g) => g.mid);
+    if (!xBounds.length || xBounds[0] > 12) xBounds.unshift(0);
+    if (xBounds[xBounds.length - 1] < W - 12) xBounds.push(W - 1);
+
+    const uniqueX = [];
+    xBounds.sort((a, b) => a - b).forEach((x) => {
+      if (!uniqueX.length || x - uniqueX[uniqueX.length - 1] >= 22) uniqueX.push(x);
+    });
+
+    const colBands = [];
+    for (let i = 0; i < uniqueX.length - 1; i++) {
+      colBands.push({ x1: uniqueX[i], x2: uniqueX[i + 1], w: uniqueX[i + 1] - uniqueX[i] });
+    }
+    if (colBands.length < 4 || colBands.length > 14) return null;
+    return { rowBands, colBands };
+  };
+
+  const cropCleanCellCanvas = (rawCanvas, x1, y1, x2, y2, isHeader = false) => {
+    const rawW = x2 - x1, rawH = y2 - y1;
+    const insetX = Math.min(5, Math.max(3, Math.floor(rawW * 0.03)));
+    const insetRight = isHeader && rawW > 46 ? Math.min(20, Math.floor(rawW * 0.24)) : insetX;
+    const insetY = Math.min(4, Math.max(2, Math.floor(rawH * 0.12)));
+
+    const sx = Math.max(0, x1 + insetX), sy = Math.max(0, y1 + insetY);
+    const sw = Math.max(4, x2 - insetRight - sx), sh = Math.max(4, y2 - insetY - sy);
+
+    const rawCtx = rawCanvas.getContext("2d", { willReadFrequently: true });
+    const src = rawCtx.getImageData(sx, sy, sw, sh);
+    const d = src.data;
+
+    let inkPixels = 0, minG = 255, bgSamples = [];
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        const idx = (py * sw + px) * 4;
+        const r = d[idx], g = d[idx + 1], b = d[idx + 2];
+        const inGreenCorner = px < 13 && py < 13 && (g > r + 4 && g > b + 4);
+        const isGreenMark = g > r + 14 && g > b + 14;
+        if (inGreenCorner || isGreenMark) { d[idx] = d[idx + 1] = d[idx + 2] = 255; continue; }
+        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+        if (py === 0 || py === sh - 1) bgSamples.push(gray);
+        if (gray < 200) inkPixels++;
+        if (gray < minG) minG = gray;
+        d[idx] = d[idx + 1] = d[idx + 2] = gray;
+      }
+    }
+    if (inkPixels < 6) return null;
+
+    bgSamples.sort((a, b) => a - b);
+    const bgEst = bgSamples.length ? bgSamples[Math.floor(bgSamples.length * 0.75)] : 245;
+    const whitePt = Math.max(190, Math.min(238, bgEst - 10));
+    const blackPt = Math.min(110, Math.max(15, minG + 6));
+    const span = Math.max(35, whitePt - blackPt);
+
+    for (let i = 0; i < d.length; i += 4) {
+      const g = d[i];
+      const v = g >= whitePt ? 255 : (g <= blackPt ? 0 : Math.round(((g - blackPt) / span) * 255));
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+
+    const tmp = document.createElement("canvas");
+    tmp.width = sw; tmp.height = sh;
+    tmp.getContext("2d").putImageData(src, 0, 0);
+
+    const scale = Math.min(5, Math.max(3.5, 110 / Math.max(sh, 10)));
+    const outW = Math.round(sw * scale), outH = Math.round(sh * scale), pad = 32;
+    const out = document.createElement("canvas");
+    out.width = outW + pad * 2; out.height = outH + pad * 2;
+    const octx = out.getContext("2d", { willReadFrequently: true });
+    octx.fillStyle = "#ffffff";
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = "high";
+    octx.drawImage(tmp, pad, pad, outW, outH);
+    applyUnsharpMask(octx, out.width, out.height, 1.1);
+    return out;
+  };
+
+  const preprocessFreeImageHD = (img) => {
+    const scale = Math.min(4, Math.max(2.6, 3000 / Math.max(img.width, 1)));
+    const w = Math.min(4000, Math.round(img.width * scale));
+    const h = Math.round(img.height * (w / img.width));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if ((g > r + 14 && g > b + 14) || (b > r + 20 && b > 150)) { d[i] = d[i + 1] = d[i + 2] = 255; continue; }
+      const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      const v = gray > 224 ? 255 : (gray < 55 ? 0 : Math.round(((gray - 55) / 169) * 255));
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    applyUnsharpMask(ctx, w, h, 1.0);
+    return canvas;
+  };
+
+  const mapHeaderToField = (txt, colIdx, totalCols) => {
+    const h = norm(txt);
+    if (/instrument|cod|tag|patrim/.test(h)) return "code";
+    if (/descri|equip|nome/.test(h)) return "desc";
+    if (/data|proxim|valid|cal/.test(h)) return "validade";
+    if (/centro|custo|\bcc\b/.test(h)) return "cc";
+    if (/setor|chapa|area/.test(h)) return "setor";
+    if (/respons|tecnic|gestor/.test(h)) return "responsavel";
+    if (/faixa.*inic|min/.test(h)) return "faixaIni";
+    if (/faixa.*fin|max/.test(h)) return "faixaFim";
+    if (/faixa|capac/.test(h)) return "faixa";
+    if (totalCols === 8) return ["code", "desc", "validade", "cc", "setor", "responsavel", "faixaIni", "faixaFim"][colIdx] || "";
+    return "";
+  };
+
+  const runSmartOcrOnBlob = async (blob, onProgress) => {
+    const [Tesseract, img] = await Promise.all([loadTesseract(), blobToImage(blob)]);
+    const known = getFleetKnownValues();
+
+    const rawCanvas = document.createElement("canvas");
+    rawCanvas.width = img.width; rawCanvas.height = img.height;
+    const rctx = rawCanvas.getContext("2d", { willReadFrequently: true });
+    rctx.fillStyle = "#ffffff";
+    rctx.fillRect(0, 0, rawCanvas.width, rawCanvas.height);
+    rctx.drawImage(img, 0, 0);
+
+    const grid = detectAdaptiveGrid(rawCanvas);
+
+    if (grid && typeof Tesseract.createWorker === "function") {
+      onProgress(`Grade detectada (${grid.rowBands.length} faixas \u00d7 ${grid.colBands.length} colunas). Preparando OCR HD...`);
+      const worker = await createBestWorker(Tesseract, onProgress);
+      const readCell = async (canvas, isCodeOrNum = false) => {
+        if (!canvas) return "";
+        try {
+          await worker.setParameters({
+            tessedit_pageseg_mode: "7",
+            load_system_dawg: isCodeOrNum ? "0" : "1",
+            load_freq_dawg: isCodeOrNum ? "0" : "1",
+            preserve_interword_spaces: "1"
+          });
+        } catch (_) {}
+        const res = await worker.recognize(canvas);
+        return String((res && res.data && res.data.text) || "").replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+      };
+
+      try {
+        const nonEmptyRows = [];
+        for (let r = 0; r < grid.rowBands.length; r++) {
+          const rb = grid.rowBands[r];
+          let filledCols = 0;
+          for (let c = 0; c < grid.colBands.length; c++) {
+            const cb = grid.colBands[c];
+            if (cropCleanCellCanvas(rawCanvas, cb.x1, rb.y1, cb.x2, rb.y2, false)) filledCols++;
+          }
+          if (filledCols >= 2) nonEmptyRows.push(rb);
+        }
+
+        if (nonEmptyRows.length >= 2) {
+          let startRow = 0;
+          const colMap = new Array(grid.colBands.length).fill("");
+          const firstRow = nonEmptyRows[0];
+          const probe0 = await readCell(cropCleanCellCanvas(rawCanvas, grid.colBands[0].x1, firstRow.y1, grid.colBands[0].x2, firstRow.y2, true), false);
+          const probe1 = await readCell(cropCleanCellCanvas(rawCanvas, grid.colBands[1].x1, firstRow.y1, grid.colBands[1].x2, firstRow.y2, true), false);
+
+          if (/instrument|cod|tag|patrim/i.test(norm(probe0)) || /descri|equip/i.test(norm(probe1))) {
+            startRow = 1;
+            colMap[0] = mapHeaderToField(probe0, 0, grid.colBands.length) || "code";
+            colMap[1] = mapHeaderToField(probe1, 1, grid.colBands.length) || "desc";
+            onProgress("Mapeando colunas do cabe\u00e7alho...");
+            for (let c = 2; c < grid.colBands.length; c++) {
+              const hCell = cropCleanCellCanvas(rawCanvas, grid.colBands[c].x1, firstRow.y1, grid.colBands[c].x2, firstRow.y2, true);
+              colMap[c] = mapHeaderToField(await readCell(hCell, false), c, grid.colBands.length);
+            }
+          }
+
+          const std8 = ["code", "desc", "validade", "cc", "setor", "responsavel", "faixaIni", "faixaFim"];
+          for (let c = 0; c < grid.colBands.length; c++) {
+            if (!colMap[c] && std8[c]) colMap[c] = std8[c];
+          }
+
+          const dataRows = nonEmptyRows.slice(startRow);
+          const items = [], tsvLines = [];
+
+          for (let r = 0; r < dataRows.length; r++) {
+            const rb = dataRows[r];
+            onProgress(`Lendo linha ${r + 1} de ${dataRows.length} (Grade HD)...`);
+            const rowObj = { code: "", desc: "", validade: "", cc: "", setor: "", responsavel: "", faixaIni: "", faixaFim: "", faixa: "" };
+
+            for (let c = 0; c < grid.colBands.length; c++) {
+              const field = colMap[c];
+              if (!field) continue;
+              const cb = grid.colBands[c];
+              const cellCanvas = cropCleanCellCanvas(rawCanvas, cb.x1, rb.y1, cb.x2, rb.y2, false);
+              if (!cellCanvas) continue;
+              const rawTxt = await readCell(cellCanvas, ["code", "validade", "cc", "faixaIni", "faixaFim"].includes(field));
+
+              if (field === "code") rowObj.code = cleanCodeOcr(rawTxt);
+              else if (field === "desc") rowObj.desc = cleanDescOcr(rawTxt, known.descs);
+              else if (field === "validade") rowObj.validade = normalizeDateBR(rawTxt);
+              else if (field === "cc") rowObj.cc = cleanCcOcr(rawTxt);
+              else if (field === "setor") rowObj.setor = mapSectorName(rawTxt);
+              else if (field === "responsavel") rowObj.responsavel = cleanRespOcr(rawTxt, known.resps);
+              else if (field === "faixaIni") rowObj.faixaIni = cleanRangeNumOcr(rawTxt);
+              else if (field === "faixaFim") rowObj.faixaFim = cleanRangeNumOcr(rawTxt);
+              else if (field === "faixa") rowObj.faixa = rawTxt;
+            }
+
+            if (!rowObj.faixa) rowObj.faixa = formatRange(rowObj.faixaIni, rowObj.faixaFim);
+            if (rowObj.code || rowObj.desc) {
+              items.push(rowObj);
+              tsvLines.push([rowObj.code, rowObj.desc, rowObj.validade, rowObj.cc, rowObj.setor, rowObj.responsavel, rowObj.faixaIni, rowObj.faixaFim].join("\t"));
+            }
+          }
+
+          if (items.length > 0) return { items, rawText: tsvLines.join("\n"), mode: "grid", cols: grid.colBands.length };
+        }
+      } finally {
+        await worker.terminate();
+      }
+    }
+
+    onProgress("Lendo imagem em modo livre HD...");
+    const cleanCanvas = preprocessFreeImageHD(img);
+    let text = "";
+    if (typeof Tesseract.createWorker === "function") {
+      const worker = await createBestWorker(Tesseract, onProgress);
+      try {
+        try { await worker.setParameters({ tessedit_pageseg_mode: "6", preserve_interword_spaces: "1" }); } catch (_) {}
+        const res = await worker.recognize(cleanCanvas);
+        text = (res && res.data && res.data.text) || "";
+      } finally { await worker.terminate(); }
+    } else {
+      const res = await Tesseract.recognize(cleanCanvas, "por");
+      text = (res && res.data && res.data.text) || "";
+    }
+    return { items: parseVoithLines(text), rawText: text, mode: "free", cols: 0 };
+  };
+
+  /* -------------------- PARSER DE EXCEL COLADO / TEXTO -------------------- */
+  const parseTrailingDetails = (restRaw, known) => {
+    let rest = String(restRaw || "").trim();
+    let cc = "", setor = "", responsavel = "", faixaIni = "", faixaFim = "";
+    if (!rest) return { cc, setor, responsavel, faixaIni, faixaFim };
+
+    const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
+    if (ccm) { cc = ccm[1].trim().toUpperCase(); rest = rest.slice(ccm[0].length).trim(); }
+    const fm = rest.match(/['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s+['"`.,:|]*(-?\d+(?:[.,]\d+)?)\s*$/);
+    if (fm) { faixaIni = cleanRangeNumOcr(fm[1]); faixaFim = cleanRangeNumOcr(fm[2]); rest = rest.slice(0, fm.index).trim(); }
+
+    const sm = rest.match(/(?:vo[ji]?ith\s*turbo\s*)?\(([^)]+)\)/i);
+    if (sm) {
+      setor = mapSectorName(sm[1]);
+      rest = (rest.slice(0, sm.index) + " " + rest.slice(sm.index + sm[0].length)).trim();
+    } else {
+      const kw = rest.match(/(ferrovi[a\u00e1]ria(?:\s+redutor)?|automotive(?:\/engates)?|industrial|qualidade|vorecon|metrologia)/i);
+      if (kw) {
+        setor = mapSectorName(kw[1]);
+        rest = (rest.slice(0, kw.index) + " " + rest.slice(kw.index + kw[0].length)).trim();
+      }
+    }
+    responsavel = cleanRespOcr(rest, known.resps);
+    return { cc, setor, responsavel, faixaIni, faixaFim };
+  };
+
+  const parseVoithLines = (rawText) => {
+    const known = getFleetKnownValues();
+    const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const items = [], seen = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (line.includes("\t")) {
+        const cols = line.split("\t").map((c) => c.trim());
+        while (cols.length && !cols[0]) cols.shift();
+        if (cols.length < 2) continue;
+
+        const c0Norm = norm(cols[0]);
+        if (/^(instrumento|codigo|cod|patrimonio|tag|informacoes|listagem|total)$/.test(c0Norm)) continue;
+
+        const code = cleanCodeOcr(cols[0]);
+        if (!code || code.length < 3 || code.length > 30 || !/[A-Z0-9]/.test(code)) continue;
+        if (seen.has(code)) continue;
+        seen.add(code);
+
+        const desc = cols[1] || "";
+        let validade = normalizeDateBR(cols[2] || "");
+        let cc = cols[3] || "";
+        let setor = mapSectorName(cols[4] || "");
+        let responsavel = cols[5] || "";
+        let faixaIni = cols[6] || "";
+        let faixaFim = cols[7] || "";
+
+        if (!validade) {
+          for (let c = 1; c < cols.length; c++) {
+            const d = normalizeDateBR(cols[c]);
+            if (d) { validade = d; break; }
+          }
+        }
+        items.push({ code, desc, validade, cc, setor, responsavel, faixaIni, faixaFim, faixa: formatRange(faixaIni, faixaFim) });
+        continue;
+      }
+
+      const clean = line.replace(/[|\u00a6\[\]{}]/g, " ").replace(/[_\u2014\u2013]+/g, " ").replace(/\s+/g, " ").trim();
+      const cm = clean.match(/\b([A-Z]{2,4}\s*[-]?\s*\d{4,7}[A-Z0-9-]*)\b/i);
+      if (!cm) continue;
+
+      const code = cleanCodeOcr(cm[1]);
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+
+      const afterCode = clean.slice(cm.index + cm[0].length).trim();
+      const dm = afterCode.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
+      let desc = "", validade = "", rest = "";
+      if (dm) {
+        desc = cleanDescOcr(afterCode.slice(0, dm.index), known.descs);
+        validade = normalizeDateBR(dm[1]);
+        rest = afterCode.slice(dm.index + dm[0].length).trim();
+      } else {
+        desc = cleanDescOcr(afterCode, known.descs);
+      }
+
+      const det = parseTrailingDetails(rest, known);
+      items.push({
+        code, desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
+        faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim)
+      });
+    }
+
+    if (!items.length && lines.length) {
+      const joined = lines.join(" ").replace(/[|\u00a6\[\]{}]/g, " ").replace(/\s*:\s*/g, " ").replace(/\s+/g, " ").trim();
+      const dm = joined.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
+      if (dm) {
+        const desc = cleanDescOcr(joined.slice(0, dm.index), known.descs);
+        const validade = normalizeDateBR(dm[1]);
+        const rest = joined.slice(dm.index + dm[0].length).trim();
+        const det = parseTrailingDetails(rest, known);
+        items.push({
+          code: "", desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
+          faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim), missingCode: true
+        });
+      }
+    }
+    return items;
+  };
+
+  /* -------------------- LOCALIZADORES DE MODAIS NATIVOS -------------------- */
+  const findSaveBtnIn = (root, requireEnabled = false) => {
+    if (!root) return null;
+    const btns = Array.from(root.querySelectorAll("button")).filter((b) => isVisible(b) && (!requireEnabled || !b.disabled));
+    const exact = btns.find((b) => /^(salvar|cadastrar|criar|adicionar|gravar|confirmar)$/.test(norm(b.textContent)));
+    if (exact) return exact;
+    return btns.find((b) => {
+      const t = norm(b.textContent);
+      return /(salvar|cadastrar|criar|gravar)/.test(t) && !/(proximo|cancelar|fechar|novo item|imagem|limpar|atalho|perdido)/.test(t);
+    }) || null;
+  };
+
+  const closeNativeModal = (card) => {
+    if (!card || !isVisible(card)) return;
+    const cBtn = Array.from(card.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b)) return false;
+      const raw = String(b.textContent || "").trim();
+      const t = norm(b.textContent);
+      return raw === "\u00d7" || raw === "x" || raw === "X" || raw === "\u2715" || t === "cancelar" || t === "fechar";
+    });
+    if (cBtn) cBtn.click();
+  };
+
+  const findOpenLostCreateModal = () => {
+    const headers = Array.from(document.querySelectorAll("h1, h2, h3, h4, div, span")).filter((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress")) return false;
+      if (el.children.length > 3) return false;
+      const t = norm(el.textContent);
+      return t.length <= 50 && (t.includes("cadastrar perdido") || t === "perdido / desativado");
+    });
+
+    for (let i = headers.length - 1; i >= 0; i--) {
+      let cur = headers[i].parentElement;
+      for (let depth = 0; depth < 8 && cur && cur !== document.body; depth++) {
+        if (cur.id && cur.id.startsWith("vu-")) break;
+        const inputs = Array.from(cur.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), textarea, select")).filter(isVisible);
+        const saveBtn = findSaveBtnIn(cur, false);
+        if (inputs.length >= 4 && saveBtn && !String(cur.textContent || "").includes("Monitoramento de Frota")) return cur;
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  };
+
+  const findLostTabButton = () => {
+    return Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-lost-subbar")) return false;
+      const t = norm(b.textContent);
+      return /^perdidos\s*\(\d+\)$/.test(t) || t === "perdidos" || t.includes("perdidos / desativados");
+    }) || null;
+  };
+
+  const findOpenLostCreateButton = () => {
+    return Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-lost-subbar")) return false;
+      const t = norm(b.textContent);
+      return (
+        t.includes("cadastrar perdido") || t.includes("novo perdido") || t.includes("adicionar perdido") ||
+        t.includes("registrar perdido") || t.includes("+ perdido") || t.includes("perdido / desativado")
+      );
+    }) || null;
+  };
+
+  const ensureOnLabBaixasLostTab = async () => {
+    let btn = findOpenLostCreateButton();
+    if (btn) return btn;
+    const labNav = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-img-progress")) return false;
+      const t = norm(b.textContent);
+      return t.includes("lab & baixas") || t.includes("lab e baixas") || t === "baixas";
+    });
+    if (labNav) { labNav.click(); await sleep(360); }
+    const lostTab = findLostTabButton();
+    if (lostTab) { lostTab.click(); await sleep(320); }
+    for (let k = 0; k < 10; k++) {
+      btn = findOpenLostCreateButton();
+      if (btn) return btn;
+      await sleep(120);
+    }
+    return null;
+  };
+
+  const findNewItemButton = () => {
+    return Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-bulk-modal")) return false;
+      const t = norm(b.textContent);
+      if (t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento")) return true;
+      if (t === "+" && b.getBoundingClientRect().top < 90) return true;
+      return false;
+    }) || null;
+  };
+
+  const findInstrumentFormDrawer = () => {
+    const anchors = Array.from(document.querySelectorAll("label, span, p, div, h1, h2, h3")).filter((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress") || el.closest("#vu-bulk-modal")) return false;
+      if (el.children.length > 2) return false;
+      const t = norm(el.textContent);
+      return t.length >= 5 && t.length <= 50 && /^(descricao do instrumento|localizacao fisica|status metrologico|faixa minima|novo instrumento|novo item)/.test(t);
+    });
+
+    for (let i = anchors.length - 1; i >= 0; i--) {
+      let cur = anchors[i].parentElement;
+      for (let depth = 0; depth < 10 && cur && cur !== document.body; depth++) {
+        if (cur.id && cur.id.startsWith("vu-")) break;
+        const controls = Array.from(cur.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).filter(isVisible);
+        const saveBtn = findSaveBtnIn(cur, false);
+        const hasMainApp = Boolean(cur.querySelector("aside nav")) || String(cur.textContent || "").includes("Monitoramento de Frota");
+        if (controls.length >= 4 && saveBtn && !hasMainApp) return cur;
+        cur = cur.parentElement;
+      }
+    }
+    return null;
+  };
+
+  const isDrawerInEditMode = (card) => {
+    if (!card || !isVisible(card)) return true;
+    const visBtns = Array.from(card.querySelectorAll("button")).filter(isVisible);
+    if (visBtns.some((b) => {
+      const t = norm(b.textContent);
+      return t === "excluir" || t.includes("mover p/ perdidos") || t === "cautela" || t === "copiar";
+    })) return true;
+
+    const visHeads = Array.from(card.querySelectorAll("h1, h2, h3, h4, span, div")).filter((el) => {
+      if (!isVisible(el) || el.children.length > 2) return false;
+      const len = String(el.textContent || "").trim().length;
+      return len > 0 && len <= 75;
+    });
+    if (visHeads.some((el) => /^novo (instrumento|item)/.test(norm(el.textContent)))) return false;
+    return visHeads.some((el) => /\b[a-z]{2}\d{4,}\b/.test(norm(el.textContent)));
+  };
+
+  const isOnLostScreen = () => {
+    if (findOpenLostCreateModal() || findOpenLostCreateButton() || findLostTabButton()) return true;
+    const hash = norm(window.location.hash || "");
+    return hash.includes("lab") || hash.includes("lost") || hash.includes("baixa");
+  };
+
+  /* -------------------- FILA 1: CRIAR NOVOS NO INVENTARIO (COM TRAVA DE DUPLICIDADE + BANCO REAL) -------------------- */
+  let queueBypassManualDupGuard = false;
+
+  const createInventoryQueue = async (rows) => {
+    const impModal = document.getElementById("vu-img-modal");
+    if (impModal) impModal.remove();
+
+    let prog = document.getElementById("vu-img-progress");
+    if (prog) prog.remove();
+    prog = document.createElement("div");
+    prog.id = "vu-img-progress";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483050;width:min(490px,93vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    document.body.appendChild(prog);
+
+    const { map: invMap } = getInventoryCatalog(true);
+    const batchCreated = new Set();
+    const ok = [], dupSkipped = [], fail = [];
+
+    const drawProg = (idx, code, msg) => {
+      const pct = Math.round((idx / rows.length) * 100);
+      prog.innerHTML =
+        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
+          `<span>Salvando no Banco de Dados (${idx}/${rows.length})</span><span style="color:#7dd3fc;">${pct}%</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + escHtml(code) + "</strong>" : ""}</div>` +
+        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#22c55e;transition:width .2s;"></div></div>`;
+    };
+
+    queueBypassManualDupGuard = true;
+    try {
+      for (let i = 0; i < rows.length; i++) {
+        const it = rows[i];
+        const codeUp = String(it.code || "").trim().toUpperCase();
+        drawProg(i, codeUp, "Verificando se o c\u00f3digo j\u00e1 est\u00e1 cadastrado");
+
+        // Trava definitiva contra duplicidade (catalogo completo + verificacao ao vivo se catalogo incompleto)
+        let alreadyExists = invMap.has(codeUp) || batchCreated.has(codeUp);
+        if (!alreadyExists && invMap.size < 50) {
+          alreadyExists = await checkCodeViaLiveInventorySearch(codeUp);
+        }
+        if (alreadyExists) {
+          dupSkipped.push(codeUp);
+          drawProg(i + 1, codeUp, "Ignorado \u2014 C\u00f3digo j\u00e1 cadastrado");
+          continue;
+        }
+
+        drawProg(i, codeUp, "Abrindo cadastro e gravando no banco");
+
+        let card = findInstrumentFormDrawer();
+        if (card && isDrawerInEditMode(card)) { closeNativeModal(card); await sleep(250); card = null; }
+
+        if (!card) {
+          const newBtn = findNewItemButton();
+          if (!newBtn) { fail.push(`${codeUp} (bot\u00e3o + Novo Item n\u00e3o encontrado)`); continue; }
+          newBtn.click();
+          for (let t = 0; t < 30; t++) {
+            await sleep(100);
+            card = findInstrumentFormDrawer();
+            if (card) break;
+          }
+        }
+
+        if (!card) { fail.push(`${codeUp} (janela de cadastro n\u00e3o abriu)`); continue; }
+
+        const controls = Array.from(card.querySelectorAll("input, select, textarea")).filter((el) => {
+          if (!isVisible(el) || el.disabled || el.readOnly) return false;
+          const tp = String(el.type || "").toLowerCase();
+          return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
+        });
+
+        const used = new Set();
+        const fillBy = (val, regex, excludeRegex, tagFilter) => {
+          if (!val) return false;
+          const target = controls.find((el) => {
+            if (used.has(el)) return false;
+            if (tagFilter && !tagFilter(el)) return false;
+            const h = getFieldHint(el);
+            if (excludeRegex && excludeRegex.test(h)) return false;
+            return regex.test(h);
+          });
+          if (target && setControlValue(target, val)) { used.add(target); return true; }
+          return false;
+        };
+
+        const filledCode = fillBy(codeUp, /(codigo|code|patrimonio|tag|identif|ac4)/, /(setor|centro|custo)/);
+        if (!filledCode && controls[0]) { setControlValue(controls[0], codeUp); used.add(controls[0]); }
+        if (it.cc) fillBy(it.cc, /(centro|custo|cc)/, /(obs)/);
+        fillBy(it.desc, /(descri|instrument|nome|equip|modelo|tipo)/, /(codigo|code|setor|respons|faixa|obs|centro)/);
+
+        const filledIni = fillBy(it.faixaIni, /(faixa\s*min|minima|min|inicial)/, /(final|max)/);
+        const filledFim = fillBy(it.faixaFim, /(faixa\s*max|maxima|max|final)/, /(inic|min)/);
+        if (!filledIni && !filledFim) fillBy(it.faixa, /(faixa|capac|range|medicao|escala)/, /(setor|data|valid)/);
+
+        fillBy(it.setor, /(setor|sector|area|chapa|divis|depart)/, /(local|armario|respons)/);
+        fillBy(it.responsavel, /(respons|tecnic|colaborad|gestor|owner|holder)/, /(setor|local|armario)/);
+
+        const filledDate =
+          fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast)/, (el) => el.type === "date") ||
+          fillBy(it.validade, /(valid|proxim|prox|venc|calibr|data)/, /(ultima|emiss|aquis|compra|cadast|period|meses)/);
+        if (!filledDate && it.validade) {
+          const anyDate = controls.find((el) => !used.has(el) && el.type === "date");
+          if (anyDate && setControlValue(anyDate, it.validade)) used.add(anyDate);
+        }
+
+        await sleep(220);
+        const saveBtn = findSaveBtnIn(card, true) || findSaveBtnIn(card, false);
+        if (!saveBtn) { fail.push(`${codeUp} (bot\u00e3o salvar n\u00e3o encontrado)`); closeNativeModal(card); continue; }
+
+        saveBtn.click();
+        await waitForPendingWrites(2500);
+        await sleep(700);
+
+        const stillOpen = findInstrumentFormDrawer();
+        if (stillOpen) { closeNativeModal(stillOpen); await sleep(240); }
+
+        batchCreated.add(codeUp);
+        upsertFleetRec({ code: codeUp, desc: it.desc || "", cc: it.cc || "", setor: it.setor || "", resp: it.responsavel || "", local: "", lastCal: it.validade || "" }, cachedFleetMap);
+        cachedFleetList = Array.from(cachedFleetMap.values()).sort((a, b) => a.code.localeCompare(b.code));
+
+        ok.push(codeUp);
+        drawProg(i + 1, codeUp, "Salvo no banco de dados");
+      }
+
+      if (ok.length > 0) {
+        drawProg(rows.length, "", "Finalizando sincroniza\u00e7\u00e3o com a nuvem...");
+        await waitForPendingWrites(4500);
+      }
+    } finally {
+      queueBypassManualDupGuard = false;
+    }
+
+    const hasAlerts = dupSkipped.length > 0 || fail.length > 0;
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${hasAlerts ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} salvo(s) no banco</div>` +
+        `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (dupSkipped.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fde68a;"><strong>C\u00f3digo j\u00e1 cadastrado (n\u00e3o duplicados):</strong> ${escHtml(dupSkipped.join(", "))}</div>` : "") +
+      (fail.length ? `<div style="margin-top:5px;font-size:11.5px;color:#fecaca;"><strong>N\u00e3o criados:</strong> ${escHtml(fail.join(", "))}</div>` : "") +
+      (!hasAlerts ? `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Todos os novos instrumentos foram gravados no banco de dados e sincronizados.</div>` : "");
+    prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !hasAlerts) prog.remove(); }, 7500);
+  };
+
+  /* -------------------- FILA 2: CRIAR PERDIDOS / DESATIVADOS NO MODAL NATIVO -------------------- */
+  const createLostQueue = async (rows) => {
+    const impModal = document.getElementById("vu-img-modal");
+    if (impModal) impModal.remove();
+
+    let prog = document.getElementById("vu-img-progress");
+    if (prog) prog.remove();
+    prog = document.createElement("div");
+    prog.id = "vu-img-progress";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483050;width:min(470px,92vw);background:#4c0519;color:#ffffff;border:1px solid #fb7185;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    document.body.appendChild(prog);
+
+    const { map: invMap } = getInventoryCatalog();
+    const ok = [], fail = [];
+    const drawProg = (idx, code, msg) => {
+      const pct = Math.round((idx / rows.length) * 100);
+      prog.innerHTML =
+        `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
+          `<span>Cadastrando Perdidos / Desativados (${idx}/${rows.length})</span><span style="color:#fda4af;">${pct}%</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:#ffe4e6;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + escHtml(code) + "</strong>" : ""}</div>` +
+        `<div style="height:7px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:#fb7185;transition:width .2s;"></div></div>`;
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const rawIt = rows[i];
+      const invRef = invMap.get(String(rawIt.code || "").toUpperCase()) || {};
+      const it = {
+        ...rawIt,
+        desc: rawIt.desc || invRef.desc || "",
+        cc: rawIt.cc || invRef.cc || "",
+        setor: rawIt.setor || invRef.setor || "",
+        validade: rawIt.validade || invRef.lastCal || ""
+      };
+      const catId = it.category === "desativado" ? "desativado" : "perdido";
+      drawProg(i, it.code, `Abrindo cadastro (${LOST_CATEGORIES[catId].label})`);
+
+      let modal = findOpenLostCreateModal();
+      if (!modal) {
+        const openBtn = await ensureOnLabBaixasLostTab();
+        if (!openBtn) { fail.push(`${it.code} (bot\u00e3o Cadastrar Perdido n\u00e3o encontrado)`); continue; }
+        openBtn.click();
+        for (let t = 0; t < 25; t++) {
+          await sleep(100);
+          modal = findOpenLostCreateModal();
+          if (modal) break;
+        }
+      }
+
+      if (!modal) { fail.push(`${it.code} (modal Cadastrar Perdido n\u00e3o abriu)`); continue; }
+
+      const controls = Array.from(modal.querySelectorAll("input, textarea, select")).filter((el) => {
+        if (!isVisible(el) || el.disabled || el.readOnly) return false;
+        const tp = String(el.type || "").toLowerCase();
+        return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(tp);
+      });
+
+      const used = new Set();
+      const fillBy = (val, regex, excludeRegex) => {
+        if (!val) return false;
+        const target = controls.find((el) => {
+          if (used.has(el)) return false;
+          const h = getFieldHint(el);
+          if (excludeRegex && excludeRegex.test(h)) return false;
+          return regex.test(h);
+        });
+        if (target && setControlValue(target, val)) { used.add(target); return true; }
+        return false;
+      };
+
+      if (!fillBy(it.code, /(codigo|code|patrimonio)/, /(custo|setor)/) && controls[0]) { setControlValue(controls[0], it.code); used.add(controls[0]); }
+      if (it.cc && !fillBy(it.cc, /(c\.?\s*custo|centro|custo|cc)/, /(codigo|obs)/) && controls[1] && !used.has(controls[1])) { setControlValue(controls[1], it.cc); used.add(controls[1]); }
+      if (it.desc && !fillBy(it.desc, /(descri|instrument|equip)/, /(codigo|custo|motivo|obs)/) && controls[2] && !used.has(controls[2])) { setControlValue(controls[2], it.desc); used.add(controls[2]); }
+      if (it.setor && !fillBy(it.setor, /(setor|sector|area)/, /(motivo|obs)/) && controls[3] && !used.has(controls[3])) { setControlValue(controls[3], it.setor); used.add(controls[3]); }
+      if (it.validade && !fillBy(it.validade, /(ultima|calibr|data|dd\/mm)/, /(motivo|obs)/) && controls[4] && !used.has(controls[4])) { setControlValue(controls[4], it.validade); used.add(controls[4]); }
+
+      const motivoFinal = applyCategoryTag(it.motivo || "", catId);
+      if (!fillBy(motivoFinal, /(motivo|observ|extraviad|sucat|obs)/, /(codigo|setor)/)) {
+        const lastCtrl = controls[controls.length - 1];
+        if (lastCtrl && !used.has(lastCtrl)) setControlValue(lastCtrl, motivoFinal);
+      }
+
+      saveLostCat(it.code, catId);
+      await sleep(180);
+
+      const saveBtn = findSaveBtnIn(modal, true) || findSaveBtnIn(modal, false);
+      if (!saveBtn) { fail.push(`${it.code} (bot\u00e3o Salvar n\u00e3o encontrado)`); closeNativeModal(modal); continue; }
+
+      saveBtn.click();
+      await waitForPendingWrites(2200);
+      await sleep(650);
+
+      const stillOpen = findOpenLostCreateModal();
+      if (stillOpen) { closeNativeModal(stillOpen); await sleep(220); }
+
+      ok.push(it.code);
+      drawProg(i + 1, it.code, `Salvo em ${LOST_CATEGORIES[catId].label}`);
+    }
+
+    if (ok.length > 0) await waitForPendingWrites(4000);
+
+    prog.innerHTML =
+      `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+        `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} cadastrado(s) em Perdidos/Desativados</div>` +
+        `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
+      `</div>` +
+      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${escHtml(fail.join(", "))}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#ffe4e6;">Salvo no banco de dados. Use os subfiltros (Perdidos / Desativados) para gerenciar.</div>`);
+    prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
+    setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 7000);
+    setTimeout(() => refreshLostSubfiltersUI(), 600);
+  };
+
+  /* -------------------- MODAL PRINCIPAL (v4.1 — BLOQUEIO DE DUPLICADOS + COLAR EXCEL COM BANCO) -------------------- */
+  const openImageImportModal = (initialTab = null, opts = {}) => {
+    const old = document.getElementById("vu-img-modal");
+    if (old) old.remove();
+
+    let activeTab = initialTab || (isOnLostScreen() ? "lost" : "inventory");
+    let defaultLostCat = "perdido";
+    let parsedRows = [];
+    const fromExcelMenu = Boolean(opts && opts.fromExcelMenu);
+
+    // Atualiza o catalogo completo ao abrir
+    const getLiveMap = () => getInventoryCatalog(true).map;
+    let existingMap = getLiveMap();
+
+    const overlay = document.createElement("div");
+    overlay.id = "vu-img-modal";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:10900;background:rgba(15,23,42,.68);display:flex;align-items:center;justify-content:center;padding:12px;font-family:system-ui,-apple-system,sans-serif;";
+    overlay.innerHTML =
+      `<div style="width:min(1020px,97vw);max-height:93vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;">` +
+        `<div id="vu-img-hdr" style="background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
+          `<div>` +
+            `<div style="font-size:16px;font-weight:800;">${fromExcelMenu ? "Colar do Excel (c/ Pr\u00e9via) \u2014 Salvamento no Banco (v4.1)" : "Importar Instrumentos por Imagem ou Excel (v4.1)"}</div>` +
+            `<div style="font-size:12px;opacity:.9;">Bloqueia automaticamente c\u00f3digos j\u00e1 cadastrados e grava direto no banco de dados (persiste ap\u00f3s atualizar).</div>` +
+          `</div>` +
+          `<button type="button" id="vu-img-close" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:19px;line-height:1;cursor:pointer;">&times;</button>` +
+        `</div>` +
+        `<div style="display:flex;gap:8px;padding:10px 20px;background:#f1f5f9;border-bottom:1px solid #cbd5e1;flex-wrap:wrap;">` +
+          `<button type="button" id="vu-tab-inv" style="padding:8px 15px;border-radius:10px;border:1px solid #cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer;">Novos Instrumentos (Invent\u00e1rio)</button>` +
+          `<button type="button" id="vu-tab-lost" style="padding:8px 15px;border-radius:10px;border:1px solid #cbd5e1;font-weight:800;font-size:12.5px;cursor:pointer;">Perdidos / Desativados</button>` +
+        `</div>` +
+        `<div style="padding:16px 20px;overflow-y:auto;display:grid;gap:13px;">` +
+          `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">` +
+            `<div style="border:2px solid ${fromExcelMenu ? "#004899" : "#cbd5e1"};border-radius:12px;background:#f8fafc;padding:12px;display:grid;gap:6px;order:${fromExcelMenu ? "1" : "2"};">` +
+              `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">` +
+                `<span style="font-weight:800;font-size:12px;color:#0f172a;">Cole linhas do Excel / texto aqui:</span>` +
+                `<button type="button" id="vu-img-parse-txt" style="padding:5px 10px;border-radius:7px;border:none;background:#004899;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Ler Texto</button>` +
+              `</div>` +
+              `<textarea id="vu-img-raw" rows="3" placeholder="Cole linhas da planilha (Ctrl+C no Excel -> Ctrl+V aqui)..." style="width:100%;padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>` +
+            `</div>` +
+            `<label id="vu-img-drop" style="border:2px dashed #60a5fa;border-radius:12px;background:#eff6ff;padding:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;cursor:pointer;order:${fromExcelMenu ? "2" : "1"};">` +
+              `<input id="vu-img-file" type="file" accept="image/*" style="display:none;">` +
+              `<div style="font-weight:800;font-size:13.5px;color:#003399;">Clique para escolher imagem ou arraste aqui</div>` +
+              `<div style="font-size:11.5px;color:#475569;">Tamb\u00e9m aceita <strong>Ctrl + V</strong> de print/imagem (PNG / JPG)</div>` +
+            `</label>` +
+          `</div>` +
+          `<div id="vu-lost-opts-panel" style="display:none;padding:11px 13px;border-radius:12px;border:1px solid #fecdd3;background:#fff1f2;gap:10px;">` +
+            `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">` +
+              `<span style="font-size:12px;font-weight:800;color:#9f1239;">Categoria padr\u00e3o para os itens importados:</span>` +
+              `<div id="vu-lost-cat-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>` +
+            `</div>` +
+            `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+              `<label style="font-size:11.5px;font-weight:700;color:#881337;white-space:nowrap;">Motivo / Obs. padr\u00e3o:</label>` +
+              `<input id="vu-lost-def-motivo" type="text" placeholder="Ex: Extraviado em campo / Desativado fora de uso" style="flex:1;min-width:220px;padding:6px 9px;border-radius:8px;border:1px solid #fda4af;font-size:12px;background:#fff;color:#0f172a;">` +
+            `</div>` +
+          `</div>` +
+          `<div id="vu-img-status" style="font-size:12.5px;font-weight:700;color:#0369a1;min-height:18px;"></div>` +
+          `<div id="vu-img-dup-banner" style="display:none;padding:9px 12px;border-radius:10px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;font-size:12px;font-weight:700;"></div>` +
+          `<div id="vu-img-preview-wrap" style="display:none;gap:8px;">` +
+            `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">` +
+              `<span id="vu-img-count" style="font-size:12.5px;font-weight:800;color:#002466;">Itens detectados (0)</span>` +
+              `<span style="font-size:11.5px;color:#64748b;">Revise ou edite qualquer campo abaixo antes de cadastrar.</span>` +
+            `</div>` +
+            `<div style="overflow-x:auto;border:1px solid #cbd5e1;border-radius:10px;">` +
+              `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px;">` +
+                `<thead id="vu-img-thead"></thead>` +
+                `<tbody id="vu-img-tbody"></tbody>` +
+              `</table>` +
+            `</div>` +
+          `</div>` +
+        `</div>` +
+        `<div style="padding:14px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">` +
+          `<button type="button" id="vu-img-add-manual" style="padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12px;cursor:pointer;">+ Adicionar linha manual</button>` +
+          `<div style="display:flex;gap:10px;">` +
+            `<button type="button" id="vu-img-cancel" style="padding:9px 16px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;">Cancelar</button>` +
+            `<button type="button" id="vu-img-create" disabled style="padding:9px 18px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;opacity:.55;">Criar no Invent\u00e1rio (0)</button>` +
+          `</div>` +
+        `</div>` +
+      `</div>`;
+
+    document.body.appendChild(overlay);
+
+    const hdr = overlay.querySelector("#vu-img-hdr");
+    const tabInvBtn = overlay.querySelector("#vu-tab-inv");
+    const tabLostBtn = overlay.querySelector("#vu-tab-lost");
+    const lostOptsPanel = overlay.querySelector("#vu-lost-opts-panel");
+    const lostCatPills = overlay.querySelector("#vu-lost-cat-pills");
+    const defMotivoInp = overlay.querySelector("#vu-lost-def-motivo");
+    const fileInp = overlay.querySelector("#vu-img-file");
+    const dropZone = overlay.querySelector("#vu-img-drop");
+    const rawTxt = overlay.querySelector("#vu-img-raw");
+    const statusEl = overlay.querySelector("#vu-img-status");
+    const dupBanner = overlay.querySelector("#vu-img-dup-banner");
+    const prevWrap = overlay.querySelector("#vu-img-preview-wrap");
+    const thead = overlay.querySelector("#vu-img-thead");
+    const tbody = overlay.querySelector("#vu-img-tbody");
+    const countEl = overlay.querySelector("#vu-img-count");
+    const createBtn = overlay.querySelector("#vu-img-create");
+
+    const syncTableToState = () => {
+      Array.from(tbody.querySelectorAll("tr")).forEach((tr) => {
+        const idx = Number(tr.getAttribute("data-idx"));
+        if (!parsedRows[idx]) return;
+        const g = (sel) => { const el = tr.querySelector(sel); return el ? el.value : null; };
+        const c = g(".vu-c-code"); if (c !== null) parsedRows[idx].code = c.trim().toUpperCase();
+        const d = g(".vu-c-desc"); if (d !== null) parsedRows[idx].desc = d.trim();
+        const v = g(".vu-c-val");  if (v !== null) parsedRows[idx].validade = v.trim();
+        const s = g(".vu-c-setor"); if (s !== null) parsedRows[idx].setor = s.trim();
+        const r = g(".vu-c-resp"); if (r !== null) parsedRows[idx].responsavel = r.trim();
+        const f = g(".vu-c-faixa"); if (f !== null) parsedRows[idx].faixa = f.trim();
+        const cc = g(".vu-c-cc"); if (cc !== null) parsedRows[idx].cc = cc.trim();
+        const cat = g(".vu-c-cat"); if (cat !== null) parsedRows[idx].category = cat === "desativado" ? "desativado" : "perdido";
+        const mot = g(".vu-c-motivo"); if (mot !== null) parsedRows[idx].motivo = mot.trim();
+      });
+    };
+
+    const updateCreateBtn = () => {
+      const n = tbody.querySelectorAll(".vu-row-chk:checked:not(:disabled)").length;
+      const isLost = activeTab === "lost";
+      createBtn.textContent = isLost ? `Cadastrar em Perdidos/Desativados (${n})` : `Salvar no Invent\u00e1rio (${n})`;
+      createBtn.style.background = isLost ? "#e11d48" : "#16a34a";
+      createBtn.disabled = n === 0;
+      createBtn.style.opacity = n === 0 ? ".55" : "1";
+    };
+
+    const renderLostCatPills = () => {
+      lostCatPills.innerHTML = Object.values(LOST_CATEGORIES).map((c) => {
+        const active = defaultLostCat === c.id;
+        return `<button type="button" data-def-cat="${c.id}" style="padding:5px 12px;border-radius:999px;font-size:11.5px;font-weight:800;cursor:pointer;border:1px solid ${active ? c.color : c.border};background:${active ? c.color : c.bg};color:${active ? "#ffffff" : c.color};">${c.fullLabel}</button>`;
+      }).join("");
+
+      lostCatPills.querySelectorAll("[data-def-cat]").forEach((btn) => {
+        btn.onclick = () => {
+          syncTableToState();
+          defaultLostCat = btn.getAttribute("data-def-cat");
+          parsedRows.forEach((r) => { r.category = defaultLostCat; });
+          renderLostCatPills();
+          renderTable();
+        };
+      });
+    };
+
+    const updateTabStyles = () => {
+      const isLost = activeTab === "lost";
+      hdr.style.background = isLost ? "linear-gradient(90deg,#9f1239,#e11d48)" : "linear-gradient(90deg,#002466,#0055b8)";
+      tabInvBtn.style.background = !isLost ? "#004899" : "#ffffff";
+      tabInvBtn.style.color = !isLost ? "#ffffff" : "#334155";
+      tabInvBtn.style.borderColor = !isLost ? "#004899" : "#cbd5e1";
+      tabLostBtn.style.background = isLost ? "#e11d48" : "#ffffff";
+      tabLostBtn.style.color = isLost ? "#ffffff" : "#334155";
+      tabLostBtn.style.borderColor = isLost ? "#e11d48" : "#cbd5e1";
+      lostOptsPanel.style.display = isLost ? "grid" : "none";
+      renderLostCatPills();
+      renderTable();
+    };
+
+    const renderTable = () => {
+      existingMap = getLiveMap();
+      prevWrap.style.display = parsedRows.length ? "grid" : "none";
+      countEl.textContent = `Itens detectados (${parsedRows.length})`;
+      const inpCss = "width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;color:#0f172a;background:#fff;box-sizing:border-box;";
+      const blockedCodes = [];
+
+      if (activeTab === "lost") {
+        dupBanner.style.display = "none";
+        thead.innerHTML =
+          `<tr style="background:#fff1f2;color:#881337;text-align:left;">` +
+            `<th style="padding:8px;width:30px;"><input type="checkbox" id="vu-img-chk-all" checked></th>` +
+            `<th style="padding:8px;width:115px;">C\u00f3digo</th>` +
+            `<th style="padding:8px;">Descri\u00e7\u00e3o</th>` +
+            `<th style="padding:8px;width:155px;">Categoria</th>` +
+            `<th style="padding:8px;width:85px;">C. Custo</th>` +
+            `<th style="padding:8px;">Setor</th>` +
+            `<th style="padding:8px;width:105px;">\u00daltima Cal.</th>` +
+            `<th style="padding:8px;">Motivo / Obs.</th>` +
+          `</tr>`;
+
+        tbody.innerHTML = parsedRows.map((r, idx) => {
+          const cat = r.category === "desativado" ? "desativado" : (defaultLostCat === "desativado" && !r.category ? "desativado" : "perdido");
+          const mot = r.motivo != null ? r.motivo : (defMotivoInp.value || "");
+          const needsCode = !r.code;
+          return (
+            `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${needsCode ? "#fef2f2" : "#ffffff"};">` +
+              `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" checked></td>` +
+              `<td style="padding:6px;"><input class="vu-c-code" value="${escHtml(r.code)}" placeholder="C\u00f3digo" style="${inpCss}font-weight:800;${needsCode ? "border-color:#dc2626;" : ""}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-desc" value="${escHtml(r.desc)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;">` +
+                `<select class="vu-c-cat" style="${inpCss}font-weight:700;">` +
+                  `<option value="perdido" ${cat === "perdido" ? "selected" : ""}>Perdido</option>` +
+                  `<option value="desativado" ${cat === "desativado" ? "selected" : ""}>Desativado (Reativ\u00e1vel)</option>` +
+                `</select>` +
+              `</td>` +
+              `<td style="padding:6px;"><input class="vu-c-cc" value="${escHtml(r.cc)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-setor" value="${escHtml(r.setor)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-val" value="${escHtml(r.validade)}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-motivo" value="${escHtml(mot)}" placeholder="Motivo / observ." style="${inpCss}"></td>` +
+            `</tr>`
+          );
+        }).join("");
+      } else {
+        const seenInBatch = new Set();
+        thead.innerHTML =
+          `<tr style="background:#f1f5f9;color:#334155;text-align:left;">` +
+            `<th style="padding:8px;width:30px;"><input type="checkbox" id="vu-img-chk-all" checked></th>` +
+            `<th style="padding:8px;width:138px;">C\u00f3digo</th>` +
+            `<th style="padding:8px;">Descri\u00e7\u00e3o</th>` +
+            `<th style="padding:8px;width:108px;">Pr\u00f3x. Cal.</th>` +
+            `<th style="padding:8px;">Setor</th>` +
+            `<th style="padding:8px;">Respons\u00e1vel</th>` +
+            `<th style="padding:8px;width:105px;">Faixa</th>` +
+            `<th style="padding:8px;width:85px;">CC</th>` +
+          `</tr>`;
+
+        tbody.innerHTML = parsedRows.map((r, idx) => {
+          const codeUp = String(r.code || "").trim().toUpperCase();
+          const existsInDb = Boolean(codeUp && existingMap.has(codeUp));
+          const existsInBatch = Boolean(codeUp && !existsInDb && seenInBatch.has(codeUp));
+          if (codeUp) seenInBatch.add(codeUp);
+          const blocked = existsInDb || existsInBatch;
+          if (existsInDb) blockedCodes.push(codeUp);
+          const needsCode = !codeUp;
+
+          const existingInfo = existsInDb ? existingMap.get(codeUp) : null;
+          const dupNote = existsInDb
+            ? `<div class="vu-dup-tag" style="font-size:10.5px;color:#dc2626;font-weight:800;margin-top:3px;">C\u00f3digo j\u00e1 cadastrado${existingInfo && existingInfo.local ? " (" + escHtml(existingInfo.local) + ")" : ""}</div>`
+            : (existsInBatch
+              ? `<div class="vu-dup-tag" style="font-size:10.5px;color:#b45309;font-weight:800;margin-top:3px;">Repetido nesta lista</div>`
+              : `<div class="vu-dup-tag" style="display:none;font-size:10.5px;color:#dc2626;font-weight:800;margin-top:3px;">C\u00f3digo j\u00e1 cadastrado</div>`);
+
+          return (
+            `<tr data-idx="${idx}" style="border-top:1px solid #e2e8f0;background:${blocked ? "#fef2f2" : (needsCode ? "#fffbeb" : "#ffffff")};opacity:${blocked ? ".86" : "1"};">` +
+              `<td style="padding:6px 8px;"><input type="checkbox" class="vu-row-chk" ${blocked ? "disabled" : "checked"}></td>` +
+              `<td style="padding:6px;"><input class="vu-c-code" value="${escHtml(codeUp)}" placeholder="C\u00f3digo" style="${inpCss}font-weight:800;${blocked || needsCode ? "border-color:#dc2626;" : ""}">${dupNote}</td>` +
+              `<td style="padding:6px;"><input class="vu-c-desc" value="${escHtml(r.desc)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-val" value="${escHtml(r.validade)}" placeholder="DD/MM/AAAA" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-setor" value="${escHtml(r.setor)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-resp" value="${escHtml(r.responsavel)}" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-faixa" value="${escHtml(r.faixa)}" placeholder="0 ~ 150" style="${inpCss}"></td>` +
+              `<td style="padding:6px;"><input class="vu-c-cc" value="${escHtml(r.cc)}" style="${inpCss}"></td>` +
+            `</tr>`
+          );
+        }).join("");
+
+        // Revalida em tempo real se o usuario editar o codigo na tabela
+        tbody.querySelectorAll(".vu-c-code").forEach((codeField) => {
+          codeField.addEventListener("input", () => {
+            const tr = codeField.closest("tr");
+            const chk = tr && tr.querySelector(".vu-row-chk");
+            const tag = tr && tr.querySelector(".vu-dup-tag");
+            const up = String(codeField.value || "").trim().toUpperCase();
+            const isDup = Boolean(up && existingMap.has(up));
+            if (chk) {
+              chk.disabled = isDup;
+              if (isDup) chk.checked = false;
+            }
+            if (tag) {
+              tag.style.display = isDup ? "block" : "none";
+              if (isDup) tag.textContent = "C\u00f3digo j\u00e1 cadastrado";
+            }
+            if (tr) tr.style.background = isDup ? "#fef2f2" : "#ffffff";
+            codeField.style.borderColor = isDup ? "#dc2626" : "#cbd5e1";
+            updateCreateBtn();
+          });
+        });
+
+        if (blockedCodes.length > 0) {
+          dupBanner.style.display = "block";
+          dupBanner.innerHTML = `Aviso: <strong>C\u00f3digo j\u00e1 cadastrado</strong> (${blockedCodes.length} item(ns) bloqueado(s) para n\u00e3o duplicar): ${escHtml(blockedCodes.join(", "))}`;
+        } else {
+          dupBanner.style.display = "none";
+        }
+      }
+
+      const chkAll = thead.querySelector("#vu-img-chk-all");
+      if (chkAll) {
+        chkAll.onchange = () => {
+          tbody.querySelectorAll(".vu-row-chk:not(:disabled)").forEach((c) => { c.checked = chkAll.checked; });
+          updateCreateBtn();
+        };
+      }
+      tbody.querySelectorAll(".vu-row-chk").forEach((c) => { c.onchange = updateCreateBtn; });
+      updateCreateBtn();
+    };
+
+    tabInvBtn.onclick = () => { syncTableToState(); activeTab = "inventory"; updateTabStyles(); };
+    tabLostBtn.onclick = () => { syncTableToState(); activeTab = "lost"; updateTabStyles(); };
+
+    defMotivoInp.oninput = () => {
+      const v = defMotivoInp.value;
+      tbody.querySelectorAll(".vu-c-motivo").forEach((inp) => { inp.value = v; });
+    };
+
+    const handleImageBlob = async (blob) => {
+      try {
+        statusEl.style.color = "#0369a1";
+        const result = await runSmartOcrOnBlob(blob, (msg) => { statusEl.textContent = msg; });
+        rawTxt.value = result.rawText || "";
+        parsedRows = (result.items || []).map((x) => ({ ...x, category: defaultLostCat }));
+        if (parsedRows.length) {
+          statusEl.style.color = "#15803d";
+          statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) ${result.mode === "grid" ? `(Grade HD ${result.cols} colunas)` : "(Modo Livre HD)"}!`;
+        } else {
+          statusEl.style.color = "#b45309";
+          statusEl.textContent = "Nenhuma linha v\u00e1lida encontrada na imagem. Ajuste o texto acima ou cole direto do Excel.";
+        }
+        renderTable();
+      } catch (err) {
+        statusEl.style.color = "#dc2626";
+        statusEl.textContent = "Erro ao ler imagem: " + (err && err.message ? err.message : err);
+      }
+    };
+
+    fileInp.onchange = () => { const f = fileInp.files && fileInp.files[0]; if (f) handleImageBlob(f); };
+    dropZone.ondragover = (ev) => { ev.preventDefault(); dropZone.style.background = "#dbeafe"; };
+    dropZone.ondragleave = () => { dropZone.style.background = "#eff6ff"; };
+    dropZone.ondrop = (ev) => {
+      ev.preventDefault();
+      dropZone.style.background = "#eff6ff";
+      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (f) handleImageBlob(f);
+    };
+
+    const onPaste = (ev) => {
+      if (!overlay.isConnected) { document.removeEventListener("paste", onPaste); return; }
+      const cb = ev.clipboardData;
+      if (!cb) return;
+
+      const plainText = String(cb.getData("text/plain") || "").trim();
+      if (plainText) {
+        if (document.activeElement !== rawTxt && document.activeElement !== defMotivoInp && !document.activeElement.closest("tbody")) {
+          ev.preventDefault();
+          rawTxt.value = plainText;
+        } else if (document.activeElement !== rawTxt) {
+          return;
+        }
+        setTimeout(() => {
+          parsedRows = parseVoithLines(rawTxt.value).map((x) => ({ ...x, category: defaultLostCat }));
+          statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
+          statusEl.textContent = parsedRows.length
+            ? `${parsedRows.length} instrumento(s) lido(s) direto do Excel!`
+            : "Texto colado, mas nenhuma linha v\u00e1lida foi identificada.";
+          renderTable();
+        }, 40);
+        return;
+      }
+
+      const items = cb.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type && items[i].type.startsWith("image/")) {
+            ev.preventDefault();
+            const blob = items[i].getAsFile();
+            if (blob) handleImageBlob(blob);
+            return;
+          }
+        }
+      }
+    };
+    document.addEventListener("paste", onPaste);
+
+    overlay.querySelector("#vu-img-parse-txt").onclick = () => {
+      parsedRows = parseVoithLines(rawTxt.value).map((x) => ({ ...x, category: defaultLostCat }));
+      statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
+      statusEl.textContent = parsedRows.length ? `${parsedRows.length} instrumento(s) detectado(s).` : "Nenhuma linha v\u00e1lida encontrada.";
+      renderTable();
+    };
+
+    overlay.querySelector("#vu-img-add-manual").onclick = () => {
+      syncTableToState();
+      parsedRows.push({ code: "", desc: "", validade: "", cc: "", setor: "", responsavel: "", faixaIni: "", faixaFim: "", faixa: "", category: defaultLostCat, motivo: defMotivoInp.value || "" });
+      renderTable();
+    };
+
+    const closeModal = () => { document.removeEventListener("paste", onPaste); overlay.remove(); };
+    overlay.querySelector("#vu-img-close").onclick = closeModal;
+    overlay.querySelector("#vu-img-cancel").onclick = closeModal;
+
+    createBtn.onclick = () => {
+      syncTableToState();
+      existingMap = getLiveMap();
+      const selected = [];
+      const blocked = [];
+
+      tbody.querySelectorAll("tr").forEach((tr) => {
+        const chk = tr.querySelector(".vu-row-chk");
+        if (!chk || !chk.checked || chk.disabled) return;
+        const idx = Number(tr.getAttribute("data-idx"));
+        const r = parsedRows[idx];
+        if (!r || !r.code) return;
+        const codeUp = String(r.code).trim().toUpperCase();
+        if (activeTab === "inventory" && existingMap.has(codeUp)) {
+          blocked.push(codeUp);
+          return;
+        }
+        const parts = String(r.faixa || "").split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
+        selected.push({
+          ...r,
+          code: codeUp,
+          faixaIni: r.faixaIni || parts[0] || "",
+          faixaFim: r.faixaFim || parts[1] || "",
+          category: r.category === "desativado" ? "desativado" : "perdido",
+          motivo: r.motivo || defMotivoInp.value || ""
+        });
+      });
+
+      if (blocked.length && !selected.length) {
+        dupBanner.style.display = "block";
+        dupBanner.innerHTML = `Aviso: <strong>C\u00f3digo j\u00e1 cadastrado</strong> (${escHtml(blocked.join(", "))}). Nenhum item novo para cadastrar.`;
+        return;
+      }
+
+      if (!selected.length) {
+        statusEl.style.color = "#dc2626";
+        statusEl.textContent = "Preencha o C\u00f3digo dos itens marcados antes de continuar.";
+        return;
+      }
+
+      document.removeEventListener("paste", onPaste);
+      if (activeTab === "lost") createLostQueue(selected);
+      else createInventoryQueue(selected);
+    };
+
+    updateTabStyles();
+    if (opts && opts.focusExcel) {
+      setTimeout(() => { try { rawTxt.focus(); } catch (_) {} }, 80);
+    }
+  };
+
+  /* -------------------- TRAVA DE DUPLICIDADE TAMBEM NO CADASTRO MANUAL "+ NOVO ITEM" -------------------- */
+  const bindNewItemDuplicateGuard = (drawer) => {
+    if (!drawer || isDrawerInEditMode(drawer)) return;
+    const controls = Array.from(drawer.querySelectorAll("input:not([type=hidden]):not([type=checkbox])")).filter(isVisible);
+    const codeInp = controls.find((el) => /(codigo|code|patrimonio|tag)/.test(getFieldHint(el)) && !/(setor|centro|custo)/.test(getFieldHint(el))) || controls[0];
+    if (!codeInp || codeInp.dataset.vuNewDupGuard === "1") return;
+    codeInp.dataset.vuNewDupGuard = "1";
+
+    let warnEl = drawer.querySelector("#vu-new-dup-warn");
+    if (!warnEl && codeInp.parentElement) {
+      warnEl = document.createElement("div");
+      warnEl.id = "vu-new-dup-warn";
+      warnEl.style.cssText = "display:none;margin-top:4px;padding:5px 8px;border-radius:7px;background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;font-size:11.5px;font-weight:800;";
+      codeInp.parentElement.appendChild(warnEl);
+    }
+
+    const checkManualDup = () => {
+      if (isDrawerInEditMode(drawer)) {
+        if (warnEl) warnEl.style.display = "none";
+        return false;
+      }
+      const up = String(codeInp.value || "").trim().toUpperCase();
+      const { map } = getInventoryCatalog();
+      const hit = up ? map.get(up) : null;
+      if (hit) {
+        if (warnEl) {
+          warnEl.textContent = `C\u00f3digo j\u00e1 cadastrado (${hit.desc || up}${hit.local ? " \u2022 " + hit.local : ""})`;
+          warnEl.style.display = "block";
+        }
+        codeInp.style.borderColor = "#dc2626";
+        return true;
+      }
+      if (warnEl) warnEl.style.display = "none";
+      codeInp.style.borderColor = "";
+      return false;
+    };
+
+    codeInp.addEventListener("input", checkManualDup);
+    codeInp.addEventListener("blur", checkManualDup);
+
+    const saveBtn = findSaveBtnIn(drawer, false);
+    if (saveBtn && saveBtn.dataset.vuNewDupSaveHook !== "1") {
+      saveBtn.dataset.vuNewDupSaveHook = "1";
+      saveBtn.addEventListener("click", (ev) => {
+        if (queueBypassManualDupGuard || isDrawerInEditMode(drawer)) return;
+        if (checkManualDup()) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          ev.stopImmediatePropagation();
+          codeInp.focus();
+        }
+      }, true);
+    }
+  };
+
+  /* -------------------- AUTOPREENCHIMENTO DO INVENTARIO + AUTOCORRECAO NO MODAL PERDIDOS -------------------- */
+  let lostDdEl = null;
+  let lostActiveInp = null;
+  let lostToastTimer = null;
+
+  const closeLostDd = () => { if (lostDdEl) lostDdEl.style.display = "none"; lostActiveInp = null; };
+
+  const ensureLostDd = () => {
+    if (lostDdEl && lostDdEl.isConnected) return lostDdEl;
+    const d = document.createElement("div");
+    d.id = "vu-lost-ac-dd";
+    d.style.cssText = "position:fixed;display:none;z-index:2147482900;background:#ffffff;border:1px solid #e11d48;border-radius:10px;box-shadow:0 16px 38px rgba(15,23,42,.28);overflow-y:auto;max-height:230px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;";
+    document.body.appendChild(d);
+    lostDdEl = d;
+    return d;
+  };
+
+  const positionLostDd = (inp) => {
+    if (!lostDdEl || !inp || !isVisible(inp)) return;
+    const r = inp.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const w = Math.min(vw - 16, Math.max(260, r.width));
+    const left = Math.max(8, Math.min(r.left, vw - w - 8));
+    lostDdEl.style.left = left + "px";
+    lostDdEl.style.width = w + "px";
+    const below = window.innerHeight - r.bottom - 10;
+    if (below >= 130) { lostDdEl.style.top = (r.bottom + 4) + "px"; lostDdEl.style.bottom = "auto"; }
+    else { lostDdEl.style.top = "auto"; lostDdEl.style.bottom = (window.innerHeight - r.top + 4) + "px"; }
+  };
+
+  const showLostUndoToast = (inp, oldVal, newVal) => {
+    let t = document.getElementById("vu-lost-ac-toast");
+    if (t) t.remove();
+    t = document.createElement("div");
+    t.id = "vu-lost-ac-toast";
+    t.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483150;background:#0f172a;color:#f8fafc;border:1px solid #22c55e;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:12px;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.35);";
+    t.innerHTML =
+      `<span>Corrigido: <strong style="color:#86efac;">${escHtml(newVal)}</strong></span>` +
+      `<button type="button" id="vu-lac-undo" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fde047;font-weight:800;font-size:11.5px;cursor:pointer;">Desfazer</button>`;
+    document.body.appendChild(t);
+    t.querySelector("#vu-lac-undo").onclick = () => { inp.dataset.vuLostSkipFix = oldVal; setControlValue(inp, oldVal); t.remove(); };
+    clearTimeout(lostToastTimer);
+    lostToastTimer = setTimeout(() => { if (t && t.isConnected) t.remove(); }, 5000);
+  };
+
+  const rankTextOptions = (rawQuery, options) => {
+    const qNorm = norm(rawQuery), qComp = compact(rawQuery);
+    if (!qComp) return options.slice(0, 10).map((val) => ({ val, score: 500, kind: "list", sim: 1 }));
+    const out = [];
+    for (let i = 0; i < options.length; i++) {
+      const val = options[i], cNorm = norm(val), cComp = compact(val);
+      let score = 0, kind = "";
+      if (cNorm === qNorm || cComp === qComp) { score = 1000; kind = "exact"; }
+      else if (cNorm.startsWith(qNorm) || cComp.startsWith(qComp)) { score = 880; kind = "prefix"; }
+      else if (cNorm.includes(qNorm) || (qComp.length >= 3 && cComp.includes(qComp))) { score = 740; kind = "contains"; }
+      else if (qComp.length >= 4) {
+        const sim = similarity(qComp, cComp);
+        if (sim >= 0.65) { score = Math.round(sim * 700); kind = "fuzzy"; }
+      }
+      if (score > 0) out.push({ val, score, kind, sim: similarity(qComp, cComp) });
+    }
+    out.sort((a, b) => b.score - a.score || a.val.localeCompare(b.val));
+    return out.slice(0, 10);
+  };
+
+  const bindLostTextAutocomplete = (inp, getListFn, allowAutoCorrect) => {
+    if (!inp || inp.dataset.vuLostFieldBound === "1") return;
+    inp.dataset.vuLostFieldBound = "1";
+    inp.dataset.vuAutoBound = "1";
+    inp.setAttribute("autocomplete", "off");
+
+    const openList = () => {
+      const opts = getListFn();
+      if (!opts.length) { closeLostDd(); return; }
+      const raw = String(inp.value || "").trim();
+      const hits = rankTextOptions(raw, opts);
+      if (!hits.length || (hits.length === 1 && hits[0].val === raw)) { closeLostDd(); return; }
+
+      const d = ensureLostDd();
+      lostActiveInp = inp;
+      d.innerHTML = hits.map((h, i) => {
+        const tag = h.kind === "fuzzy"
+          ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:#fef3c7;color:#92400e;">Corre\u00e7\u00e3o</span>`
+          : h.kind === "prefix" && raw.length >= 2
+          ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:#dcfce7;color:#166534;">Completar</span>`
+          : "";
+        return (
+          `<button type="button" data-lopt="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;padding:8px 11px;border:none;border-bottom:1px solid #f1f5f9;background:${i === 0 ? "#fff1f2" : "#ffffff"};color:#0f172a;font-size:12.5px;font-weight:${i === 0 ? "800" : "600"};text-align:left;cursor:pointer;">` +
+            `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(h.val)}</span>${tag}` +
+          `</button>`
+        );
+      }).join("");
+
+      d.querySelectorAll("[data-lopt]").forEach((btn) => {
+        const pick = (ev) => {
+          ev.preventDefault();
+          const h = hits[Number(btn.getAttribute("data-lopt"))];
+          if (h) { delete inp.dataset.vuLostSkipFix; setControlValue(inp, h.val); }
+          closeLostDd();
+        };
+        btn.addEventListener("mousedown", pick);
+        btn.addEventListener("touchstart", pick, { passive: false });
+      });
+
+      positionLostDd(inp);
+      d.style.display = "block";
+    };
+
+    const runAutoCorrect = () => {
+      if (!allowAutoCorrect) return;
+      const raw = String(inp.value || "").trim();
+      if (!raw || raw.length < 3 || inp.dataset.vuLostSkipFix === raw) return;
+      const opts = getListFn();
+      if (!opts.length || opts.includes(raw)) return;
+      const hits = rankTextOptions(raw, opts);
+      if (!hits.length) return;
+      const best = hits[0], second = hits[1];
+      const qNums = raw.match(/\d+/g) || [], bNums = best.val.match(/\d+/g) || [];
+      if (qNums.length && !qNums.every((n) => bNums.includes(n))) return;
+
+      const fix =
+        best.kind === "exact" ||
+        (best.kind === "prefix" && compact(raw).length >= 4 && (!second || second.kind !== "prefix")) ||
+        (best.kind === "fuzzy" && compact(raw).length >= 5 && best.sim >= 0.74 && (!second || best.score - second.score >= 45));
+
+      if (fix && best.val !== raw) {
+        setControlValue(inp, best.val);
+        showLostUndoToast(inp, raw, best.val);
+      }
+    };
+
+    inp.addEventListener("focus", openList);
+    inp.addEventListener("input", () => { delete inp.dataset.vuLostSkipFix; openList(); });
+    inp.addEventListener("blur", () => { setTimeout(() => { if (lostActiveInp === inp) closeLostDd(); runAutoCorrect(); }, 150); });
+  };
+
+  const enhanceNativeLostModal = () => {
+    const lostModal = findOpenLostCreateModal();
+    if (!lostModal) return;
+
+    const controls = Array.from(lostModal.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), textarea")).filter(isVisible);
+    const codeInp   = controls.find((el) => /(codigo|code)/.test(getFieldHint(el))) || controls[0];
+    const ccInp     = controls.find((el) => /(c\.?\s*custo|centro|custo|cc)/.test(getFieldHint(el))) || controls[1];
+    const descInp   = controls.find((el) => /(descri|instrument)/.test(getFieldHint(el))) || controls[2];
+    const setorInp  = controls.find((el) => /(setor|sector|area)/.test(getFieldHint(el))) || controls[3];
+    const calInp    = controls.find((el) => /(ultima|calibr|dd\/mm|data)/.test(getFieldHint(el))) || controls[4];
+    const motivoInp = controls.find((el) => /(motivo|observ|extraviad|sucat)/.test(getFieldHint(el))) || controls[controls.length - 1];
+
+    if (!lostModal.querySelector("#vu-lost-modal-import-wrap")) {
+      const wrap = document.createElement("div");
+      wrap.id = "vu-lost-modal-import-wrap";
+      wrap.style.cssText = "width:100%;margin-bottom:12px;box-sizing:border-box;";
+      wrap.innerHTML =
+        `<button type="button" id="vu-lost-modal-import-btn" style="width:100%;padding:9px 12px;border-radius:10px;border:1px dashed #e11d48;background:#fff1f2;color:#be123c;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">` +
+          `<span>Importar v\u00e1rios Perdidos por Imagem / Excel</span>` +
+        `</button>`;
+      wrap.querySelector("#vu-lost-modal-import-btn").onclick = () => {
+        closeNativeModal(lostModal);
+        setTimeout(() => openImageImportModal("lost"), 120);
+      };
+      const gridRow = codeInp && codeInp.parentElement && codeInp.parentElement.parentElement;
+      if (gridRow && gridRow.parentElement) gridRow.parentElement.insertBefore(wrap, gridRow);
+    }
+
+    if (codeInp && codeInp.dataset.vuLostInvLookup !== "1") {
+      codeInp.dataset.vuLostInvLookup = "1";
+      codeInp.dataset.vuAutoBound = "1";
+      codeInp.setAttribute("autocomplete", "off");
+
+      let hintBadge = lostModal.querySelector("#vu-lost-inv-hint");
+      if (!hintBadge && codeInp.parentElement) {
+        hintBadge = document.createElement("div");
+        hintBadge.id = "vu-lost-inv-hint";
+        hintBadge.style.cssText = "font-size:11px;font-weight:700;margin-top:4px;min-height:14px;color:#64748b;";
+        codeInp.parentElement.appendChild(hintBadge);
+      }
+
+      const applyInventoryRecord = (rec) => {
+        if (!rec) return;
+        setControlValue(codeInp, rec.code);
+        if (ccInp && rec.cc) setControlValue(ccInp, rec.cc);
+        if (descInp && rec.desc) setControlValue(descInp, rec.desc);
+        if (setorInp && rec.setor) setControlValue(setorInp, rec.setor);
+        if (calInp && rec.lastCal) setControlValue(calInp, rec.lastCal);
+        if (hintBadge) {
+          hintBadge.style.color = "#15803d";
+          hintBadge.textContent = `\u2713 Puxado do Invent\u00e1rio (${rec.desc || rec.code})`;
+        }
+        closeLostDd();
+      };
+
+      const renderCodeMatches = (autoFillExact = false) => {
+        const { list, map } = getInventoryCatalog();
+        const raw = String(codeInp.value || "").trim();
+        const qUp = raw.toUpperCase(), qNorm = norm(raw);
+
+        if (!raw && hintBadge) {
+          hintBadge.style.color = "#64748b";
+          hintBadge.textContent = list.length ? `Digite o c\u00f3digo para puxar dos ${list.length} itens do Invent\u00e1rio` : "";
+        }
+
+        if (autoFillExact && qUp && map.has(qUp)) { applyInventoryRecord(map.get(qUp)); return; }
+        if (!list.length) { closeLostDd(); return; }
+
+        let matches = !raw
+          ? list.slice(0, 12)
+          : list.filter((it) => it.code.includes(qUp) || norm(it.desc).includes(qNorm) || norm(it.setor).includes(qNorm))
+              .sort((a, b) => {
+                const aExact = a.code === qUp ? 0 : (a.code.startsWith(qUp) ? 1 : (a.code.endsWith(qUp) ? 2 : 3));
+                const bExact = b.code === qUp ? 0 : (b.code.startsWith(qUp) ? 1 : (b.code.endsWith(qUp) ? 2 : 3));
+                return aExact - bExact || a.code.localeCompare(b.code);
+              }).slice(0, 12);
+
+        if (autoFillExact && qUp.length >= 6 && matches.length === 1 && matches[0].code === qUp) {
+          applyInventoryRecord(matches[0]);
+          return;
+        }
+        if (!matches.length) {
+          if (hintBadge && raw.length >= 4) {
+            hintBadge.style.color = "#b45309";
+            hintBadge.textContent = "N\u00e3o est\u00e1 no Invent\u00e1rio ativo \u2014 preencha manualmente";
+          }
+          closeLostDd();
+          return;
+        }
+
+        const d = ensureLostDd();
+        lostActiveInp = codeInp;
+        d.innerHTML =
+          `<div style="padding:6px 10px;background:#fff1f2;border-bottom:1px solid #fecdd3;font-size:10.5px;font-weight:800;color:#9f1239;text-transform:uppercase;">Invent\u00e1rio Voith (${matches.length}) \u2014 clique para preencher</div>` +
+          matches.map((it, idx) =>
+            `<button type="button" data-inv-idx="${idx}" style="display:flex;flex-direction:column;gap:2px;width:100%;padding:8px 11px;border:none;border-bottom:1px solid #f1f5f9;background:${idx === 0 ? "#fef2f2" : "#ffffff"};text-align:left;cursor:pointer;">` +
+              `<div style="display:flex;justify-content:space-between;gap:8px;width:100%;">` +
+                `<span style="font-weight:800;font-size:12.5px;color:#be123c;">${escHtml(it.code)}</span>` +
+                `<span style="font-size:11px;font-weight:700;color:#475569;">${escHtml(it.cc || it.lastCal || "")}</span>` +
+              `</div>` +
+              `<div style="font-size:11.5px;color:#0f172a;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(it.desc || "Sem descri\u00e7\u00e3o")}</div>` +
+              (it.setor ? `<div style="font-size:10.5px;color:#64748b;">${escHtml(it.setor)}</div>` : "") +
+            `</button>`
+          ).join("");
+
+        d.querySelectorAll("[data-inv-idx]").forEach((btn) => {
+          const pick = (ev) => {
+            ev.preventDefault();
+            const rec = matches[Number(btn.getAttribute("data-inv-idx"))];
+            if (rec) applyInventoryRecord(rec);
+          };
+          btn.addEventListener("mousedown", pick);
+          btn.addEventListener("touchstart", pick, { passive: false });
+        });
+
+        positionLostDd(codeInp);
+        d.style.display = "block";
+      };
+
+      codeInp.addEventListener("focus", () => renderCodeMatches(false));
+      codeInp.addEventListener("input", () => renderCodeMatches(true));
+      codeInp.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (lostActiveInp === codeInp) closeLostDd();
+          const { map } = getInventoryCatalog();
+          const up = String(codeInp.value || "").trim().toUpperCase();
+          if (up && map.has(up) && (!descInp || !descInp.value.trim())) applyInventoryRecord(map.get(up));
+        }, 160);
+      });
+
+      if (String(codeInp.value || "").trim()) {
+        const { map } = getInventoryCatalog();
+        const up = String(codeInp.value || "").trim().toUpperCase();
+        if (map.has(up) && (!descInp || !descInp.value.trim())) applyInventoryRecord(map.get(up));
+      }
+    }
+
+    bindLostTextAutocomplete(setorInp, () => getFleetKnownValues().setores, true);
+    bindLostTextAutocomplete(descInp,  () => getFleetKnownValues().descs,   true);
+    bindLostTextAutocomplete(ccInp,    () => getFleetKnownValues().ccs,     false);
+
+    if (motivoInp && motivoInp.parentElement) {
+      let existingCatWrap = lostModal.querySelector("#vu-lost-modal-cat-wrap");
+      if (existingCatWrap && existingCatWrap.dataset.vuNoVencido !== "1") {
+        existingCatWrap.remove();
+        existingCatWrap = null;
+      }
+      if (!existingCatWrap) {
+        let chosenCat = /\[DESATIVADO\]/i.test(motivoInp.value) ? "desativado" : "perdido";
+        const catWrap = document.createElement("div");
+        catWrap.id = "vu-lost-modal-cat-wrap";
+        catWrap.dataset.vuNoVencido = "1";
+        catWrap.style.cssText = "width:100%;margin:8px 0 10px;display:grid;gap:6px;box-sizing:border-box;";
+
+        const renderCatButtons = () => {
+          catWrap.innerHTML =
+            `<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;">CATEGORIA DO REGISTRO</div>` +
+            `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+              Object.values(LOST_CATEGORIES).map((c) => {
+                const act = chosenCat === c.id;
+                return `<button type="button" data-mcat="${c.id}" style="flex:1;min-width:130px;padding:7px 10px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ${act ? c.color : c.border};background:${act ? c.color : c.bg};color:${act ? "#ffffff" : c.color};">${c.fullLabel}</button>`;
+              }).join("") +
+            `</div>`;
+
+          catWrap.querySelectorAll("[data-mcat]").forEach((b) => {
+            b.onclick = () => {
+              chosenCat = b.getAttribute("data-mcat");
+              const cfg = LOST_CATEGORIES[chosenCat];
+              motivoInp.placeholder = cfg.placeholder;
+              const curBody = stripCategoryTag(motivoInp.value);
+              setControlValue(motivoInp, curBody ? `${cfg.tag} ${curBody}` : `${cfg.tag} `);
+              renderCatButtons();
+            };
+          });
+        };
+
+        renderCatButtons();
+        motivoInp.parentElement.parentElement.insertBefore(catWrap, motivoInp.parentElement);
+
+        const saveBtn = findSaveBtnIn(lostModal, false);
+        if (saveBtn && !saveBtn.dataset.vuLostSaveHooked) {
+          saveBtn.dataset.vuLostSaveHooked = "1";
+          saveBtn.addEventListener("mousedown", () => {
+            const codeVal = codeInp ? String(codeInp.value || "").trim().toUpperCase() : "";
+            if (codeVal) saveLostCat(codeVal, chosenCat);
+            setControlValue(motivoInp, applyCategoryTag(motivoInp.value, chosenCat));
+          }, true);
+        }
+      }
+    }
+  };
+
+  /* -------------------- SUBCATEGORIAS + REATIVACAO NA ABA PERDIDOS -------------------- */
+  let activeLostFilter = "all";
+
+  const isLostTabActive = () => {
+    const lostTab = findLostTabButton();
+    if (!lostTab) return false;
+    const cls = String(lostTab.className || "");
+    const bg = String(window.getComputedStyle(lostTab).backgroundColor || "");
+    const looksActive =
+      /bg-(red|rose|blue|slate-9|voith|primary)|text-white/.test(cls) ||
+      (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent" && bg !== "rgb(255, 255, 255)" && bg !== "rgb(241, 245, 249)" && bg !== "rgb(248, 250, 252)");
+    if (looksActive) return true;
+    const thTxt = norm(Array.from(document.querySelectorAll("table thead th")).filter(isVisible).map((th) => th.textContent).join(" "));
+    return Boolean(thTxt && /(motivo|baixa|ultima cal|desativ|perdido|reativ|restaur)/.test(thTxt) && !thTxt.includes("sla"));
+  };
+
+  const reactivateLostRow = async (tr, code, desc, cc, setor, lastCal) => {
+    const nativeRestore = Array.from(tr.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
+      return /(reativ|restaur|recuper|voltar)/.test(norm(b.textContent));
+    });
+    if (nativeRestore) { removeLostCat(code); nativeRestore.click(); return; }
+
+    if (!window.confirm(`Reativar o instrumento ${code} (${desc || "sem descri\u00e7\u00e3o"}) devolvendo-o ao Invent\u00e1rio ativo?`)) return;
+    removeLostCat(code);
+    await createInventoryQueue([{ code, desc: desc || "", cc: cc || "", setor: setor || "", validade: lastCal || "", responsavel: "", faixa: "", faixaIni: "", faixaFim: "" }]);
+
+    const delBtn = Array.from(tr.querySelectorAll("button")).find((b) => {
+      if (!b.isConnected || b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
+      const t = norm(b.textContent + " " + (b.title || "") + " " + (b.getAttribute("aria-label") || ""));
+      return /(excluir|deletar|remover|apagar|lixeira)/.test(t);
+    });
+    if (delBtn) {
+      const origConfirm = window.confirm;
+      try { window.confirm = () => true; delBtn.click(); }
+      finally { window.confirm = origConfirm; }
+    }
+  };
+
+  const refreshLostSubfiltersUI = () => {
+    const existingBar = document.getElementById("vu-lost-subbar");
+    const lostTab = findLostTabButton();
+    if (!lostTab || !isLostTabActive()) { if (existingBar) existingBar.remove(); return; }
+
+    const mainTable = Array.from(document.querySelectorAll("table")).find((tb) => isVisible(tb) && !tb.closest("#vu-img-modal")) || null;
+    const rows = mainTable
+      ? Array.from(mainTable.querySelectorAll("tbody tr")).filter((tr) => {
+          const txt = String(tr.textContent || "").trim();
+          return txt.length > 0 && !/nenhum (item|instrumento|registro)/i.test(txt);
+        })
+      : [];
+
+    const counts = { all: 0, perdido: 0, desativado: 0 };
+
+    rows.forEach((tr) => {
+      const rowTxt = String(tr.textContent || "");
+      const cm = rowTxt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/i);
+      const code = cm ? cm[1].toUpperCase() : "";
+      const catId = detectCategoryFromRow(code, rowTxt);
+      const cfg = LOST_CATEGORIES[catId];
+
+      counts.all++;
+      counts[catId]++;
+      tr.style.display = (activeLostFilter === "all" || activeLostFilter === catId) ? "" : "none";
+
+      const tds = Array.from(tr.querySelectorAll("td"));
+      if (tds.length >= 2) {
+        const badgeCell = tds[tds.length - 1];
+        let badge = tr.querySelector(".vu-lost-cat-pill");
+        if (!badge) {
+          badge = document.createElement("button");
+          badge.type = "button";
+          badge.className = "vu-lost-cat-pill";
+          badge.title = "Clique para alternar entre Perdido e Desativado";
+          badge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;cursor:pointer;margin-right:6px;margin-top:3px;vertical-align:middle;";
+          badgeCell.insertBefore(badge, badgeCell.firstChild);
+        }
+        badge.textContent = cfg.label.toUpperCase();
+        badge.style.background = cfg.bg;
+        badge.style.color = cfg.color;
+        badge.style.border = `1px solid ${cfg.border}`;
+        badge.onclick = (ev) => {
+          ev.stopPropagation();
+          const next = catId === "perdido" ? "desativado" : "perdido";
+          if (code) saveLostCat(code, next);
+          refreshLostSubfiltersUI();
+        };
+
+        const hasNativeRestore = Array.from(tr.querySelectorAll("button")).some((b) => {
+          if (b.classList.contains("vu-lost-reactivate-btn") || b.classList.contains("vu-lost-cat-pill")) return false;
+          return /(reativ|restaur|recuper)/.test(norm(b.textContent));
+        });
+        let reactBtn = tr.querySelector(".vu-lost-reactivate-btn");
+        if (!hasNativeRestore && code) {
+          if (!reactBtn) {
+            reactBtn = document.createElement("button");
+            reactBtn.type = "button";
+            reactBtn.className = "vu-lost-reactivate-btn";
+            reactBtn.textContent = "Reativar";
+            reactBtn.title = "Devolver este instrumento ao Invent\u00e1rio ativo";
+            reactBtn.style.cssText = "display:inline-flex;align-items:center;padding:3px 9px;border-radius:7px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:800;cursor:pointer;margin-right:6px;margin-top:3px;vertical-align:middle;";
+            badge.insertAdjacentElement("afterend", reactBtn);
+          }
+          const descTxt = String((tds[1] && tds[1].textContent) || "").trim();
+          const dateM = rowTxt.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+          const ccM = rowTxt.match(/\b(\d{4}\s*[A-Z])\b/);
+          const secM = rowTxt.match(/Voith Turbo\s*\([^)]+\)/i);
+          reactBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            reactivateLostRow(tr, code, descTxt, ccM ? ccM[1] : "", secM ? secM[0] : "", dateM ? dateM[1] : "");
+          };
+        }
+      }
+    });
+
+    const anchorBar = lostTab.parentElement;
+    let bar = existingBar;
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "vu-lost-subbar";
+      bar.style.cssText = "margin:10px 0 8px;padding:8px 11px;border-radius:12px;border:1px solid #fecdd3;background:#fff1f2;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-family:system-ui,-apple-system,sans-serif;";
+      anchorBar.insertAdjacentElement("afterend", bar);
+    }
+
+    const pills = [
+      { id: "all",        label: `Todos (${counts.all})`,              bg: "#ffffff", col: "#334155", bd: "#cbd5e1", actBg: "#0f172a" },
+      { id: "perdido",    label: `Perdidos (${counts.perdido})`,       bg: "#fee2e2", col: "#b91c1c", bd: "#fca5a5", actBg: "#dc2626" },
+      { id: "desativado", label: `Desativados (${counts.desativado})`, bg: "#e0f2fe", col: "#0369a1", bd: "#7dd3fc", actBg: "#0284c7" }
+    ];
+
+    bar.innerHTML =
+      `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+        `<span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#9f1239;margin-right:2px;">Subcategoria:</span>` +
+        pills.map((p) => {
+          const act = activeLostFilter === p.id;
+          return `<button type="button" data-vu-lfilter="${p.id}" style="padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:800;cursor:pointer;border:1px solid ${act ? p.actBg : p.bd};background:${act ? p.actBg : p.bg};color:${act ? "#ffffff" : p.col};white-space:nowrap;">${p.label}</button>`;
+        }).join("") +
+      `</div>` +
+      `<button type="button" id="vu-lost-sub-import" style="padding:6px 11px;border-radius:9px;border:1px solid #e11d48;background:#e11d48;color:#ffffff;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;">+ Importar Perdidos (Imagem/Excel)</button>`;
+
+    bar.querySelectorAll("[data-vu-lfilter]").forEach((btn) => {
+      btn.onclick = () => { activeLostFilter = btn.getAttribute("data-vu-lfilter"); refreshLostSubfiltersUI(); };
+    });
+    bar.querySelector("#vu-lost-sub-import").onclick = () => openImageImportModal("lost");
+  };
+
+  /* -------------------- INTERCEPTA "COLAR DO EXCEL (C/ PREVIA)" PARA GRAVAR NO BANCO -------------------- */
+  if (!window.__vuExcelPasteMenuHooked) {
+    window.__vuExcelPasteMenuHooked = true;
+    document.addEventListener("click", (ev) => {
+      const target = ev.target && ev.target.closest ? ev.target.closest("button, a, [role='menuitem'], li, div") : null;
+      if (!target || target.closest("#vu-img-modal")) return;
+      const t = norm(target.textContent);
+      if (t.length >= 12 && t.length <= 42 && t.includes("colar do excel") && (target.tagName === "BUTTON" || target.tagName === "A" || target.children.length <= 2)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        setTimeout(() => openImageImportModal("inventory", { focusExcel: true, fromExcelMenu: true }), 40);
+      }
+    }, true);
+  }
+
+  /* -------------------- INJECAO GERAL DOS BOTOES -------------------- */
+  const injectAllUI = () => {
+    document.querySelectorAll("#vu-modal-img-wrap, #vu-modal-img-btn").forEach((el) => {
+      const card = findInstrumentFormDrawer();
+      if (!card || isDrawerInEditMode(card)) el.remove();
+    });
+
+    const existingTop = document.getElementById("vu-open-img-import");
+    if (window.innerWidth <= 768 && existingTop) {
+      existingTop.remove();
+    } else if (window.innerWidth > 768) {
+      if (existingTop) {
+        existingTop.onclick = () => openImageImportModal();
+      } else {
+        const newBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+          if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
+          const t = norm(b.textContent);
+          return t.includes("novo item") || t.includes("novo instrumento");
+        });
+        if (newBtn && newBtn.parentElement) {
+          const b = document.createElement("button");
+          b.id = "vu-open-img-import";
+          b.type = "button";
+          b.textContent = "Ler Imagem";
+          b.title = "Importar instrumentos por Imagem (OCR v4.1) ou Excel";
+          b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
+          b.onclick = () => openImageImportModal();
+          newBtn.insertAdjacentElement("afterend", b);
+        }
+      }
+    }
+
+    const drawer = findInstrumentFormDrawer();
+    if (drawer && !isDrawerInEditMode(drawer)) {
+      if (!drawer.querySelector("#vu-modal-img-wrap")) {
+        const firstInput = Array.from(drawer.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).find(isVisible);
+        const formBody = (firstInput && (firstInput.closest("form") || (firstInput.parentElement && firstInput.parentElement.parentElement))) || drawer;
+        const wrap = document.createElement("div");
+        wrap.id = "vu-modal-img-wrap";
+        wrap.style.cssText = "width:100%;margin-bottom:12px;box-sizing:border-box;";
+        wrap.innerHTML =
+          `<button type="button" id="vu-modal-img-btn" style="width:100%;padding:9px 12px;border-radius:10px;border:1px dashed #0284c7;background:#eff6ff;color:#004899;font-weight:800;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">` +
+            `<span>Importar v\u00e1rios por Imagem / Excel</span>` +
+          `</button>`;
+        wrap.querySelector("#vu-modal-img-btn").onclick = () => {
+          closeNativeModal(drawer);
+          setTimeout(() => openImageImportModal("inventory"), 120);
+        };
+        if (formBody.firstChild) formBody.insertBefore(wrap, formBody.firstChild);
+        else formBody.appendChild(wrap);
+      }
+      bindNewItemDuplicateGuard(drawer);
+    }
+
+    enhanceNativeLostModal();
+    refreshLostSubfiltersUI();
+  };
+
+  document.addEventListener("mousedown", (ev) => {
+    if (lostDdEl && lostDdEl.style.display !== "none" && !lostDdEl.contains(ev.target) && (!lostActiveInp || !lostActiveInp.contains(ev.target))) {
+      closeLostDd();
+    }
+  }, true);
+
+  let t = null;
+  const schedule = (delay = 140) => {
+    if (t) return;
+    t = setTimeout(() => { t = null; injectAllUI(); }, delay);
+  };
+
+  const init = () => {
+    getInventoryCatalog(true);
+    schedule(100);
+    document.addEventListener("click", () => schedule(140), true);
+    window.addEventListener("resize", () => schedule(150));
+    window.addEventListener("hashchange", () => schedule(160));
+    const obs = new MutationObserver((muts) => {
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
+        if (tgt && tgt.closest && (tgt.closest("#vu-img-modal") || tgt.closest("#vu-lost-subbar") || tgt.closest("#vu-lost-ac-dd"))) continue;
+        schedule(180);
+        break;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, { openImageImportModal });
+})();
+/* VOITH_IMAGE_IMPORTER_V1_END */
