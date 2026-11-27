@@ -6194,7 +6194,7 @@
 
       const plainText = String(cb.getData("text/plain") || "").trim();
       if (plainText) {
-        if (document.activeElement !== rawTxt && document.activeElement !== defMotivoInp && !document.activeElement.closest("tbody")) {
+        const actEl = document.activeElement; if (actEl && actEl !== rawTxt && (actEl.tagName === "INPUT" || actEl.tagName === "TEXTAREA" || (actEl.closest && actEl.closest("#vu-ai-vision-bar")))) return; if (actEl !== rawTxt) {
           ev.preventDefault();
           rawTxt.value = plainText;
         } else if (document.activeElement !== rawTxt) {
@@ -11211,7 +11211,9 @@
   });
 
   const extractWithGeminiVision = async (blob, apiKey, onStatus) => {
-    onStatus("Enviando imagem para Vis\u00e3o por IA (Gemini)...");
+    const cleanKey = String(apiKey || "").trim();
+    const isVertexKey = /^AQ\./i.test(cleanKey);
+    onStatus(isVertexKey ? "Enviando imagem para Vis\u00e3o por IA (Vertex AI)..." : "Enviando imagem para Vis\u00e3o por IA (Gemini)...");
     const b64 = await blobToBase64(blob);
     const mime = blob.type || "image/jpeg";
     const prompt =
@@ -11220,25 +11222,39 @@
       "CODIGO\tDESCRICAO\tVALIDADE_DD_MM_AAAA\tCENTRO_CUSTO\tSETOR\tRESPONSAVEL\tFAIXA_INICIAL\tFAIXA_FINAL\n" +
       "Regras: preserve exatamente os c\u00f3digos (ex: AC424767), acentos corretos em portugu\u00eas (Paqu\u00edmetro Universal, Ferrovi\u00e1ria), datas em DD/MM/AAAA, e deixe vazio se alguma coluna n\u00e3o existir na imagem.";
 
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    const models = isVertexKey
+      ? ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
+      : ["gemini-2.5-flash", "gemini-2.0-flash"];
     let lastErr = "Erro desconhecido na API Gemini.";
 
     for (let i = 0; i < models.length; i++) {
       const model = models[i];
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mime, data: b64 } }
-            ]
-          }],
-          generationConfig: { temperature: 0.1 }
-        })
-      });
+      const url = isVertexKey
+        ? `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+
+      let res;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{
+              role: "user",
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: mime, data: b64 } }
+              ]
+            }],
+            generationConfig: { temperature: 0.1 }
+          })
+        });
+      } catch (netErr) {
+        if (isVertexKey) {
+          throw new Error("Chave AQ. (Vertex AI) bloqueada por seguran\u00e7a do navegador (CORS). Gere uma chave padr\u00e3o (AIza...) em aistudio.google.com/apikey.");
+        }
+        throw netErr;
+      }
 
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
@@ -11247,7 +11263,7 @@
           if (j && j.error && j.error.message) detail = j.error.message;
         } catch (_) {}
         lastErr = detail;
-        if (res.status === 404 && i < models.length - 1) continue;
+        if ((res.status === 404 || res.status === 400) && i < models.length - 1) continue;
         throw new Error(detail);
       }
 
@@ -11294,7 +11310,7 @@
 
     const toggleEl = aiBar.querySelector("#vu-ai-toggle");
     const keyEl = aiBar.querySelector("#vu-ai-key");
-    const saveKeyBtn = aiBar.querySelector("#vu-ai-save-key");
+    const saveKeyBtn = aiBar.querySelector("#vu-ai-save-key"); keyEl.addEventListener("paste", (ev) => ev.stopPropagation());
 
     const persistAiSettings = () => {
       const k = String(keyEl.value || "").trim();
