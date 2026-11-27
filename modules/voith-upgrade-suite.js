@@ -1,3 +1,465 @@
+/* VOITH_CORE_ENGINE_V1_START */
+(() => {
+  "use strict";
+
+  if (window.VoithCore && window.VoithCore.__ver === 2) return;
+
+  const NativeMO = window.MutationObserver;
+  const domListeners = new Set();
+  let masterObs = null;
+  let rafId = null;
+  let coalesceTimer = null;
+
+  const isVuNode = (n) => {
+    if (!n || n.nodeType !== 1) return false;
+    if (n.id && n.id.startsWith("vu-")) return true;
+    return Boolean(n.closest && n.closest("[id^='vu-']"));
+  };
+
+  const flushDomListeners = () => {
+    coalesceTimer = null;
+    if (document.hidden) return;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      const fakeMut = [{ target: document.body, type: "childList" }];
+      domListeners.forEach((cb) => {
+        try { cb(fakeMut); } catch (_) {}
+      });
+    });
+  };
+
+  const ensureMasterObserver = () => {
+    if (masterObs || !document.body) return;
+    masterObs = new NativeMO((muts) => {
+      let relevant = false;
+      for (let i = 0; i < muts.length; i++) {
+        const tgt = muts[i].target;
+        if (tgt && isVuNode(tgt)) continue;
+        relevant = true;
+        break;
+      }
+      if (!relevant) return;
+      if (!coalesceTimer) {
+        coalesceTimer = setTimeout(flushDomListeners, 140);
+      }
+    });
+    masterObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "hidden"],
+      characterData: true
+    });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensureMasterObserver, { once: true });
+  } else {
+    ensureMasterObserver();
+  }
+
+  class VoithSharedObserver {
+    constructor(cb) {
+      this._cb = typeof cb === "function" ? cb : null;
+      this._real = null;
+    }
+    observe(target, opts) {
+      if (!this._cb) return;
+      if (target === document.body || target === document.documentElement) {
+        ensureMasterObserver();
+        domListeners.add(this._cb);
+      } else {
+        this._real = new NativeMO(this._cb);
+        this._real.observe(target, opts);
+      }
+    }
+    disconnect() {
+      if (this._cb) domListeners.delete(this._cb);
+      if (this._real) { this._real.disconnect(); this._real = null; }
+    }
+    takeRecords() { return []; }
+  }
+  window.__VoithSharedObserver = VoithSharedObserver;
+
+  /* -------------------- INDEXEDDB: CACHE SWR + FILA OFFLINE AUTOMATICA -------------------- */
+  const IDB_NAME = "voith_metrologia_engine_v2";
+  const STORE_SWR = "swr_cache";
+  const STORE_QUEUE = "offline_queue";
+  let dbPromise = null;
+
+  const openEngineDb = () => {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve) => {
+      try {
+        if (!window.indexedDB) { resolve(null); return; }
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = (ev) => {
+          const db = ev.target.result;
+          if (!db.objectStoreNames.contains(STORE_SWR)) db.createObjectStore(STORE_SWR, { keyPath: "url" });
+          if (!db.objectStoreNames.contains(STORE_QUEUE)) db.createObjectStore(STORE_QUEUE, { keyPath: "id", autoIncrement: true });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (_) { resolve(null); }
+    });
+    return dbPromise;
+  };
+
+  const idbGet = async (storeName, key) => {
+    const db = await openEngineDb();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readonly");
+        const req = tx.objectStore(storeName).get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      } catch (_) { resolve(null); }
+    });
+  };
+
+  const idbPut = async (storeName, value) => {
+    const db = await openEngineDb();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).put(value);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) { resolve(false); }
+    });
+  };
+
+  const idbGetAll = async (storeName) => {
+    const db = await openEngineDb();
+    if (!db) return [];
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readonly");
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+        req.onerror = () => resolve([]);
+      } catch (_) { resolve([]); }
+    });
+  };
+
+  const idbDelete = async (storeName, key) => {
+    const db = await openEngineDb();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).delete(key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) { resolve(false); }
+    });
+  };
+
+  const headersToPlain = (hdrs) => {
+    const out = {};
+    if (!hdrs) return out;
+    try {
+      if (typeof hdrs.forEach === "function") hdrs.forEach((v, k) => { out[k] = v; });
+      else if (Array.isArray(hdrs)) hdrs.forEach(([k, v]) => { out[k] = v; });
+      else Object.assign(out, hdrs);
+    } catch (_) {}
+    return out;
+  };
+
+  const cache = { fleet: [], custody: [], lab: [], lastSync: 0, swrHits: 0 };
+  const hostOwnedAllInstruments = typeof window.allInstruments !== "undefined";
+  const bootTime = Date.now();
+  let lastWriteTs = 0;
+  let inFlightWrites = 0;
+  let pendingQueueCount = 0;
+  let flushingQueue = false;
+  let pillHideTimer = null;
+
+  if (!document.getElementById("vu-core-spin-css")) {
+    const s = document.createElement("style");
+    s.id = "vu-core-spin-css";
+    s.textContent = "@keyframes vuCoreSpin { to { transform: rotate(360deg); } }";
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  const updateCloudPill = (justFinished = false) => {
+    let pill = document.getElementById("vu-cloud-sync-pill");
+    const hasBatch = Boolean(document.querySelector("#vu-img-progress, #vu-bulk-progress, #vu-ret-progress, #vu-san-progress"));
+
+    if (pendingQueueCount > 0) {
+      clearTimeout(pillHideTimer);
+      if (!pill) {
+        pill = document.createElement("button");
+        pill.type = "button";
+        pill.id = "vu-cloud-sync-pill";
+        document.body.appendChild(pill);
+      }
+      const isOff = !navigator.onLine;
+      pill.style.cssText =
+        `position:fixed;top:12px;right:14px;z-index:2147483250;padding:7px 13px;border-radius:999px;` +
+        `background:${isOff ? "#78350f" : "#92400e"};color:#fef3c7;border:1px solid #fbbf24;` +
+        `font-size:11.5px;font-weight:800;font-family:system-ui,-apple-system,sans-serif;` +
+        `display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 28px rgba(0,0,0,.38);cursor:pointer;`;
+      pill.title = "Clique para tentar enviar a fila offline agora";
+      pill.innerHTML =
+        `<span style="width:9px;height:9px;border-radius:50%;background:${isOff ? "#f87171" : "#fbbf24"};display:inline-block;"></span>` +
+        `<span>Pendente de envio (${pendingQueueCount})${isOff ? " \u2022 Offline" : " \u2022 Enviar"}</span>`;
+      pill.onclick = () => flushOfflineQueue(true);
+      return;
+    }
+
+    if (inFlightWrites > 0) {
+      clearTimeout(pillHideTimer);
+      if (!pill) {
+        pill = document.createElement("div");
+        pill.id = "vu-cloud-sync-pill";
+        document.body.appendChild(pill);
+      }
+      pill.onclick = null;
+      pill.style.cssText = "position:fixed;top:12px;right:14px;z-index:2147483250;padding:7px 12px;border-radius:999px;background:#0b1f44;color:#e0f2fe;border:1px solid #38bdf8;font-size:11.5px;font-weight:800;font-family:system-ui,-apple-system,sans-serif;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 28px rgba(0,0,0,.35);pointer-events:none;";
+      pill.innerHTML = `<span style="width:11px;height:11px;border-radius:50%;border:2px solid rgba(125,211,252,.3);border-top-color:#38bdf8;display:inline-block;animation:vuCoreSpin .75s linear infinite;"></span><span>Salvando na nuvem (${inFlightWrites})...</span>`;
+    } else if (justFinished && pill && !hasBatch) {
+      pill.onclick = null;
+      pill.style.background = "#064e3b";
+      pill.style.borderColor = "#34d399";
+      pill.style.color = "#d1fae5";
+      pill.innerHTML = `<span>\u2713 Salvo na nuvem</span>`;
+      clearTimeout(pillHideTimer);
+      pillHideTimer = setTimeout(() => { if (pill && pill.isConnected) pill.remove(); }, 1800);
+    } else if (pill && !justFinished) {
+      pill.remove();
+    }
+  };
+
+  const ingestCloudJson = (reqUrl, data) => {
+    try {
+      const arr = Array.isArray(data) ? data : (data && (data.instruments || data.items || data.data));
+      if (!Array.isArray(arr) || !arr.length || typeof arr[0] !== "object") return;
+      if (/cautela|custody|emprest/i.test(reqUrl)) {
+        cache.custody = arr;
+      } else if (/lab|calib|extern|envio/i.test(reqUrl)) {
+        cache.lab = arr;
+      } else if (!/audit|log|perdido|lost/i.test(reqUrl) && arr.length >= 5) {
+        const first = arr[0];
+        if (first && (first.code || first.codigo || first.cod || first.tag || first.patrimonio || first.id)) {
+          cache.fleet = arr;
+          cache.lastSync = Date.now();
+          if (!hostOwnedAllInstruments) window.allInstruments = arr;
+        }
+      }
+    } catch (_) {}
+  };
+
+  const nativeFetch = typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+
+  const enqueueOfflineWrite = async (url, method, headers, body) => {
+    const bodyStr = typeof body === "string" ? body : (body ? String(body) : "");
+    await idbPut(STORE_QUEUE, {
+      url,
+      method,
+      headers: headersToPlain(headers),
+      body: bodyStr,
+      ts: Date.now()
+    });
+    const all = await idbGetAll(STORE_QUEUE);
+    pendingQueueCount = all.length;
+    updateCloudPill(false);
+  };
+
+  const flushOfflineQueue = async (manual = false) => {
+    if (flushingQueue || !nativeFetch) return;
+    if (!navigator.onLine) {
+      if (manual && window.VoithUpgrade && window.VoithUpgrade.showToast) {
+        window.VoithUpgrade.showToast("Sem conex\u00e3o no momento. A fila ser\u00e1 enviada assim que o sinal voltar.", "warn");
+      }
+      return;
+    }
+    const items = await idbGetAll(STORE_QUEUE);
+    pendingQueueCount = items.length;
+    if (!items.length) { updateCloudPill(false); return; }
+
+    flushingQueue = true;
+    let sent = 0;
+    try {
+      items.sort((a, b) => (a.id || 0) - (b.id || 0));
+      for (let i = 0; i < items.length; i++) {
+        const job = items[i];
+        try {
+          const opts = { method: job.method, headers: job.headers };
+          if (job.body && !["GET", "HEAD"].includes(job.method)) opts.body = job.body;
+          const res = await nativeFetch(job.url, opts);
+          if (res && (res.ok || (res.status >= 400 && res.status < 500))) {
+            await idbDelete(STORE_QUEUE, job.id);
+            sent++;
+          } else {
+            break;
+          }
+        } catch (_) {
+          break;
+        }
+      }
+    } finally {
+      flushingQueue = false;
+      const rem = await idbGetAll(STORE_QUEUE);
+      pendingQueueCount = rem.length;
+      updateCloudPill(sent > 0 && pendingQueueCount === 0);
+      if (sent > 0 && window.VoithUpgrade && window.VoithUpgrade.showToast) {
+        window.VoithUpgrade.showToast(`\u2713 Fila offline sincronizada: ${sent} altera\u00e7\u00e3o(\u00f5es) enviada(s) para a nuvem!`, "success");
+      }
+    }
+  };
+
+  const refreshQueueCount = async () => {
+    const all = await idbGetAll(STORE_QUEUE);
+    pendingQueueCount = all.length;
+    if (pendingQueueCount > 0) {
+      updateCloudPill(false);
+      if (navigator.onLine) flushOfflineQueue(false);
+    }
+  };
+
+  window.addEventListener("online", () => { flushOfflineQueue(false); });
+  window.addEventListener("offline", () => { updateCloudPill(false); });
+  setInterval(() => { if (navigator.onLine && pendingQueueCount > 0) flushOfflineQueue(false); }, 25000);
+  setTimeout(refreshQueueCount, 900);
+
+  // Evita wrappers empilhados dos modulos legados
+  window.__vuSmartFetchWrapped = true;
+  window.__vuFamilyFetchWrapped = true;
+  window.__vuAutoFetchWrapped = true;
+  window.__vuImgFleetFetchHookedV41 = true;
+  window.__vuProOpsFetchHooked = true;
+
+  if (nativeFetch) {
+    window.fetch = async function (...args) {
+      const reqUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+      const initObj = args[1] || {};
+      const method = String(initObj.method || (args[0] && args[0].method) || "GET").toUpperCase();
+      const isCloudUrl = reqUrl.includes("/rest/v1/") || reqUrl.includes("script.google.com");
+      const isWrite = isCloudUrl && ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      const isCacheableGet = isCloudUrl && method === "GET" && !/audit|log/i.test(reqUrl);
+
+      /* 1. ESCRITAS COM FILA OFFLINE AUTOMATICA */
+      if (isWrite) {
+        lastWriteTs = Date.now();
+        if (!navigator.onLine) {
+          await enqueueOfflineWrite(reqUrl, method, initObj.headers || (args[0] && args[0].headers), initObj.body);
+          return new Response(JSON.stringify([{ offlineQueued: true }]), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          });
+        }
+
+        inFlightWrites++;
+        updateCloudPill(false);
+        try {
+          const res = await nativeFetch(...args);
+          inFlightWrites = Math.max(0, inFlightWrites - 1);
+          updateCloudPill(inFlightWrites === 0);
+          return res;
+        } catch (err) {
+          inFlightWrites = Math.max(0, inFlightWrites - 1);
+          await enqueueOfflineWrite(reqUrl, method, initObj.headers || (args[0] && args[0].headers), initObj.body);
+          return new Response(JSON.stringify([{ offlineQueued: true }]), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          });
+        }
+      }
+
+      /* 2. LEITURAS COM STALE-WHILE-REVALIDATE EM INDEXEDDB */
+      if (isCacheableGet) {
+        const isBootWindow = (Date.now() - bootTime) < 12000;
+        const canUseSwr = (!navigator.onLine) || (isBootWindow && (Date.now() - lastWriteTs) > 4000);
+
+        if (canUseSwr) {
+          const cached = await idbGet(STORE_SWR, reqUrl);
+          if (cached && cached.body) {
+            cache.swrHits++;
+            try { ingestCloudJson(reqUrl, JSON.parse(cached.body)); } catch (_) {}
+
+            // Revalida silenciosamente em segundo plano se houver sinal
+            if (navigator.onLine) {
+              nativeFetch(...args).then(async (freshRes) => {
+                if (!freshRes || !freshRes.ok) return;
+                const freshTxt = await freshRes.clone().text();
+                if (!freshTxt) return;
+                const keepHdrs = [];
+                freshRes.headers.forEach((v, k) => {
+                  if (/^(content-type|content-range)$/i.test(k)) keepHdrs.push([k, v]);
+                });
+                await idbPut(STORE_SWR, { url: reqUrl, body: freshTxt, status: freshRes.status, headers: keepHdrs, ts: Date.now() });
+                try { ingestCloudJson(reqUrl, JSON.parse(freshTxt)); } catch (_) {}
+              }).catch(() => {});
+            }
+
+            return new Response(cached.body, {
+              status: cached.status || 200,
+              headers: cached.headers || [["content-type", "application/json"]]
+            });
+          }
+        }
+
+        // Busca na rede e grava no IndexedDB (com fallback automatico para o cache se cair o sinal)
+        try {
+          const res = await nativeFetch(...args);
+          if (res && res.ok) {
+            const ct = String((res.headers && res.headers.get("content-type")) || "");
+            if (ct.includes("json")) {
+              res.clone().text().then(async (txt) => {
+                if (!txt) return;
+                const keepHdrs = [];
+                res.headers.forEach((v, k) => {
+                  if (/^(content-type|content-range)$/i.test(k)) keepHdrs.push([k, v]);
+                });
+                await idbPut(STORE_SWR, { url: reqUrl, body: txt, status: res.status, headers: keepHdrs, ts: Date.now() });
+                try { ingestCloudJson(reqUrl, JSON.parse(txt)); } catch (_) {}
+              }).catch(() => {});
+            }
+          }
+          return res;
+        } catch (netErr) {
+          const fallback = await idbGet(STORE_SWR, reqUrl);
+          if (fallback && fallback.body) {
+            return new Response(fallback.body, {
+              status: fallback.status || 200,
+              headers: fallback.headers || [["content-type", "application/json"]]
+            });
+          }
+          throw netErr;
+        }
+      }
+
+      return nativeFetch(...args);
+    };
+  }
+
+  window.addEventListener("beforeunload", (ev) => {
+    const hasBatchRunning = Boolean(document.querySelector("#vu-img-progress, #vu-bulk-progress, #vu-ret-progress, #vu-san-progress"));
+    if (inFlightWrites > 0 || hasBatchRunning) {
+      ev.preventDefault();
+      ev.returnValue = "H\u00e1 altera\u00e7\u00f5es sendo salvas na nuvem. Aguarde a confirma\u00e7\u00e3o antes de sair.";
+      return ev.returnValue;
+    }
+  });
+
+  window.VoithCore = {
+    __ready: true,
+    __ver: 2,
+    cache,
+    getPendingWrites: () => inFlightWrites,
+    getOfflineQueueCount: () => pendingQueueCount,
+    flushOfflineQueue,
+    onDomChange: (cb) => { ensureMasterObserver(); if (typeof cb === "function") domListeners.add(cb); },
+    offDomChange: (cb) => { domListeners.delete(cb); },
+    triggerDomSync: () => flushDomListeners()
+  };
+})();
+/* VOITH_CORE_ENGINE_V1_END */
+
 (() => {
   "use strict";
 
@@ -1743,7 +2205,7 @@
 
     window.addEventListener("hashchange", () => scheduleUiPass(150));
 
-    const obs = new MutationObserver((mutations) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((mutations) => {
       for (let i = 0; i < mutations.length; i++) {
         const tgt = mutations[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
@@ -2443,7 +2905,7 @@
   const init = () => {
     scheduleBind(250);
     document.addEventListener("click", () => scheduleBind(150), true);
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
@@ -3082,7 +3544,7 @@
   const init = () => {
     scheduleRender(220);
     window.addEventListener("hashchange", () => scheduleRender(140));
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
@@ -3682,7 +4144,7 @@
   const init = () => {
     schedule(220);
     document.addEventListener("click", () => schedule(120), true);
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
@@ -3855,7 +4317,7 @@
     document.addEventListener("input", () => schedule(90), true);
     window.addEventListener("hashchange", () => schedule(120));
 
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && (tgt.id === "vu-top-count-badge" || (tgt.closest && tgt.closest("#vu-top-count-badge")))) continue;
@@ -6453,7 +6915,7 @@
     document.addEventListener("click", () => schedule(140), true);
     window.addEventListener("resize", () => schedule(150));
     window.addEventListener("hashchange", () => schedule(160));
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (tgt && tgt.id && tgt.id.startsWith("vu-")) continue;
@@ -6686,7 +7148,7 @@
     document.addEventListener("input", () => schedule(90), true);
     window.addEventListener("hashchange", () => schedule(120));
 
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (!tgt) continue;
@@ -8554,7 +9016,7 @@
     document.addEventListener("input", () => scheduleUI(160), true);
     window.addEventListener("hashchange", () => scheduleUI(150));
 
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         const tgt = muts[i].target;
         if (!tgt) continue;
@@ -9103,7 +9565,7 @@
     ensureAdminV2Styles();
     schedule(100);
     document.addEventListener("click", () => schedule(90), true);
-    const obs = new MutationObserver((muts) => {
+    const obs = new (window.__VoithSharedObserver || MutationObserver)((muts) => {
       for (let i = 0; i < muts.length; i++) {
         if (document.getElementById("vu-adm-inner")) {
           schedule(50);
@@ -9118,3 +9580,2098 @@
   else init();
 })();
 /* VOITH_ADMIN_UI_V2_END */
+
+/* VOITH_UX_TURBO_SUITE_V1_START */
+(() => {
+  "use strict";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const escHtml = (s) => String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  /* -------------------- 1. FEEDBACK VISUAL + TOAST ESTILIZADO + MICRO-TRANSICOES -------------------- */
+  const showToast = (msg, kind = "info", duration = 3600) => {
+    const palette = {
+      success: { bg: "#064e3b", bd: "#34d399", col: "#ecfdf5" },
+      warn:    { bg: "#78350f", bd: "#fbbf24", col: "#fef3c7" },
+      error:   { bg: "#7f1d1d", bd: "#f87171", col: "#fee2e2" },
+      info:    { bg: "#0b1f44", bd: "#38bdf8", col: "#f0f9ff" }
+    };
+    const p = palette[kind] || palette.info;
+    let stack = document.getElementById("vu-toast-stack");
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.id = "vu-toast-stack";
+      stack.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2147483300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;max-width:92vw;font-family:system-ui,-apple-system,Segoe UI,sans-serif;";
+      document.body.appendChild(stack);
+    }
+    const item = document.createElement("div");
+    item.style.cssText = `background:${p.bg};color:${p.col};border:1px solid ${p.bd};border-radius:11px;padding:9px 15px;font-size:12.5px;font-weight:700;box-shadow:0 14px 36px rgba(0,0,0,.42);pointer-events:auto;display:flex;align-items:center;gap:10px;animation:vuPopIn .18s ease-out;`;
+    item.innerHTML = `<span>${escHtml(msg)}</span><button type="button" style="border:none;background:transparent;color:inherit;opacity:.75;font-size:15px;line-height:1;cursor:pointer;padding:0;">&times;</button>`;
+    item.querySelector("button").onclick = () => item.remove();
+    stack.appendChild(item);
+    setTimeout(() => { if (item && item.isConnected) item.remove(); }, duration);
+  };
+
+  // Substitui window.alert nativo por toast estilizado (sem congelar a aba)
+  if (!window.__vuStyledAlertInstalled) {
+    window.__vuStyledAlertInstalled = true;
+    window.__vuNativeAlert = window.alert.bind(window);
+    window.alert = (msg) => {
+      const txt = String(msg == null ? "" : msg).trim();
+      if (!txt) return;
+      const kind = /erro|falha|inval|nao encontrado|bloqueado/i.test(norm(txt)) ? "error" : (/sucesso|salvo|concluido|copiado/i.test(norm(txt)) ? "success" : "info");
+      showToast(txt, kind, 4400);
+    };
+  }
+
+  /* -------------------- 2. MODO ESCURO COMPLETO + STICKY TABLE HEADERS + BARRAS COMPACTAS -------------------- */
+  const detectDarkMode = () => {
+    if (document.documentElement.classList.contains("dark") || document.body.classList.contains("dark")) return true;
+    if (document.documentElement.getAttribute("data-theme") === "dark") return true;
+    try {
+      const bg = window.getComputedStyle(document.body).backgroundColor || "";
+      const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (m) {
+        const lum = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
+        return lum < 110;
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  const syncDarkClass = () => {
+    const isDark = detectDarkMode();
+    document.documentElement.classList.toggle("vu-dark", isDark);
+  };
+
+  const ensureTurboStyles = () => {
+    if (document.getElementById("vu-ux-turbo-css")) return;
+    const st = document.createElement("style");
+    st.id = "vu-ux-turbo-css";
+    st.textContent = `
+      @keyframes vuPopIn {
+        from { opacity: 0; transform: translateY(8px) scale(0.985); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      /* Micro-transicoes suaves nos modais e paineis */
+      #vu-img-modal > div,
+      #vu-bulk-modal > div,
+      #vu-ret-modal > div,
+      #vu-sub-modal > div,
+      #vu-san-modal > div,
+      #vu-shortcuts-modal > div,
+      #vu-dl-voith > div,
+      #vu-adm-inner {
+        animation: vuPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      /* Cabecalho fixo (sticky) nas tabelas principais */
+      table thead th {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 4 !important;
+        box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.28);
+      }
+      html:not(.vu-dark) table thead th {
+        background-color: #f8fafc;
+      }
+      html.vu-dark table thead th {
+        background-color: #1e293b;
+      }
+
+      /* Barras extras mais enxutas e uniformes */
+      #vu-family-bar > div,
+      #vu-custody-reason-bar,
+      #vu-bulk-return-bar,
+      #vu-lost-subbar {
+        border-radius: 11px !important;
+        padding: 7px 10px !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+      }
+
+      /* Ocultar botao flutuante Baixar App quando logado ou dentro do APK/EXE */
+      body.vu-hide-dl-fab #vu-dl-btn {
+        display: none !important;
+      }
+
+      /* ==================== MODO ESCURO UNIFICADO NOS MODULOS EXTRAS ==================== */
+      html.vu-dark #vu-img-modal > div,
+      html.vu-dark #vu-bulk-modal > div,
+      html.vu-dark #vu-ret-modal > div,
+      html.vu-dark #vu-sub-modal > div,
+      html.vu-dark #vu-san-modal > div,
+      html.vu-dark #vu-shortcuts-modal > div,
+      html.vu-dark #vu-dl-voith > div {
+        background: #0f172a !important;
+        color: #f1f5f9 !important;
+        border: 1px solid #334155 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="background:#ffffff"],
+      html.vu-dark #vu-img-modal [style*="background:#fff"],
+      html.vu-dark #vu-bulk-modal [style*="background:#ffffff"],
+      html.vu-dark #vu-bulk-modal [style*="background:#fff"],
+      html.vu-dark #vu-ret-modal [style*="background:#ffffff"],
+      html.vu-dark #vu-ret-modal [style*="background:#fff"],
+      html.vu-dark #vu-sub-modal [style*="background:#ffffff"],
+      html.vu-dark #vu-sub-modal [style*="background:#fff"],
+      html.vu-dark #vu-san-modal [style*="background:#ffffff"],
+      html.vu-dark #vu-san-modal [style*="background:#fff"],
+      html.vu-dark #vu-dl-voith [style*="background:#fff"] {
+        background: #1e293b !important;
+        color: #f1f5f9 !important;
+        border-color: #334155 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="background:#f8fafc"],
+      html.vu-dark #vu-img-modal [style*="background:#f1f5f9"],
+      html.vu-dark #vu-bulk-modal [style*="background:#f8fafc"],
+      html.vu-dark #vu-ret-modal [style*="background:#f8fafc"],
+      html.vu-dark #vu-sub-modal [style*="background:#f8fafc"],
+      html.vu-dark #vu-san-modal [style*="background:#f8fafc"],
+      html.vu-dark #vu-san-modal [style*="background:#f1f5f9"],
+      html.vu-dark #vu-san-modal [style*="background:#eef2ff"],
+      html.vu-dark #vu-dl-voith [style*="linear-gradient(180deg,#f8fafc"] {
+        background: #0b1220 !important;
+        color: #e2e8f0 !important;
+        border-color: #334155 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="background:#eff6ff"],
+      html.vu-dark #vu-bulk-modal [style*="background:#eff6ff"],
+      html.vu-dark #vu-sub-modal [style*="background:#f0fdf4"],
+      html.vu-dark #vu-san-modal [style*="background:#f0fdf4"] {
+        background: rgba(30, 58, 138, 0.25) !important;
+        border-color: rgba(96, 165, 250, 0.35) !important;
+        color: #e2e8f0 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="background:#fff1f2"],
+      html.vu-dark #vu-lost-subbar {
+        background: rgba(136, 19, 55, 0.24) !important;
+        border-color: rgba(251, 113, 133, 0.35) !important;
+        color: #ffe4e6 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="background:#fef2f2"],
+      html.vu-dark #vu-img-dup-banner {
+        background: rgba(127, 29, 29, 0.32) !important;
+        border-color: rgba(248, 113, 113, 0.45) !important;
+        color: #fecaca !important;
+      }
+
+      html.vu-dark #vu-img-modal input,
+      html.vu-dark #vu-img-modal select,
+      html.vu-dark #vu-img-modal textarea,
+      html.vu-dark #vu-bulk-modal input,
+      html.vu-dark #vu-bulk-modal select,
+      html.vu-dark #vu-ret-modal input,
+      html.vu-dark #vu-san-modal input,
+      html.vu-dark #vu-san-modal select,
+      html.vu-dark #vu-timeline-card input,
+      html.vu-dark #vu-timeline-card select {
+        background: #0f172a !important;
+        color: #f8fafc !important;
+        border-color: #475569 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="color:#0f172a"],
+      html.vu-dark #vu-img-modal [style*="color:#334155"],
+      html.vu-dark #vu-bulk-modal [style*="color:#0f172a"],
+      html.vu-dark #vu-bulk-modal [style*="color:#334155"],
+      html.vu-dark #vu-ret-modal [style*="color:#0f172a"],
+      html.vu-dark #vu-ret-modal [style*="color:#334155"],
+      html.vu-dark #vu-sub-modal [style*="color:#0f172a"],
+      html.vu-dark #vu-sub-modal [style*="color:#334155"],
+      html.vu-dark #vu-san-modal [style*="color:#0f172a"],
+      html.vu-dark #vu-san-modal [style*="color:#334155"],
+      html.vu-dark #vu-dl-voith [style*="color:#0f172a"] {
+        color: #f1f5f9 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="color:#475569"],
+      html.vu-dark #vu-img-modal [style*="color:#64748b"],
+      html.vu-dark #vu-bulk-modal [style*="color:#475569"],
+      html.vu-dark #vu-ret-modal [style*="color:#64748b"],
+      html.vu-dark #vu-sub-modal [style*="color:#475569"],
+      html.vu-dark #vu-san-modal [style*="color:#64748b"],
+      html.vu-dark #vu-dl-voith [style*="color:#475569"] {
+        color: #94a3b8 !important;
+      }
+
+      html.vu-dark #vu-img-modal [style*="color:#002466"],
+      html.vu-dark #vu-img-modal [style*="color:#003399"],
+      html.vu-dark #vu-sub-modal [style*="color:#003399"],
+      html.vu-dark #vu-san-modal [style*="color:#003399"],
+      html.vu-dark #vu-san-modal [style*="color:#312e81"],
+      html.vu-dark #vu-timeline-card [style*="color:#002466"] {
+        color: #7dd3fc !important;
+      }
+
+      /* Card de Historico e Linha do Tempo no Modo Escuro */
+      html.vu-dark #vu-timeline-card {
+        background: #0f172a !important;
+        border-color: #334155 !important;
+        color: #f1f5f9 !important;
+      }
+      html.vu-dark #vu-timeline-card > div > div[style*="background:#ffffff"] {
+        background: #1e293b !important;
+        border-color: #334155 !important;
+      }
+      html.vu-dark #vu-timeline-card strong {
+        color: #f8fafc !important;
+      }
+
+      /* Menus Dropdown de Autocompletar e Busca por Medida no Modo Escuro */
+      html.vu-dark #vu-autocomplete-dd,
+      html.vu-dark #vu-lost-ac-dd,
+      html.vu-dark #vu-smart-range-dd,
+      html.vu-dark #vu-code-suggest {
+        background: #0f172a !important;
+        border-color: #38bdf8 !important;
+        color: #f1f5f9 !important;
+      }
+      html.vu-dark #vu-autocomplete-dd button,
+      html.vu-dark #vu-lost-ac-dd button,
+      html.vu-dark #vu-smart-range-dd button.vu-smart-row,
+      html.vu-dark #vu-code-suggest button {
+        background: #0f172a !important;
+        color: #f1f5f9 !important;
+        border-bottom-color: #1e293b !important;
+      }
+      html.vu-dark #vu-autocomplete-dd button:hover,
+      html.vu-dark #vu-lost-ac-dd button:hover,
+      html.vu-dark #vu-smart-range-dd button.vu-smart-row:hover,
+      html.vu-dark #vu-code-suggest button:hover {
+        background: #1e293b !important;
+      }
+      html.vu-dark #vu-smart-range-dd > div:first-child {
+        background: #1e293b !important;
+        border-bottom-color: #334155 !important;
+      }
+      html.vu-dark #vu-smart-range-dd [style*="color:#004899"],
+      html.vu-dark #vu-code-suggest [style*="color:#004899"] {
+        color: #7dd3fc !important;
+      }
+      html.vu-dark #vu-smart-range-dd [style*="color:#0f172a"] {
+        color: #f8fafc !important;
+      }
+      html.vu-dark #vu-smart-range-dd [style*="color:#002466"] {
+        color: #93c5fd !important;
+      }
+
+      /* Botoes de acao no tema escuro */
+      html.vu-dark #vu-open-img-import,
+      html.vu-dark #vu-saneamento-btn,
+      html.vu-dark #vu-find-sub-btn {
+        background: rgba(30, 58, 138, 0.35) !important;
+        border-color: rgba(96, 165, 250, 0.45) !important;
+        color: #93c5fd !important;
+      }
+      html.vu-dark .vu-exp-btn {
+        background: #1e293b !important;
+        border-color: #334155 !important;
+        color: #e2e8f0 !important;
+      }
+      html.vu-dark .vu-exp-btn:hover {
+        background: #334155 !important;
+      }
+    `;
+    document.head.appendChild(st);
+  };
+
+  /* -------------------- 3. DEBOUNCE INTELIGENTE DE 180 MS NAS BUSCAS -------------------- */
+  const debounceTimers = new WeakMap();
+  if (!window.__vuSmartDebounceInstalled) {
+    window.__vuSmartDebounceInstalled = true;
+    document.addEventListener("input", (ev) => {
+      if (!ev.isTrusted) return;
+      const el = ev.target;
+      if (!el || el.tagName !== "INPUT") return;
+      const tp = String(el.type || "text").toLowerCase();
+      if (!["text", "search", ""].includes(tp)) return;
+      if (el.closest("[id^='vu-']") || el.closest("form")) return;
+
+      // Nao interfere se for input controlado por React
+      if (Object.keys(el).some((k) => k.startsWith("__react"))) return;
+
+      const sig = norm([el.placeholder, el.id, el.name, el.getAttribute("aria-label")].filter(Boolean).join(" "));
+      if (!/(buscar|pesquis|filtrar|search|codigo)/.test(sig)) return;
+
+      // Limpar busca e instantaneo; digitar aguarda 180 ms para evitar travadinhas
+      if (String(el.value || "").trim() === "") {
+        clearTimeout(debounceTimers.get(el));
+        return;
+      }
+
+      ev.stopImmediatePropagation();
+      clearTimeout(debounceTimers.get(el));
+      const t = setTimeout(() => {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }, 180);
+      debounceTimers.set(el, t);
+    }, true);
+  }
+
+  /* -------------------- 4. DESCARREGAR WORKER DO OCR ASSIM QUE FECHAR O MODAL -------------------- */
+  const activeOcrWorkers = new Set();
+  let hadImgModalOpen = false;
+
+  const hookTesseractCleanup = () => {
+    const T = window.Tesseract;
+    if (!T || T.__vuWorkerTracked || typeof T.createWorker !== "function") return;
+    T.__vuWorkerTracked = true;
+    const origCreate = T.createWorker.bind(T);
+    T.createWorker = async function (...args) {
+      const w = await origCreate(...args);
+      if (w && typeof w.terminate === "function") {
+        activeOcrWorkers.add(w);
+        const origTerm = w.terminate.bind(w);
+        w.terminate = async function (...tArgs) {
+          activeOcrWorkers.delete(w);
+          return origTerm(...tArgs);
+        };
+      }
+      return w;
+    };
+  };
+
+  const cleanupOcrIfClosed = () => {
+    hookTesseractCleanup();
+    const open = Boolean(document.getElementById("vu-img-modal"));
+    if (hadImgModalOpen && !open && activeOcrWorkers.size > 0) {
+      activeOcrWorkers.forEach((w) => {
+        try { w.terminate(); } catch (_) {}
+      });
+      activeOcrWorkers.clear();
+    }
+    hadImgModalOpen = open;
+  };
+
+  /* -------------------- 5. BOTAO BAIXAR APP (OCULTAR NO APK/EXE + MOVER P/ MENU) -------------------- */
+  const isInstalledApp = () => {
+    try {
+      if (window.Capacitor && (typeof window.Capacitor.isNativePlatform !== "function" || window.Capacitor.isNativePlatform())) return true;
+      if (window.location.protocol === "capacitor:" || window.location.protocol === "file:") return true;
+      if (/Electron/i.test(navigator.userAgent)) return true;
+      if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+      if (window.navigator.standalone === true) return true;
+    } catch (_) {}
+    return false;
+  };
+
+  const isOnLoginScreen = () => {
+    const passInp = document.querySelector("input[type='password']");
+    const hasMainNav = Array.from(document.querySelectorAll("aside, nav")).some((el) =>
+      isVisible(el) && /inventario|cautela|command center/i.test(norm(el.textContent || ""))
+    );
+    return Boolean(passInp && isVisible(passInp) && !hasMainNav);
+  };
+
+  const manageDownloadButtonPlacement = () => {
+    const installed = isInstalledApp();
+    const onLogin = isOnLoginScreen();
+    const shouldHideFab = installed || !onLogin;
+    document.body.classList.toggle("vu-hide-dl-fab", shouldHideFab);
+
+    // No navegador logado, injeta "Baixar App (Android / PC)" discretamente no menu de 3 pontinhos
+    if (!installed && !onLogin) {
+      const anchorItem = Array.from(document.querySelectorAll("button, a, div")).find((el) => {
+        if (!isVisible(el) || el.closest("[id^='vu-']") || el.children.length > 3) return false;
+        const t = norm(el.textContent);
+        return t === "banco sql (nuvem)" || t === "salvar html offline";
+      });
+
+      if (anchorItem && anchorItem.parentElement && !anchorItem.parentElement.querySelector("#vu-menu-dl-item")) {
+        const cloneBtn = document.createElement("button");
+        cloneBtn.id = "vu-menu-dl-item";
+        cloneBtn.type = "button";
+        cloneBtn.className = anchorItem.className || "";
+        cloneBtn.style.cssText = "display:flex;align-items:center;gap:9px;width:100%;padding:8px 12px;border:none;background:transparent;color:#0284c7;font-size:13px;font-weight:700;text-align:left;cursor:pointer;border-radius:8px;";
+        cloneBtn.innerHTML =
+          `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>` +
+          `<span>Baixar App (Android / PC)</span>`;
+        cloneBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          if (window.VoithUpgrade && typeof window.VoithUpgrade.openDownloadPage === "function") {
+            window.VoithUpgrade.openDownloadPage();
+          }
+        };
+        anchorItem.insertAdjacentElement("afterend", cloneBtn);
+      }
+    }
+  };
+
+  /* -------------------- 6. EXPORTAR EXATAMENTE O FILTRO ATUAL (CSV EXCEL + IMPRESSAO) -------------------- */
+  const collectVisibleTableData = () => {
+    const table = Array.from(document.querySelectorAll("table")).find((tb) => isVisible(tb) && !tb.closest("[id^='vu-']"));
+    if (!table) return null;
+
+    const ths = Array.from(table.querySelectorAll("thead th"));
+    const keepCols = [];
+    const headers = [];
+
+    ths.forEach((th, idx) => {
+      const txt = String(th.textContent || "").replace(/[\u2195\u2191\u2193\u25b2\u25bc]/g, "").replace(/\s+/g, " ").trim();
+      const n = norm(txt);
+      if (!txt && th.querySelector("input[type='checkbox']")) return;
+      if (n === "acoes" || n === "acao") return;
+      keepCols.push(idx);
+      headers.push(txt || `Coluna ${idx + 1}`);
+    });
+
+    const rows = [];
+    const trs = Array.from(table.querySelectorAll("tbody tr")).filter((tr) => {
+      if (!isVisible(tr) || tr.id === "vu-custody-empty-row") return false;
+      const t = norm(tr.textContent || "");
+      return t.length > 0 && !/nenhum (item|instrumento|registro|resultado)/.test(t);
+    });
+
+    trs.forEach((tr) => {
+      const tds = Array.from(tr.querySelectorAll("td"));
+      const vals = keepCols.map((cIdx) => {
+        const td = tds[cIdx];
+        if (!td) return "";
+        const clone = td.cloneNode(true);
+        clone.querySelectorAll("input, button, svg").forEach((rm) => rm.remove());
+        return String(clone.textContent || "").replace(/\s+/g, " ").trim();
+      });
+      if (vals.some(Boolean)) rows.push(vals);
+    });
+
+    // Detecta contexto da tela e filtros ativos
+    let title = "Relat\u00f3rio Filtrado \u2014 Voith Metrologia";
+    if (document.getElementById("vu-custody-reason-bar")) title = "Cautela & Campo \u2014 Filtro Atual";
+    else if (document.getElementById("vu-lost-subbar")) title = "Equipamentos Perdidos / Desativados";
+    else if (document.getElementById("vu-top-count-badge")) title = "Invent\u00e1rio de Instrumentos \u2014 Filtro Atual";
+
+    const badgeTxt = String((document.getElementById("vu-top-count-badge") || {}).textContent || "").trim();
+    const isPaginated = /exibindo\s+\d+/i.test(badgeTxt);
+
+    return { headers, rows, title, badgeTxt, isPaginated };
+  };
+
+  const exportCurrentFilterCSV = () => {
+    const data = collectVisibleTableData();
+    if (!data || !data.rows.length) {
+      showToast("Nenhuma linha vis\u00edvel na tabela para exportar.", "warn");
+      return;
+    }
+    const escCsv = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+    const csvLines = [
+      data.headers.map(escCsv).join(";"),
+      ...data.rows.map((r) => r.map(escCsv).join(";"))
+    ];
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = URL.createObjectURL(blob);
+    a.download = `voith-metrologia-filtro-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 300);
+
+    const extra = data.isPaginated ? " (dica: clique em 'Todos' em Por p\u00e1gina para incluir todas as p\u00e1ginas)" : "";
+    showToast(`CSV exportado com ${data.rows.length} linha(s)!${extra}`, "success", 4800);
+  };
+
+  const printCurrentFilter = () => {
+    const data = collectVisibleTableData();
+    if (!data || !data.rows.length) {
+      showToast("Nenhuma linha vis\u00edvel na tabela para imprimir.", "warn");
+      return;
+    }
+    const w = window.open("", "_blank");
+    if (!w) {
+      showToast("Permita pop-ups no navegador para abrir a visualiza\u00e7\u00e3o de impress\u00e3o.", "warn");
+      return;
+    }
+    const nowStr = new Date().toLocaleString("pt-BR");
+    w.document.write(
+      `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escHtml(data.title)}</title>` +
+      `<style>` +
+        `body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;margin:20px;}` +
+        `.hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #003399;padding-bottom:10px;margin-bottom:14px;}` +
+        `.logo{background:#003399;color:#fff;font-weight:900;font-size:13px;letter-spacing:.08em;padding:5px 10px;border-radius:6px;}` +
+        `table{width:100%;border-collapse:collapse;font-size:11.5px;}` +
+        `th{background:#f1f5f9;color:#1e293b;text-align:left;padding:7px 8px;border:1px solid #cbd5e1;font-weight:800;}` +
+        `td{padding:6px 8px;border:1px solid #e2e8f0;vertical-align:top;}` +
+        `tr:nth-child(even) td{background:#f8fafc;}` +
+        `@media print{body{margin:10px;}}` +
+      `</style></head><body>` +
+        `<div class="hdr">` +
+          `<div style="display:flex;align-items:center;gap:10px;"><span class="logo">VOITH</span><div><div style="font-size:16px;font-weight:800;">${escHtml(data.title)}</div><div style="font-size:11.5px;color:#475569;">Gerado em ${escHtml(nowStr)} &bull; ${data.rows.length} registro(s) listado(s)</div></div></div>` +
+        `</div>` +
+        `<table><thead><tr>${data.headers.map((h) => `<th>${escHtml(h)}</th>`).join("")}</tr></thead>` +
+        `<tbody>${data.rows.map((r) => `<tr>${r.map((c) => `<td>${escHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>` +
+        `<script>setTimeout(()=>window.print(),250);<\/script>` +
+      `</body></html>`
+    );
+    w.document.close();
+  };
+
+  const injectExportFilterButtons = () => {
+    const targets = [
+      { host: document.getElementById("vu-top-count-badge"), mode: "after", id: "vu-exp-inv-wrap" },
+      { host: document.getElementById("vu-custody-reason-bar"), mode: "inside", id: "vu-exp-cust-wrap" }
+    ];
+
+    targets.forEach(({ host, mode, id }) => {
+      const existing = document.getElementById(id);
+      if (!host || !isVisible(host)) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing && existing.isConnected) return;
+
+      const wrap = document.createElement("div");
+      wrap.id = id;
+      wrap.style.cssText = mode === "inside"
+        ? "display:inline-flex;align-items:center;gap:5px;margin-left:auto;"
+        : "display:inline-flex;align-items:center;gap:5px;margin-left:8px;";
+
+      const btnCss = "padding:4px 9px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#334155;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;";
+      wrap.innerHTML =
+        `<button type="button" class="vu-exp-btn" data-exp="csv" title="Exportar linhas filtradas para Excel/CSV (Alt+E)" style="${btnCss}">CSV</button>` +
+        `<button type="button" class="vu-exp-btn" data-exp="print" title="Imprimir ou salvar PDF do filtro atual (Alt+P)" style="${btnCss}">Imprimir</button>`;
+
+      wrap.querySelector("[data-exp='csv']").onclick = (ev) => { ev.stopPropagation(); exportCurrentFilterCSV(); };
+      wrap.querySelector("[data-exp='print']").onclick = (ev) => { ev.stopPropagation(); printCurrentFilter(); };
+
+      if (mode === "inside") host.appendChild(wrap);
+      else host.insertAdjacentElement("afterend", wrap);
+    });
+  };
+
+  /* -------------------- 7. ATALHOS DE TECLADO NO PC + MODAL DE AJUDA -------------------- */
+  const openShortcutsModal = () => {
+    const old = document.getElementById("vu-shortcuts-modal");
+    if (old) { old.remove(); return; }
+
+    const rows = [
+      ["Ctrl + K", "Busca global rápida (Spotlight)"],
+      ["Alt + N",  "Cadastrar Novo Instrumento"],
+      ["Alt + C",  "Abrir Cautela em Massa"],
+      ["Alt + S",  "Abrir Painel de Saneamento"],
+      ["Alt + I",  "Abrir Ler Imagem / Colar do Excel"],
+      ["Alt + E",  "Exportar filtro atual em CSV (Excel)"],
+      ["Alt + P",  "Imprimir / PDF do filtro atual"],
+      ["Alt + H",  "Mostrar / ocultar esta ajuda de atalhos"],
+      ["Esc",      "Fechar qualquer janela ou painel aberto"]
+    ];
+
+    const ov = document.createElement("div");
+    ov.id = "vu-shortcuts-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483220;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;";
+    ov.innerHTML =
+      `<div style="width:min(440px,94vw);background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45);">` +
+        `<div style="background:linear-gradient(90deg,#002466,#0055b8);color:#fff;padding:13px 18px;display:flex;justify-content:space-between;align-items:center;">` +
+          `<div style="font-size:14.5px;font-weight:800;">Atalhos de Teclado (PC)</div>` +
+          `<button type="button" id="vu-sc-close" style="width:30px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;">&times;</button>` +
+        `</div>` +
+        `<div style="padding:14px 18px;display:grid;gap:7px;">` +
+          rows.map(([k, d]) =>
+            `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:12.5px;">` +
+              `<span style="color:#475569;">${d}</span>` +
+              `<kbd style="padding:3px 8px;border-radius:6px;background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;font-size:11.5px;font-weight:800;font-family:monospace;white-space:nowrap;">${k}</kbd>` +
+            `</div>`
+          ).join("") +
+        `</div>` +
+      `</div>`;
+
+    document.body.appendChild(ov);
+    ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); };
+    ov.querySelector("#vu-sc-close").onclick = () => ov.remove();
+  };
+
+  const closeTopmostModalOnEsc = () => {
+    const customIds = [
+      "vu-shortcuts-modal",
+      "vu-sub-modal",
+      "vu-san-modal",
+      "vu-ret-modal",
+      "vu-img-modal",
+      "vu-bulk-modal",
+      "vu-dl-voith"
+    ];
+    for (let i = 0; i < customIds.length; i++) {
+      const el = document.getElementById(customIds[i]);
+      if (el && isVisible(el)) {
+        el.remove();
+        return true;
+      }
+    }
+    const dds = ["vu-autocomplete-dd", "vu-lost-ac-dd", "vu-smart-range-dd", "vu-code-suggest"];
+    for (let i = 0; i < dds.length; i++) {
+      const el = document.getElementById(dds[i]);
+      if (el && el.style.display !== "none") {
+        el.style.display = "none";
+        return true;
+      }
+    }
+    if (typeof window.__voithBackHandler === "function") {
+      const adm = document.getElementById("vu-adm-inner");
+      if (adm && isVisible(adm)) {
+        window.__voithBackHandler();
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (!window.__vuShortcutsBound) {
+    window.__vuShortcutsBound = true;
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        if (closeTopmostModalOnEsc()) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+        return;
+      }
+
+      if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      const active = document.activeElement;
+      const inField = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable);
+      if (inField) return;
+
+      const k = String(ev.key || "").toLowerCase();
+      if (k === "n") {
+        ev.preventDefault();
+        const btn = Array.from(document.querySelectorAll("button")).find((b) => isVisible(b) && !b.closest("[id^='vu-']") && /novo item|novo instrumento/.test(norm(b.textContent)));
+        if (btn) btn.click();
+      } else if (k === "c") {
+        ev.preventDefault();
+        if (window.VoithUpgrade && window.VoithUpgrade.openBulkCustody) window.VoithUpgrade.openBulkCustody();
+      } else if (k === "s") {
+        ev.preventDefault();
+        if (window.VoithUpgrade && window.VoithUpgrade.openSanitationModal) window.VoithUpgrade.openSanitationModal();
+      } else if (k === "i") {
+        ev.preventDefault();
+        if (window.VoithUpgrade && window.VoithUpgrade.openImageImportModal) window.VoithUpgrade.openImageImportModal();
+      } else if (k === "e") {
+        ev.preventDefault();
+        exportCurrentFilterCSV();
+      } else if (k === "p") {
+        ev.preventDefault();
+        printCurrentFilter();
+      } else if (k === "h") {
+        ev.preventDefault();
+        openShortcutsModal();
+      }
+    }, true);
+  }
+
+  /* -------------------- CICLO UNIFICADO NO MOTOR CORE -------------------- */
+  const runUxPass = () => {
+    syncDarkClass();
+    cleanupOcrIfClosed();
+    manageDownloadButtonPlacement();
+    injectExportFilterButtons();
+  };
+
+  const boot = () => {
+    ensureTurboStyles();
+    runUxPass();
+    if (window.VoithCore && typeof window.VoithCore.onDomChange === "function") {
+      window.VoithCore.onDomChange(runUxPass);
+    } else {
+      const obs = new (window.__VoithSharedObserver || MutationObserver)(() => runUxPass());
+      obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    }
+    document.addEventListener("click", () => setTimeout(runUxPass, 80), true);
+    window.addEventListener("resize", () => setTimeout(runUxPass, 120));
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, {
+    exportCurrentFilterCSV,
+    printCurrentFilter,
+    openShortcutsModal,
+    showToast
+  });
+})();
+/* VOITH_UX_TURBO_SUITE_V1_END */
+
+/* VOITH_EXECUTIVE_THEME_V1_START */
+(() => {
+  "use strict";
+
+  const ensureCorporateFont = () => {
+    if (document.getElementById("vu-voith-font")) return;
+    const link = document.createElement("link");
+    link.id = "vu-voith-font";
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+    (document.head || document.documentElement).appendChild(link);
+  };
+
+  const ensureTopAccentBar = () => {
+    if (document.getElementById("vu-exec-topstripe")) return;
+    const bar = document.createElement("div");
+    bar.id = "vu-exec-topstripe";
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.cssText =
+      "position:fixed;top:0;left:0;right:0;height:3px;z-index:2147483400;pointer-events:none;" +
+      "background:linear-gradient(90deg,#001d52 0%,#004899 58%,#009fe3 100%);";
+    document.body.appendChild(bar);
+  };
+
+  const ensureExecutiveStyles = () => {
+    if (document.getElementById("vu-executive-theme-css")) return;
+    const st = document.createElement("style");
+    st.id = "vu-executive-theme-css";
+    st.textContent = `
+      :root {
+        --voith-navy: #002466;
+        --voith-blue: #004899;
+        --voith-blue-hover: #003a7a;
+        --voith-cyan: #009fe3;
+        --voith-canvas: #f2f5fa;
+        --voith-surface: #ffffff;
+        --voith-border: #dce4f0;
+        --voith-border-strong: #c3d1e6;
+        --voith-text: #0f172a;
+        --voith-muted: #52637a;
+        --voith-shadow-sm: 0 1px 2px rgba(0, 36, 102, 0.04), 0 3px 10px -2px rgba(0, 36, 102, 0.05);
+        --voith-shadow-md: 0 8px 24px -6px rgba(0, 36, 102, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+      }
+
+      html.vu-dark,
+      html.dark,
+      body.dark {
+        --voith-canvas: #080f1e;
+        --voith-surface: #0f1a2e;
+        --voith-border: #1e2f4d;
+        --voith-border-strong: #2c436b;
+        --voith-text: #f1f5f9;
+        --voith-muted: #94a3b8;
+        --voith-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+        --voith-shadow-md: 0 14px 34px -8px rgba(0, 0, 0, 0.55);
+      }
+
+      /* Base tipografica e anti-aliasing */
+      body {
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      html:not(.vu-dark):not(.dark) body {
+        background-color: var(--voith-canvas) !important;
+        color: var(--voith-text);
+      }
+
+      html.vu-dark body,
+      html.dark body,
+      body.dark {
+        background-color: var(--voith-canvas) !important;
+        color: var(--voith-text);
+      }
+
+      /* Alinhamento tabular perfeito para codigos, datas, faixas e KPIs */
+      table, th, td,
+      #vu-top-count-badge,
+      [class*="tabular"],
+      .vu-exec-num {
+        font-variant-numeric: tabular-nums !important;
+      }
+
+      /* Cabecalho principal com acabamento corporativo */
+      html:not(.vu-dark):not(.dark) header {
+        background: rgba(255, 255, 255, 0.92) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--voith-border) !important;
+        box-shadow: 0 1px 3px rgba(0, 36, 102, 0.04);
+      }
+      html.vu-dark header,
+      html.dark header {
+        background: rgba(12, 22, 41, 0.9) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--voith-border) !important;
+      }
+
+      /* Sidebar desktop e barra inferior mobile mais nitidas */
+      html:not(.vu-dark):not(.dark) aside:not(#vu-admin-sidebar) {
+        border-right-color: var(--voith-border) !important;
+      }
+      html.vu-dark aside:not(#vu-admin-sidebar),
+      html.dark aside:not(#vu-admin-sidebar) {
+        border-right-color: var(--voith-border) !important;
+      }
+
+      /* Cartoes e paineis com elevacao executiva limpa */
+      html:not(.vu-dark):not(.dark) main .rounded-xl,
+      html:not(.vu-dark):not(.dark) main .rounded-2xl {
+        border-color: var(--voith-border);
+        box-shadow: var(--voith-shadow-sm);
+      }
+
+      /* Tabelas: visual de engenharia (cabecalho preciso + hover sutil) */
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+
+      html:not(.vu-dark):not(.dark) table thead th {
+        background: #eef3f9 !important;
+        color: #334a6b !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.055em !important;
+        text-transform: uppercase !important;
+        border-bottom: 1px solid var(--voith-border-strong) !important;
+      }
+
+      html.vu-dark table thead th,
+      html.dark table thead th {
+        background: #13213a !important;
+        color: #93b4dc !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.055em !important;
+        text-transform: uppercase !important;
+        border-bottom: 1px solid var(--voith-border-strong) !important;
+      }
+
+      table tbody tr {
+        transition: background-color 0.12s ease;
+      }
+
+      html:not(.vu-dark):not(.dark) table tbody tr:hover td {
+        background-color: #f4f8ff !important;
+      }
+
+      html.vu-dark table tbody tr:hover td,
+      html.dark table tbody tr:hover td {
+        background-color: rgba(0, 159, 227, 0.08) !important;
+      }
+
+      html:not(.vu-dark):not(.dark) table tbody td {
+        border-bottom-color: #e9eff7 !important;
+      }
+      html.vu-dark table tbody td,
+      html.dark table tbody td {
+        border-bottom-color: #192844 !important;
+      }
+
+      /* Campos de entrada e seletores com foco padrao Voith */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+      select,
+      textarea {
+        transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+      }
+
+      input:not([type="checkbox"]):not([type="radio"]):focus,
+      select:focus,
+      textarea:focus {
+        outline: none !important;
+        border-color: var(--voith-blue) !important;
+        box-shadow: 0 0 0 3px rgba(0, 72, 153, 0.15) !important;
+      }
+
+      html.vu-dark input:not([type="checkbox"]):not([type="radio"]):focus,
+      html.vu-dark select:focus,
+      html.vu-dark textarea:focus,
+      html.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+      html.dark select:focus,
+      html.dark textarea:focus {
+        border-color: var(--voith-cyan) !important;
+        box-shadow: 0 0 0 3px rgba(0, 159, 227, 0.22) !important;
+      }
+
+      /* Botoes com resposta tatil sutil (GPU-friendly) */
+      button {
+        transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.08s ease;
+      }
+      button:active:not(:disabled) {
+        transform: scale(0.985);
+      }
+
+      /* Harmonizacao executiva das barras da suite */
+      html:not(.vu-dark):not(.dark) #vu-family-bar > div:first-child,
+      html:not(.vu-dark):not(.dark) #vu-custody-reason-bar {
+        background: #ffffff !important;
+        border: 1px solid var(--voith-border) !important;
+        box-shadow: var(--voith-shadow-sm) !important;
+      }
+
+      html:not(.vu-dark):not(.dark) #vu-top-count-badge {
+        background: #eaf2fc !important;
+        border-color: #bfd6f6 !important;
+        color: var(--voith-navy) !important;
+      }
+
+      html:not(.vu-dark):not(.dark) #vu-open-img-import {
+        background: #ffffff !important;
+        border: 1px solid #bfd6f6 !important;
+        color: var(--voith-blue) !important;
+        box-shadow: 0 1px 2px rgba(0, 36, 102, 0.05);
+      }
+      html:not(.vu-dark):not(.dark) #vu-open-img-import:hover {
+        background: #eaf2fc !important;
+        border-color: var(--voith-blue) !important;
+      }
+
+      html:not(.vu-dark):not(.dark) #vu-saneamento-btn {
+        background: #ffffff !important;
+        border: 1px solid #c7d4ee !important;
+        color: var(--voith-navy) !important;
+        box-shadow: 0 1px 2px rgba(0, 36, 102, 0.05);
+      }
+      html:not(.vu-dark):not(.dark) #vu-saneamento-btn:hover {
+        background: #eef4fc !important;
+        border-color: var(--voith-blue) !important;
+      }
+
+      /* Barras de rolagem finas e discretas */
+      ::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.34);
+        border-radius: 999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 72, 153, 0.58);
+      }
+      html.vu-dark ::-webkit-scrollbar-thumb,
+      html.dark ::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.28);
+      }
+      html.vu-dark ::-webkit-scrollbar-thumb:hover,
+      html.dark ::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 159, 227, 0.55);
+      }
+
+      /* Melhor contraste na selecao de texto */
+      ::selection {
+        background: rgba(0, 159, 227, 0.22);
+        color: inherit;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(st);
+  };
+
+  const boot = () => {
+    ensureCorporateFont();
+    ensureExecutiveStyles();
+    if (document.body) ensureTopAccentBar();
+    else document.addEventListener("DOMContentLoaded", ensureTopAccentBar, { once: true });
+  };
+
+  boot();
+})();
+/* VOITH_EXECUTIVE_THEME_V1_END */
+
+/* VOITH_NEXTGEN_SUITE_V1_START */
+(() => {
+  "use strict";
+
+  const TRASH_KEY = "voith_trash_bin_v1";
+  const TRASH_DAYS = 30;
+  const GEMINI_KEY_STORAGE = "voith_gemini_api_key_v1";
+  const GEMINI_ON_STORAGE = "voith_gemini_ai_mode_v1";
+  const MOBILE_CARDS_KEY = "voith_mobile_cards_v1";
+  const TIMELINE_KEY = "voith_instrument_timeline_v1";
+
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const escHtml = (s) => String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  const isVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    const cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const setControlValue = (el, val) => {
+    if (!el) return false;
+    const str = String(val == null ? "" : val).trim();
+    if (el.tagName === "SELECT") {
+      if (!str) return false;
+      const target = norm(str);
+      const opts = Array.from(el.options || []);
+      const hit =
+        opts.find((o) => norm(o.value) === target || norm(o.textContent) === target) ||
+        opts.find((o) => norm(o.textContent).includes(target) || (target.length >= 4 && target.includes(norm(o.textContent))));
+      if (hit) el.value = hit.value;
+      else return false;
+    } else {
+      let finalVal = str;
+      if (String(el.type || "").toLowerCase() === "date" && str) {
+        const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
+      }
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (desc && desc.set) desc.set.call(el, finalVal);
+      else el.value = finalVal;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const getFieldHint = (el) => {
+    const parts = [el.id, el.name, el.placeholder, el.getAttribute("aria-label")];
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${el.id}"]`);
+      if (lbl) parts.push(lbl.textContent);
+    }
+    const closestLbl = el.closest("label");
+    if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.parentElement) {
+      const sib = el.parentElement.querySelector("label, span, p");
+      if (sib && sib !== el && String(sib.textContent || "").length < 80) parts.push(sib.textContent);
+    }
+    return norm(parts.filter(Boolean).join(" "));
+  };
+
+  const toast = (msg, kind = "info") => {
+    if (window.VoithUpgrade && typeof window.VoithUpgrade.showToast === "function") {
+      window.VoithUpgrade.showToast(msg, kind);
+      return;
+    }
+    let t = document.getElementById("vu-ng-toast");
+    if (t) t.remove();
+    t = document.createElement("div");
+    t.id = "vu-ng-toast";
+    t.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2147483320;background:#0b1f44;color:#fff;border:1px solid #38bdf8;border-radius:10px;padding:9px 15px;font-size:12.5px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 14px 36px rgba(0,0,0,.4);";
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { if (t && t.isConnected) t.remove(); }, 3600);
+  };
+
+  /* -------------------- ESTILOS: VIRTUALIZACAO 60FPS + SKELETONS + CARDS 1-TOQUE MOBILE -------------------- */
+  const ensureNextGenStyles = () => {
+    if (document.getElementById("vu-nextgen-css")) return;
+    const st = document.createElement("style");
+    st.id = "vu-nextgen-css";
+    st.textContent = `
+      /* Virtualizacao nativa do navegador para listas grandes (446+ itens em 60 FPS sem quebrar DOM) */
+      table tbody tr {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 56px;
+      }
+
+      /* Esqueletos animados (Skeleton Loaders) */
+      @keyframes vuShimmer {
+        0% { background-position: -400px 0; }
+        100% { background-position: 400px 0; }
+      }
+      .vu-skel-bar {
+        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+        background-size: 800px 100%;
+        animation: vuShimmer 1.3s infinite linear;
+        border-radius: 8px;
+      }
+      html.vu-dark .vu-skel-bar,
+      html.dark .vu-skel-bar {
+        background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+        background-size: 800px 100%;
+      }
+
+      /* Cards de 1 toque no celular (<= 768px) */
+      @media (max-width: 768px) {
+        body.vu-mobile-cards table:not(.vu-no-card) {
+          display: block !important;
+          width: 100% !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) thead {
+          display: none !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody {
+          display: grid !important;
+          gap: 10px !important;
+          padding: 4px 2px !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody tr {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: center !important;
+          gap: 6px 10px !important;
+          padding: 11px 12px !important;
+          border-radius: 12px !important;
+          border: 1px solid #dce4f0 !important;
+          background: #ffffff !important;
+          box-shadow: 0 2px 8px rgba(0, 36, 102, 0.06) !important;
+          contain-intrinsic-size: auto 108px !important;
+        }
+        html.vu-dark body.vu-mobile-cards table:not(.vu-no-card) tbody tr,
+        html.dark body.vu-mobile-cards table:not(.vu-no-card) tbody tr {
+          background: #0f1a2e !important;
+          border-color: #1e2f4d !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody td {
+          display: inline-flex !important;
+          align-items: center !important;
+          padding: 2px 0 !important;
+          border: none !important;
+          max-width: 100% !important;
+          font-size: 12.5px !important;
+          line-height: 1.3 !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody td:first-child {
+          flex: 0 0 auto !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody td:nth-child(2) {
+          font-weight: 800 !important;
+          flex: 1 1 55% !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody td:last-child {
+          flex: 1 0 100% !important;
+          justify-content: flex-end !important;
+          gap: 6px !important;
+          padding-top: 7px !important;
+          margin-top: 3px !important;
+          border-top: 1px dashed rgba(148, 163, 184, 0.28) !important;
+        }
+        body.vu-mobile-cards table:not(.vu-no-card) tbody td:last-child button {
+          min-height: 34px !important;
+          padding: 5px 12px !important;
+          font-size: 12px !important;
+          font-weight: 700 !important;
+        }
+      }
+
+      /* Tema escuro para modais novos (Lixeira + Command Center + Barra IA) */
+      html.vu-dark #vu-trash-modal > div,
+      html.dark #vu-trash-modal > div {
+        background: #0f172a !important;
+        color: #f1f5f9 !important;
+        border: 1px solid #334155 !important;
+      }
+      html.vu-dark #vu-cc-analytics .vu-cc-card,
+      html.dark #vu-cc-analytics .vu-cc-card {
+        background: #0f1a2e !important;
+        border-color: #1e2f4d !important;
+        color: #f1f5f9 !important;
+      }
+      html.vu-dark #vu-ai-vision-bar,
+      html.dark #vu-ai-vision-bar {
+        background: rgba(30, 58, 138, 0.25) !important;
+        border-color: rgba(56, 189, 248, 0.4) !important;
+        color: #e0f2fe !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(st);
+  };
+
+  /* -------------------- 1. ESQUELETOS DE CARREGAMENTO (SKELETON LOADERS) -------------------- */
+  let skeletonDismissed = false;
+
+  const isOnLogin = () => {
+    const p = document.querySelector("input[type='password']");
+    return Boolean(p && isVisible(p));
+  };
+
+  const renderSkeletonIfLoading = () => {
+    if (skeletonDismissed) return;
+    const existing = document.getElementById("vu-skeleton-overlay");
+
+    const hasRealContent =
+      isOnLogin() ||
+      document.querySelectorAll("table tbody tr").length > 0 ||
+      Array.from(document.querySelectorAll("h1, h2, div")).some((el) => {
+        if (!isVisible(el) || el.closest("#vu-skeleton-overlay")) return false;
+        const t = String(el.textContent || "");
+        return t.length < 40 && /\b(4\d{2}|3\d{2}|2\d{2})\b/.test(t);
+      });
+
+    if (hasRealContent) {
+      skeletonDismissed = true;
+      if (existing) existing.remove();
+      return;
+    }
+
+    const host = document.querySelector("main") || document.body;
+    if (!host || existing) return;
+
+    const sk = document.createElement("div");
+    sk.id = "vu-skeleton-overlay";
+    sk.style.cssText = "padding:18px;display:grid;gap:14px;max-width:1280px;margin:0 auto;";
+    sk.innerHTML =
+      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">` +
+        `<div class="vu-skel-bar" style="height:78px;"></div>` +
+        `<div class="vu-skel-bar" style="height:78px;"></div>` +
+        `<div class="vu-skel-bar" style="height:78px;"></div>` +
+        `<div class="vu-skel-bar" style="height:78px;"></div>` +
+      `</div>` +
+      `<div style="display:grid;gap:9px;margin-top:4px;">` +
+        `<div class="vu-skel-bar" style="height:40px;"></div>` +
+        `<div class="vu-skel-bar" style="height:46px;"></div>` +
+        `<div class="vu-skel-bar" style="height:46px;"></div>` +
+        `<div class="vu-skel-bar" style="height:46px;"></div>` +
+        `<div class="vu-skel-bar" style="height:46px;"></div>` +
+      `</div>`;
+    host.prepend(sk);
+
+    // Trava de seguranca: nunca fica preso mais de 3,5 segundos
+    setTimeout(() => {
+      skeletonDismissed = true;
+      const el = document.getElementById("vu-skeleton-overlay");
+      if (el) el.remove();
+    }, 3500);
+  };
+
+  /* -------------------- LEITURA UNIFICADA DA FROTA (USADA PELA LIXEIRA E COMMAND CENTER) -------------------- */
+  const parseDateObj = (raw) => {
+    const s = String(raw || "").trim();
+    if (!s) return null;
+    let d = 0, m = 0, y = 0;
+    let hit = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if (hit) { d = Number(hit[1]); m = Number(hit[2]); y = Number(hit[3]); }
+    else {
+      hit = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+      if (hit) { y = Number(hit[1]); m = Number(hit[2]); d = Number(hit[3]); }
+    }
+    if (!hit || m < 1 || m > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) return null;
+    return { d, m, y, ym: `${y}-${String(m).padStart(2, "0")}`, br: `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`, date: new Date(y, m - 1, d, 23, 59, 59) };
+  };
+
+  const getFleetArray = () => {
+    const candidates = [
+      window.VoithCore && window.VoithCore.cache && window.VoithCore.cache.fleet,
+      window.instruments,
+      window.ITEMS,
+      window.allInstruments,
+      window.DATA,
+      window.state && window.state.instruments
+    ];
+
+    let best = [];
+    const consider = (arr) => {
+      if (Array.isArray(arr) && arr.length > best.length && arr[0] && typeof arr[0] === "object") best = arr;
+    };
+    candidates.forEach(consider);
+
+    if (best.length < 5) {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i) || "";
+          if (/audit|trash|timeline|lost_categories|gemini/i.test(k)) continue;
+          const raw = localStorage.getItem(k);
+          if (!raw || raw.length < 50 || (raw[0] !== "[" && raw[0] !== "{")) continue;
+          try {
+            const p = JSON.parse(raw);
+            if (Array.isArray(p)) consider(p);
+            else if (p && typeof p === "object") {
+              ["instruments", "items", "data", "frota"].forEach((sub) => consider(p[sub]));
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    return best.map((o) => {
+      const code = String(o.code || o.codigo || o.cod || o.tag || o.patrimonio || (typeof o.id === "string" ? o.id : "") || "").trim().toUpperCase();
+      if (!code || code.length < 3 || code.length > 32) return null;
+      const st = norm(o.status || o.situacao || "");
+      if (o.deleted || o.isLost || st === "perdido" || st === "desativado" || st === "baixado") return null;
+
+      let dateVal = o.validade || o.val || o.next_cal || o.nextCal || o.proxima_calibracao || o.prox_calibracao || o.cal || o.dueDate || o.vencimento || "";
+      if (!dateVal) {
+        const ks = Object.keys(o);
+        for (let i = 0; i < ks.length; i++) {
+          const v = o[ks[i]];
+          if (typeof v === "string" && /^\s*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/.test(v) && !/creat|updat|ultim|last/i.test(ks[i])) {
+            dateVal = v;
+            break;
+          }
+        }
+      }
+
+      const fIni = o.faixa_min ?? o.faixaMin ?? o.faixa_inicial ?? "";
+      const fFim = o.faixa_max ?? o.faixaMax ?? o.faixa_final ?? "";
+      const faixa = (String(fIni).trim() && String(fFim).trim()) ? `${fIni} ~ ${fFim}` : String(o.faixa || o.range || o.capacidade || "").trim();
+
+      return {
+        code,
+        desc: String(o.desc || o.descricao || o.description || o.name || o.instrumento || o.equipamento || "").trim(),
+        setor: String(o.setor || o.sector || o.setor_oficial || o.area || "").trim(),
+        local: String(o.local || o.loc || o.localizacao || o.location || o.armario || "").trim(),
+        resp: String(o.responsavel || o.responsible || o.tecnico || "").trim(),
+        cc: String(o.cc || o.c_custo || o.centro_custo || o.centroCusto || "").trim(),
+        obs: String(o.obs || o.observacao || "").trim(),
+        faixa,
+        dateInfo: parseDateObj(dateVal)
+      };
+    }).filter(Boolean);
+  };
+
+  /* -------------------- 2. LIXEIRA COM RESTAURACAO DE 30 DIAS (SOFT DELETE) -------------------- */
+  const loadTrash = () => {
+    try {
+      const arr = JSON.parse(localStorage.getItem(TRASH_KEY) || "[]");
+      if (!Array.isArray(arr)) return [];
+      const now = Date.now();
+      const valid = arr.filter((x) => x && x.code && (!x.expiresAt || x.expiresAt > now));
+      if (valid.length !== arr.length) localStorage.setItem(TRASH_KEY, JSON.stringify(valid));
+      return valid;
+    } catch (_) { return []; }
+  };
+
+  const saveTrash = (arr) => {
+    try { localStorage.setItem(TRASH_KEY, JSON.stringify(arr.slice(0, 200))); } catch (_) {}
+  };
+
+  const pushToTrash = (record) => {
+    if (!record || !record.code) return;
+    const list = loadTrash().filter((x) => x.code !== record.code);
+    const now = Date.now();
+    list.unshift({
+      ...record,
+      deletedAt: now,
+      expiresAt: now + TRASH_DAYS * 86400000
+    });
+    saveTrash(list);
+    injectTrashButton();
+    toast(`${record.code} guardado na Lixeira (recuper\u00e1vel por ${TRASH_DAYS} dias).`, "warn");
+  };
+
+  const captureSnapshotFromContext = (btn) => {
+    const container = btn.closest("[role=dialog], .fixed.inset-0, .modal, aside, section, tr") || btn.parentElement;
+    const txt = String((container && container.textContent) || "");
+    const cm = txt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/);
+    let code = cm ? cm[1].toUpperCase() : "";
+
+    const snap = { code, desc: "", setor: "", local: "", resp: "", cc: "", faixa: "", validade: "", obs: "" };
+
+    // Extrai valores dos inputs abertos no drawer se estiver editando
+    if (container && container.tagName !== "TR") {
+      container.querySelectorAll("input, select, textarea").forEach((el) => {
+        if (!isVisible(el) || el.closest("#vu-timeline-card")) return;
+        const v = String(el.value || "").trim();
+        if (!v) return;
+        const h = getFieldHint(el);
+        if (!snap.code && /(codigo|code|patrimonio)/.test(h)) snap.code = v.toUpperCase();
+        else if (/(descri|instrument|equip)/.test(h)) snap.desc = v;
+        else if (/(setor|sector|area)/.test(h) && !/(local|armario)/.test(h)) snap.setor = v;
+        else if (/(localiz|local|armario)/.test(h)) snap.local = v;
+        else if (/(respons|tecnic)/.test(h)) snap.resp = v;
+        else if (/(custo|\bcc\b)/.test(h)) snap.cc = v;
+        else if (/(calibr|valid|prox)/.test(h) && !/(ultima|status)/.test(h)) snap.validade = v;
+        else if (/(faixa|capac|range)/.test(h)) snap.faixa = snap.faixa ? `${snap.faixa} ~ ${v}` : v;
+        else if (/(obs|nota)/.test(h)) snap.obs = v;
+      });
+    }
+
+    if (snap.code) {
+      const fleetHit = getFleetArray().find((x) => x.code === snap.code);
+      if (fleetHit) {
+        snap.desc = snap.desc || fleetHit.desc;
+        snap.setor = snap.setor || fleetHit.setor;
+        snap.local = snap.local || fleetHit.local;
+        snap.resp = snap.resp || fleetHit.resp;
+        snap.cc = snap.cc || fleetHit.cc;
+        snap.faixa = snap.faixa || fleetHit.faixa;
+        snap.validade = snap.validade || (fleetHit.dateInfo ? fleetHit.dateInfo.br : "");
+        snap.obs = snap.obs || fleetHit.obs;
+      }
+    }
+    return snap.code ? snap : null;
+  };
+
+  // Intercepta clique em "Excluir" de instrumento e arquiva copia na Lixeira de 30 dias se confirmado
+  if (!window.__vuSoftDeleteHooked) {
+    window.__vuSoftDeleteHooked = true;
+    document.addEventListener("click", (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+      if (!btn || btn.closest("#vu-trash-modal") || btn.closest("#vu-adm-inner")) return;
+      const t = norm(btn.textContent);
+      if (t !== "excluir" && t !== "excluir instrumento" && t !== "deletar") return;
+
+      const snapshot = captureSnapshotFromContext(btn);
+      if (!snapshot) return;
+
+      let confirmCalled = false;
+      let userAccepted = true;
+      const prevConfirm = window.confirm;
+      window.confirm = function (...args) {
+        confirmCalled = true;
+        const ans = prevConfirm.apply(window, args);
+        userAccepted = Boolean(ans);
+        return ans;
+      };
+
+      setTimeout(() => {
+        window.confirm = prevConfirm;
+        if (userAccepted) {
+          pushToTrash(snapshot);
+        }
+      }, 280);
+    }, true);
+  }
+
+  const restoreFromTrash = async (item) => {
+    const modal = document.getElementById("vu-trash-modal");
+    if (modal) modal.remove();
+
+    // Abre "+ Novo Item" nativo e preenche todos os campos recuperados
+    const newBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+      isVisible(b) && !b.closest("[id^='vu-']") && /(novo item|novo instrumento)/.test(norm(b.textContent))
+    );
+    if (!newBtn) {
+      toast("V\u00e1 para a aba Invent\u00e1rio para restaurar o instrumento.", "warn");
+      return;
+    }
+
+    newBtn.click();
+    let drawer = null;
+    for (let i = 0; i < 25; i++) {
+      await sleep(100);
+      const saveBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+        isVisible(b) && !b.closest("[id^='vu-']") && /^(salvar|cadastrar|criar)$/.test(norm(b.textContent))
+      );
+      if (saveBtn) {
+        let cur = saveBtn.parentElement;
+        for (let d = 0; d < 8 && cur && cur !== document.body; d++) {
+          if (cur.querySelectorAll("input, select").length >= 4 && !String(cur.textContent || "").includes("Monitoramento de Frota")) {
+            drawer = cur;
+            break;
+          }
+          cur = cur.parentElement;
+        }
+        if (drawer) break;
+      }
+    }
+
+    if (!drawer) {
+      toast("N\u00e3o foi poss\u00edvel abrir a janela de cadastro para restaurar.", "error");
+      return;
+    }
+
+    const controls = Array.from(drawer.querySelectorAll("input, select, textarea")).filter((el) => {
+      if (!isVisible(el) || el.disabled || el.readOnly) return false;
+      return !["hidden", "checkbox", "radio", "file", "submit", "button"].includes(String(el.type || "").toLowerCase());
+    });
+
+    const used = new Set();
+    const fill = (val, re, ex) => {
+      if (!val) return false;
+      const el = controls.find((c) => {
+        if (used.has(c)) return false;
+        const h = getFieldHint(c);
+        if (ex && ex.test(h)) return false;
+        return re.test(h);
+      });
+      if (el && setControlValue(el, val)) { used.add(el); return true; }
+      return false;
+    };
+
+    if (!fill(item.code, /(codigo|code|patrimonio|tag)/, /(setor|custo)/) && controls[0]) { setControlValue(controls[0], item.code); used.add(controls[0]); }
+    fill(item.desc, /(descri|instrument|nome|equip)/, /(codigo|setor|resp|faixa|obs|custo)/);
+    fill(item.cc, /(centro|custo|\bcc\b)/, /(obs)/);
+    fill(item.setor, /(setor|sector|area)/, /(local|armario|resp)/);
+    fill(item.local, /(localiz|local|armario)/, /(setor|resp)/);
+    fill(item.resp, /(respons|tecnic|colaborad)/, /(setor|local)/);
+    fill(item.validade, /(valid|prox|venc|calibr|data)/, /(ultima|status|period)/);
+    fill(item.obs, /(obs|nota)/, null);
+
+    if (item.faixa) {
+      const parts = String(item.faixa).split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
+      const okMin = parts[0] && fill(parts[0], /(faixa\s*min|minima|\bmin\b|inicial)/, /(max|final)/);
+      const okMax = parts[1] && fill(parts[1], /(faixa\s*max|maxima|\bmax\b|final)/, /(min|inicial)/);
+      if (!okMin && !okMax) fill(item.faixa, /(faixa|capac|range|medicao)/, /(setor|data|valid)/);
+    }
+
+    await sleep(180);
+    const saveBtn = Array.from(drawer.querySelectorAll("button")).find((b) => isVisible(b) && !b.disabled && /^(salvar|cadastrar|criar)$/.test(norm(b.textContent)));
+    if (saveBtn) {
+      saveBtn.click();
+      saveTrash(loadTrash().filter((x) => x.code !== item.code));
+      injectTrashButton();
+      if (window.VoithUpgrade && window.VoithUpgrade.pushTimelineEvent) {
+        window.VoithUpgrade.pushTimelineEvent(item.code, "edit", "Restaurado da Lixeira", "Registro recuperado do backup de 30 dias.");
+      }
+      toast(`\u2713 ${item.code} restaurado para o Invent\u00e1rio!`, "success");
+    } else {
+      toast(`Dados de ${item.code} preenchidos. Confira e clique em Salvar.`, "info");
+    }
+  };
+
+  const openTrashModal = () => {
+    const old = document.getElementById("vu-trash-modal");
+    if (old) old.remove();
+
+    const ov = document.createElement("div");
+    ov.id = "vu-trash-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147482860;background:rgba(15,23,42,.66);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,sans-serif;";
+
+    const draw = () => {
+      const items = loadTrash();
+      ov.innerHTML =
+        `<div style="width:min(760px,96vw);max-height:88vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 26px 68px rgba(0,0,0,.48);display:flex;flex-direction:column;">` +
+          `<div style="background:linear-gradient(90deg,#7f1d1d,#b91c1c);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;">` +
+            `<div>` +
+              `<div style="font-size:15.5px;font-weight:800;">Lixeira de Instrumentos (${items.length})</div>` +
+              `<div style="font-size:12px;color:#fecaca;">Registros exclu\u00eddos ficam protegidos aqui por ${TRASH_DAYS} dias para restaura\u00e7\u00e3o em 1 clique.</div>` +
+            `</div>` +
+            `<button type="button" id="vu-tr-close" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;">&times;</button>` +
+          `</div>` +
+          `<div style="padding:15px 18px;overflow-y:auto;display:grid;gap:9px;flex:1;">` +
+            (items.length
+              ? items.map((it) => {
+                  const daysLeft = Math.max(1, Math.ceil(((it.expiresAt || Date.now()) - Date.now()) / 86400000));
+                  const delDate = new Date(it.deletedAt || Date.now()).toLocaleDateString("pt-BR");
+                  return (
+                    `<div style="padding:11px 13px;border-radius:11px;border:1px solid #cbd5e1;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">` +
+                      `<div style="min-width:220px;flex:1;">` +
+                        `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+                          `<strong style="font-size:13.5px;color:#004899;">${escHtml(it.code)}</strong>` +
+                          `<span style="font-size:12.5px;font-weight:700;">${escHtml(it.desc || "Sem descri\u00e7\u00e3o")}</span>` +
+                          `<span style="padding:2px 7px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:10.5px;font-weight:800;">Expira em ${daysLeft}d</span>` +
+                        `</div>` +
+                        `<div style="font-size:11.5px;color:#64748b;margin-top:3px;">` +
+                          `Exclu\u00eddo em ${delDate} &bull; Setor: ${escHtml(it.setor || "-")} &bull; Local: ${escHtml(it.local || "-")} &bull; Validade: ${escHtml(it.validade || "-")}` +
+                        `</div>` +
+                      `</div>` +
+                      `<div style="display:flex;gap:6px;">` +
+                        `<button type="button" data-tr-restore="${escHtml(it.code)}" style="padding:6px 11px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;">Restaurar</button>` +
+                        `<button type="button" data-tr-purge="${escHtml(it.code)}" style="padding:6px 9px;border-radius:8px;border:1px solid #fca5a5;background:transparent;color:#dc2626;font-size:11.5px;font-weight:700;cursor:pointer;">Apagar</button>` +
+                      `</div>` +
+                    `</div>`
+                  );
+                }).join("")
+              : `<div style="padding:28px;text-align:center;color:#64748b;font-size:13px;font-weight:600;">A Lixeira est\u00e1 vazia. Qualquer instrumento exclu\u00eddo aparecer\u00e1 aqui por ${TRASH_DAYS} dias.</div>`) +
+          `</div>` +
+          `<div style="padding:11px 18px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">` +
+            (items.length ? `<button type="button" id="vu-tr-empty" style="padding:6px 11px;border-radius:8px;border:1px solid #fca5a5;background:transparent;color:#dc2626;font-size:11.5px;font-weight:700;cursor:pointer;">Esvaziar Lixeira</button>` : `<span></span>`) +
+            `<button type="button" id="vu-tr-ok" style="padding:7px 14px;border-radius:8px;border:1px solid #cbd5e1;background:transparent;color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Fechar</button>` +
+          `</div>` +
+        `</div>`;
+
+      ov.querySelector("#vu-tr-close").onclick = () => ov.remove();
+      ov.querySelector("#vu-tr-ok").onclick = () => ov.remove();
+      const emptyBtn = ov.querySelector("#vu-tr-empty");
+      if (emptyBtn) emptyBtn.onclick = () => { saveTrash([]); injectTrashButton(); draw(); };
+
+      ov.querySelectorAll("[data-tr-restore]").forEach((b) => {
+        b.onclick = () => {
+          const item = items.find((x) => x.code === b.getAttribute("data-tr-restore"));
+          if (item) restoreFromTrash(item);
+        };
+      });
+      ov.querySelectorAll("[data-tr-purge]").forEach((b) => {
+        b.onclick = () => {
+          const c = b.getAttribute("data-tr-purge");
+          saveTrash(items.filter((x) => x.code !== c));
+          injectTrashButton();
+          draw();
+        };
+      });
+    };
+
+    document.body.appendChild(ov);
+    ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); };
+    draw();
+  };
+
+  const injectTrashButton = () => {
+    const existing = document.getElementById("vu-trash-btn");
+    const anchor = document.getElementById("vu-saneamento-btn") || Array.from(document.querySelectorAll("button")).find((b) => isVisible(b) && !b.closest("[id^='vu-']") && norm(b.textContent) === "pdf iso");
+    if (!anchor || !anchor.parentElement) {
+      if (existing) existing.remove();
+      return;
+    }
+    const count = loadTrash().length;
+    let btn = existing;
+    if (!btn || !anchor.parentElement.contains(btn)) {
+      if (btn) btn.remove();
+      btn = document.createElement("button");
+      btn.id = "vu-trash-btn";
+      btn.type = "button";
+      btn.title = "Lixeira com restaura\u00e7\u00e3o de 30 dias (Soft Delete)";
+      btn.onclick = openTrashModal;
+      anchor.insertAdjacentElement("afterend", btn);
+    }
+    const sig = String(count);
+    if (btn.dataset.vuSig === sig) return;
+    btn.dataset.vuSig = sig;
+    btn.style.cssText =
+      `display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;` +
+      `border:1px solid ${count ? "#fca5a5" : "#cbd5e1"};background:${count ? "#fef2f2" : "#ffffff"};color:${count ? "#b91c1c" : "#475569"};`;
+    btn.innerHTML = `<span>Lixeira</span>${count ? `<span style="padding:1px 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:10.5px;">${count}</span>` : ""}`;
+  };
+
+  /* -------------------- 3. CARDS DE 1 TOQUE NO CELULAR -------------------- */
+  const syncMobileCardsMode = () => {
+    const isMobile = window.innerWidth <= 768;
+    const savedPref = localStorage.getItem(MOBILE_CARDS_KEY);
+    const enabled = savedPref === null ? true : savedPref === "1";
+    document.body.classList.toggle("vu-mobile-cards", isMobile && enabled);
+
+    const existing = document.getElementById("vu-mob-card-toggle");
+    const mainTable = Array.from(document.querySelectorAll("table")).find((tb) => isVisible(tb) && !tb.closest("[id^='vu-']"));
+    if (!isMobile || !mainTable) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    if (!existing || !existing.isConnected) {
+      const bar = document.createElement("div");
+      bar.id = "vu-mob-card-toggle";
+      bar.style.cssText = "display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:6px 0 8px;font-family:system-ui,-apple-system,sans-serif;";
+      bar.innerHTML =
+        `<button type="button" id="vu-mob-toggle-btn" style="padding:5px 11px;border-radius:999px;border:1px solid #004899;background:${enabled ? "#004899" : "#ffffff"};color:${enabled ? "#ffffff" : "#004899"};font-size:11.5px;font-weight:800;cursor:pointer;">` +
+          `${enabled ? "\u2713 Cart\u00f5es 1-Toque" : "Mudar p/ Cart\u00f5es"}` +
+        `</button>`;
+      bar.querySelector("#vu-mob-toggle-btn").onclick = () => {
+        const next = !document.body.classList.contains("vu-mobile-cards");
+        localStorage.setItem(MOBILE_CARDS_KEY, next ? "1" : "0");
+        bar.remove();
+        syncMobileCardsMode();
+      };
+      const wrap = mainTable.parentElement;
+      if (wrap && wrap.parentElement) wrap.parentElement.insertBefore(bar, wrap);
+    }
+  };
+
+  /* -------------------- 4. COMMAND CENTER: PREVISAO 6 MESES + RANKING DE REPAROS -------------------- */
+  const isCommandCenterScreen = () => {
+    if (document.getElementById("vu-family-bar") || document.getElementById("vu-custody-reason-bar") || document.getElementById("vu-lost-subbar")) return false;
+    const hasPerPage = Array.from(document.querySelectorAll("span, div")).some((el) => isVisible(el) && el.children.length === 0 && /^por pagina/i.test(norm(el.textContent)));
+    if (hasPerPage) return false;
+    return Array.from(document.querySelectorAll("h1, h2, h3, div, p")).some((el) => {
+      if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
+      const t = String(el.textContent || "");
+      return t.length < 120 && /(command center|monitoramento de frota|saude metrologica|visao geral)/i.test(norm(t));
+    });
+  };
+
+  const jumpToInventoryMonth = async (ym) => {
+    const invNav = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, footer button, button")).find((b) =>
+      isVisible(b) && !b.closest("[id^='vu-']") && norm(b.textContent).startsWith("inventario")
+    );
+    if (invNav) { invNav.click(); await sleep(340); }
+
+    // Abre o painel "Filtros" se o seletor de mes estiver oculto
+    let monthSel = Array.from(document.querySelectorAll("select")).find((s) =>
+      isVisible(s) && Array.from(s.options || []).some((o) => String(o.value || "").includes(ym))
+    );
+    if (!monthSel) {
+      const fBtn = Array.from(document.querySelectorAll("button")).find((b) => isVisible(b) && norm(b.textContent).startsWith("filtros"));
+      if (fBtn) { fBtn.click(); await sleep(220); }
+      monthSel = Array.from(document.querySelectorAll("select")).find((s) =>
+        Array.from(s.options || []).some((o) => String(o.value || "").includes(ym))
+      );
+    }
+    if (monthSel) {
+      const opt = Array.from(monthSel.options || []).find((o) => String(o.value || "").includes(ym));
+      if (opt) {
+        monthSel.value = opt.value;
+        monthSel.dispatchEvent(new Event("change", { bubbles: true }));
+        toast(`Invent\u00e1rio filtrado para vencimentos em ${opt.textContent}.`, "info");
+      }
+    }
+  };
+
+  const renderCommandCenterAnalytics = () => {
+    const existing = document.getElementById("vu-cc-analytics");
+    if (!isCommandCenterScreen()) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const fleet = getFleetArray();
+    if (!fleet.length) return;
+
+    // 1. Previsao dos proximos 6 meses
+    const now = new Date();
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const buckets = [];
+    for (let i = 0; i < 6; i++) {
+      const dt = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      buckets.push({ ym, label: `${monthNames[dt.getMonth()]}/${String(dt.getFullYear()).slice(-2)}`, count: 0 });
+    }
+    const bucketMap = new Map(buckets.map((b) => [b.ym, b]));
+    let overdueCount = 0;
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    fleet.forEach((it) => {
+      if (!it.dateInfo) return;
+      if (it.dateInfo.date.getTime() < todayStart) overdueCount++;
+      const b = bucketMap.get(it.dateInfo.ym);
+      if (b) b.count++;
+    });
+
+    const maxCount = Math.max(1, ...buckets.map((b) => b.count));
+
+    // 2. Ranking de reparos recorrentes (Timeline + Cautelas + Obs)
+    const repairByCode = new Map();
+    const repairBySector = new Map();
+    const fleetByCode = new Map(fleet.map((f) => [f.code, f]));
+
+    const addRepair = (code) => {
+      const c = String(code || "").toUpperCase();
+      if (!c) return;
+      repairByCode.set(c, (repairByCode.get(c) || 0) + 1);
+      const ref = fleetByCode.get(c);
+      if (ref && ref.setor) repairBySector.set(ref.setor, (repairBySector.get(ref.setor) || 0) + 1);
+    };
+
+    try {
+      const tl = JSON.parse(localStorage.getItem(TIMELINE_KEY) || "{}");
+      Object.entries(tl).forEach(([code, evs]) => {
+        if (!Array.isArray(evs)) return;
+        evs.forEach((e) => {
+          if (e && (e.kind === "reparo" || /reparo|manutenc|defeito/i.test(norm((e.title || "") + " " + (e.detail || ""))))) {
+            addRepair(code);
+          }
+        });
+      });
+    } catch (_) {}
+
+    const custodyArr = (window.VoithCore && window.VoithCore.cache && window.VoithCore.cache.custody) || [];
+    custodyArr.forEach((o) => {
+      const mot = norm((o && (o.motivo || o.reason || o.obs)) || "");
+      if (/reparo|manutenc|defeito|consert/.test(mot)) {
+        const c = String(o.code || o.codigo || o.instrument_code || "").trim().toUpperCase();
+        if (c) addRepair(c);
+      }
+    });
+
+    fleet.forEach((it) => {
+      if (/reparo|manutenc|defeito|danific/.test(norm(it.obs))) addRepair(it.code);
+    });
+
+    const topItems = Array.from(repairByCode.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const topSectors = Array.from(repairBySector.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+    const sig = `${fleet.length}|${overdueCount}|${buckets.map((b) => b.count).join(",")}|${topItems.map((x) => x.join(":")).join(",")}`;
+    if (existing && existing.dataset.vuSig === sig) return;
+
+    const host = document.querySelector("main") || document.body;
+    let wrap = existing;
+    if (!wrap) {
+      wrap = document.createElement("section");
+      wrap.id = "vu-cc-analytics";
+      wrap.style.cssText = "margin:16px 0 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;font-family:Inter,system-ui,-apple-system,sans-serif;";
+      host.appendChild(wrap);
+    }
+    wrap.dataset.vuSig = sig;
+
+    const total6m = buckets.reduce((acc, b) => acc + b.count, 0);
+
+    wrap.innerHTML =
+      `<div class="vu-cc-card" style="background:#ffffff;border:1px solid #dce4f0;border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,36,102,.05);display:grid;gap:12px;">` +
+        `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">` +
+          `<div>` +
+            `<div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#004899;">Planejamento Metrol\u00f3gico</div>` +
+            `<div style="font-size:15px;font-weight:800;margin-top:2px;">Previs\u00e3o de Calibra\u00e7\u00f5es (Pr\u00f3ximos 6 Meses)</div>` +
+          `</div>` +
+          `<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
+            `<span style="padding:3px 9px;border-radius:999px;background:#eaf2fc;color:#003399;font-size:11px;font-weight:800;">6 meses: ${total6m}</span>` +
+            (overdueCount ? `<span style="padding:3px 9px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800;">Vencidos: ${overdueCount}</span>` : "") +
+          `</div>` +
+        `</div>` +
+        `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;height:142px;padding-top:14px;">` +
+          buckets.map((b, idx) => {
+            const pct = Math.max(8, Math.round((b.count / maxCount) * 100));
+            const barColor = idx === 0 ? "linear-gradient(180deg,#0284c7,#004899)" : "linear-gradient(180deg,#38bdf8,#0284c7)";
+            return (
+              `<button type="button" data-cc-ym="${b.ym}" title="Ver ${b.count} instrumento(s) vencendo em ${b.label}" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;border:none;background:transparent;cursor:pointer;padding:0;gap:5px;">` +
+                `<span style="font-size:12px;font-weight:800;color:#004899;font-variant-numeric:tabular-nums;">${b.count}</span>` +
+                `<div style="width:100%;max-width:40px;height:${pct}%;min-height:8px;border-radius:7px 7px 3px 3px;background:${b.count ? barColor : "#e2e8f0"};transition:height .25s;"></div>` +
+                `<span style="font-size:11px;font-weight:700;color:#64748b;">${b.label}</span>` +
+              `</button>`
+            );
+          }).join("") +
+        `</div>` +
+        `<div style="font-size:11px;color:#64748b;">Clique em qualquer m\u00eas acima para abrir o Invent\u00e1rio j\u00e1 filtrado nele.</div>` +
+      `</div>` +
+      `<div class="vu-cc-card" style="background:#ffffff;border:1px solid #dce4f0;border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,36,102,.05);display:grid;gap:12px;align-content:start;">` +
+        `<div>` +
+          `<div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#dc2626;">Confiabilidade &amp; Manuten\u00e7\u00e3o</div>` +
+          `<div style="font-size:15px;font-weight:800;margin-top:2px;">Ranking de Reparos Recorrentes</div>` +
+        `</div>` +
+        (topItems.length
+          ? `<div style="display:grid;gap:6px;">` +
+              topItems.map(([code, cnt], idx) => {
+                const ref = fleetByCode.get(code);
+                return (
+                  `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:12px;">` +
+                    `<div style="min-width:0;">` +
+                      `<span style="font-weight:800;color:#64748b;margin-right:6px;">#${idx + 1}</span>` +
+                      `<strong style="color:#004899;">${escHtml(code)}</strong>` +
+                      (ref && ref.desc ? ` <span style="color:#475569;">\u2014 ${escHtml(ref.desc)}</span>` : "") +
+                    `</div>` +
+                    `<span style="padding:2px 8px;border-radius:999px;background:${cnt >= 2 ? "#dc2626" : "#fee2e2"};color:${cnt >= 2 ? "#fff" : "#b91c1c"};font-size:11px;font-weight:800;white-space:nowrap;">${cnt}x reparo</span>` +
+                  `</div>`
+                );
+              }).join("") +
+            `</div>`
+          : `<div style="padding:14px;border-radius:10px;background:#f8fafc;border:1px dashed #cbd5e1;font-size:12px;color:#64748b;">Nenhum reparo recorrente computado ainda. Envios para reparo na Cautela e registros na Linha do Tempo alimentam este ranking automaticamente.</div>`) +
+        (topSectors.length
+          ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;border-top:1px solid #e2e8f0;">` +
+              `<span style="font-size:11px;font-weight:800;color:#64748b;width:100%;">Setores com mais ocorr\u00eancias:</span>` +
+              topSectors.map(([sec, cnt]) =>
+                `<span style="padding:3px 9px;border-radius:999px;background:#fff1f2;border:1px solid #fecdd3;color:#9f1239;font-size:11px;font-weight:700;">${escHtml(sec)} (${cnt})</span>`
+              ).join("") +
+            `</div>`
+          : "") +
+      `</div>`;
+
+    wrap.querySelectorAll("[data-cc-ym]").forEach((btn) => {
+      btn.onclick = () => jumpToInventoryMonth(btn.getAttribute("data-cc-ym"));
+    });
+  };
+
+  /* -------------------- 5. MODO VISAO POR IA OPCIONAL (GEMINI) NO LER IMAGEM -------------------- */
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const s = String(reader.result || "");
+      const idx = s.indexOf(",");
+      resolve(idx >= 0 ? s.slice(idx + 1) : s);
+    };
+    reader.onerror = () => reject(new Error("Falha ao ler imagem."));
+    reader.readAsDataURL(blob);
+  });
+
+  const extractWithGeminiVision = async (blob, apiKey, onStatus) => {
+    onStatus("Enviando imagem para Vis\u00e3o por IA (Gemini)...");
+    const b64 = await blobToBase64(blob);
+    const mime = blob.type || "image/jpeg";
+    const prompt =
+      "Extraia TODOS os instrumentos de metrologia desta imagem (tabela Excel, listagem Voith ou foto).\n" +
+      "Retorne APENAS linhas separadas por TAB (TSV), sem cabe\u00e7alho, sem markdown e sem explica\u00e7\u00f5es, exatamente nesta ordem de 8 colunas:\n" +
+      "CODIGO\tDESCRICAO\tVALIDADE_DD_MM_AAAA\tCENTRO_CUSTO\tSETOR\tRESPONSAVEL\tFAIXA_INICIAL\tFAIXA_FINAL\n" +
+      "Regras: preserve exatamente os c\u00f3digos (ex: AC424767), acentos corretos em portugu\u00eas (Paqu\u00edmetro Universal, Ferrovi\u00e1ria), datas em DD/MM/AAAA, e deixe vazio se alguma coluna n\u00e3o existir na imagem.";
+
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    let lastErr = "Erro desconhecido na API Gemini.";
+
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mime, data: b64 } }
+            ]
+          }],
+          generationConfig: { temperature: 0.1 }
+        })
+      });
+
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          if (j && j.error && j.error.message) detail = j.error.message;
+        } catch (_) {}
+        lastErr = detail;
+        if (res.status === 404 && i < models.length - 1) continue;
+        throw new Error(detail);
+      }
+
+      const json = await res.json();
+      const raw = json && json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts
+        ? json.candidates[0].content.parts.map((p) => p.text || "").join("\n")
+        : "";
+      const cleaned = raw.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/i, "").trim();
+      if (cleaned) return cleaned;
+      throw new Error("A IA n\u00e3o retornou linhas leg\u00edveis para esta imagem.");
+    }
+    throw new Error(lastErr);
+  };
+
+  const enhanceImageModalWithGeminiAI = () => {
+    const modal = document.getElementById("vu-img-modal");
+    if (!modal || modal.querySelector("#vu-ai-vision-bar")) return;
+
+    const dropZone = modal.querySelector("#vu-img-drop");
+    const fileInp = modal.querySelector("#vu-img-file");
+    const rawTxt = modal.querySelector("#vu-img-raw");
+    const parseBtn = modal.querySelector("#vu-img-parse-txt");
+    const statusEl = modal.querySelector("#vu-img-status");
+    if (!dropZone || !fileInp || !rawTxt || !parseBtn) return;
+
+    const savedKey = localStorage.getItem(GEMINI_KEY_STORAGE) || "";
+    const savedOn = localStorage.getItem(GEMINI_ON_STORAGE) === "1" && Boolean(savedKey);
+
+    const aiBar = document.createElement("div");
+    aiBar.id = "vu-ai-vision-bar";
+    aiBar.style.cssText = "padding:10px 12px;border-radius:11px;border:1px solid #bae6fd;background:#f0f9ff;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;";
+    aiBar.innerHTML =
+      `<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:800;color:#0369a1;">` +
+        `<input type="checkbox" id="vu-ai-toggle" ${savedOn ? "checked" : ""} style="width:16px;height:16px;accent-color:#0284c7;cursor:pointer;">` +
+        `<span>Modo Vis\u00e3o por IA (Gemini \u2014 ideal p/ fotos de celular)</span>` +
+      `</label>` +
+      `<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:220px;justify-content:flex-end;">` +
+        `<input id="vu-ai-key" type="password" value="${escHtml(savedKey)}" placeholder="Chave API Google AI Studio (opcional)..." style="flex:1;max-width:260px;padding:5px 9px;border-radius:8px;border:1px solid #7dd3fc;font-size:11.5px;background:#fff;color:#0f172a;">` +
+        `<button type="button" id="vu-ai-save-key" style="padding:5px 10px;border-radius:8px;border:none;background:#0284c7;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;">Salvar Chave</button>` +
+      `</div>`;
+
+    const gridRow = dropZone.parentElement;
+    if (gridRow && gridRow.parentElement) gridRow.parentElement.insertBefore(aiBar, gridRow);
+
+    const toggleEl = aiBar.querySelector("#vu-ai-toggle");
+    const keyEl = aiBar.querySelector("#vu-ai-key");
+    const saveKeyBtn = aiBar.querySelector("#vu-ai-save-key");
+
+    const persistAiSettings = () => {
+      const k = String(keyEl.value || "").trim();
+      if (k) localStorage.setItem(GEMINI_KEY_STORAGE, k);
+      else localStorage.removeItem(GEMINI_KEY_STORAGE);
+      localStorage.setItem(GEMINI_ON_STORAGE, toggleEl.checked && k ? "1" : "0");
+    };
+
+    toggleEl.onchange = () => {
+      if (toggleEl.checked && !String(keyEl.value || "").trim()) {
+        keyEl.focus();
+        if (statusEl) {
+          statusEl.style.color = "#b45309";
+          statusEl.textContent = "Cole sua chave gratuita do Google AI Studio acima e clique em Salvar Chave.";
+        }
+      }
+      persistAiSettings();
+    };
+    saveKeyBtn.onclick = () => {
+      persistAiSettings();
+      if (String(keyEl.value || "").trim()) {
+        toggleEl.checked = true;
+        persistAiSettings();
+        toast("Chave Gemini Vision salva neste dispositivo!", "success");
+      } else {
+        toggleEl.checked = false;
+        persistAiSettings();
+        toast("Chave removida. Usando OCR local offline.", "info");
+      }
+    };
+
+    const isAiReady = () => Boolean(toggleEl.checked && String(keyEl.value || "").trim());
+
+    const runAiOnBlob = async (blob) => {
+      try {
+        if (statusEl) statusEl.style.color = "#0284c7";
+        const tsv = await extractWithGeminiVision(blob, String(keyEl.value || "").trim(), (m) => {
+          if (statusEl) statusEl.textContent = m;
+        });
+        rawTxt.value = tsv;
+        rawTxt.dispatchEvent(new Event("input", { bubbles: true }));
+        parseBtn.click();
+        if (statusEl) {
+          statusEl.style.color = "#15803d";
+          statusEl.textContent = "\u2713 Leitura conclu\u00edda via Vis\u00e3o por IA (Gemini)! Revise os itens abaixo.";
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.style.color = "#dc2626";
+          statusEl.textContent = "Erro na Vis\u00e3o por IA: " + (err && err.message ? err.message : err) + " (desmarque para usar OCR offline).";
+        }
+      }
+    };
+
+    // Intercepta arquivo, drag-and-drop e colar imagem somente quando o Modo IA estiver ativo
+    fileInp.addEventListener("change", (ev) => {
+      if (!isAiReady()) return;
+      const f = fileInp.files && fileInp.files[0];
+      if (!f) return;
+      ev.stopImmediatePropagation();
+      runAiOnBlob(f);
+    }, true);
+
+    dropZone.addEventListener("drop", (ev) => {
+      if (!isAiReady()) return;
+      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (!f) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      dropZone.style.background = "#eff6ff";
+      runAiOnBlob(f);
+    }, true);
+
+    const onAiPaste = (ev) => {
+      if (!modal.isConnected) {
+        document.removeEventListener("paste", onAiPaste, true);
+        return;
+      }
+      if (!isAiReady()) return;
+      const cb = ev.clipboardData;
+      if (!cb || String(cb.getData("text/plain") || "").trim()) return;
+      const items = cb.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.startsWith("image/")) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          const blob = items[i].getAsFile();
+          if (blob) runAiOnBlob(blob);
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", onAiPaste, true);
+  };
+
+  /* -------------------- CICLO UNIFICADO NO MOTOR CORE -------------------- */
+  const runPass = () => {
+    renderSkeletonIfLoading();
+    injectTrashButton();
+    syncMobileCardsMode();
+    renderCommandCenterAnalytics();
+    enhanceImageModalWithGeminiAI();
+  };
+
+  const boot = () => {
+    ensureNextGenStyles();
+    runPass();
+    if (window.VoithCore && typeof window.VoithCore.onDomChange === "function") {
+      window.VoithCore.onDomChange(runPass);
+    } else {
+      const obs = new MutationObserver(() => runPass());
+      obs.observe(document.body, { childList: true, subtree: true });
+    }
+    document.addEventListener("click", () => setTimeout(runPass, 90), true);
+    window.addEventListener("resize", () => setTimeout(syncMobileCardsMode, 120));
+    window.addEventListener("hashchange", () => setTimeout(runPass, 140));
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+
+  window.VoithUpgrade = Object.assign({}, window.VoithUpgrade || {}, {
+    openTrashModal
+  });
+})();
+/* VOITH_NEXTGEN_SUITE_V1_END */
