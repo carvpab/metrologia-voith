@@ -6802,11 +6802,12 @@
     setTimeout(() => { if (t && t.isConnected) t.remove(); }, 3400);
   };
 
-  /* -------------------- UTILITARIOS DE DATA, FAIXA, TIPO E SETOR -------------------- */
+  /* -------------------- UTILITARIOS DE DATA, FAIXA, TIPO E SETOR (v1.1) -------------------- */
   const OFFICIAL_SECTORS = [
     "Voith Turbo (Ferrovi\u00e1ria)",
     "Voith Turbo (Ferrovi\u00e1ria Redutor)",
     "Voith Turbo (Automotive)",
+    "Voith Turbo (Automotive/Engates)",
     "Voith Turbo (Industrial)",
     "Assist\u00eancia T\u00e9cnica Automotive",
     "Assist\u00eancia T\u00e9cnica Industrial",
@@ -6815,6 +6816,24 @@
     "Vorecon",
     "Metrologia / Turbo"
   ];
+
+  const getOfficialSectorSet = () => {
+    const set = new Set(OFFICIAL_SECTORS.map(norm));
+    // Inclui tambem as opcoes oficiais presentes no proprio dropdown de Setor da pagina
+    document.querySelectorAll("select").forEach((sel) => {
+      if (sel.closest("[id^='vu-']")) return;
+      const hint = getFieldHint(sel);
+      const opts = Array.from(sel.options || []).map((o) => String(o.textContent || o.value || "").trim()).filter(Boolean);
+      const looksSector = /setor|sector/.test(hint) || opts.some((t) => /todos os setores/i.test(norm(t)));
+      if (!looksSector) return;
+      opts.forEach((opt) => {
+        const n = norm(opt);
+        if (!n || /^todos|^selecione|^qualquer/.test(n)) return;
+        set.add(n);
+      });
+    });
+    return set;
+  };
 
   const suggestOfficialSector = (raw) => {
     const s = norm(raw);
@@ -6832,63 +6851,143 @@
   };
 
   const parseDateInfo = (raw) => {
-    const s = String(raw || "").trim();
-    if (!s || s === "-" || s === "\u2014") return { valid: false, str: "", date: null, daysLeft: null };
-    let d = 0, m = 0, y = 0;
-    let hit = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (hit) { d = Number(hit[1]); m = Number(hit[2]); y = Number(hit[3]); }
-    else {
-      hit = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (hit) { y = Number(hit[1]); m = Number(hit[2]); d = Number(hit[3]); }
+    if (raw == null || raw === "") return { valid: false, exempt: false, str: "", date: null, daysLeft: null };
+
+    // Suporte a objeto Date ou timestamp/serial numerico
+    if (raw instanceof Date && !isNaN(raw.getTime())) {
+      const y = raw.getFullYear(), m = raw.getMonth() + 1, d = raw.getDate();
+      return parseDateInfo(`${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`);
     }
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      if (raw > 1e11) return parseDateInfo(new Date(raw));
+      if (raw >= 30000 && raw <= 75000) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30) + Math.round(raw) * 86400000);
+        return parseDateInfo(excelEpoch);
+      }
+    }
+
+    const s = String(raw).trim();
+    if (!s || /^[-–—]+$/.test(s)) return { valid: false, exempt: false, str: "", date: null, daysLeft: null };
+    if (/^(isento|n\/a|na|nao aplicavel|sem calibracao|referencia|indeterminad[oa])$/i.test(norm(s))) {
+      return { valid: true, exempt: true, str: s, date: null, daysLeft: 9999 };
+    }
+
+    let d = 0, m = 0, y = 0;
+    let hit = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if (hit) {
+      d = Number(hit[1]); m = Number(hit[2]); y = Number(hit[3]);
+    } else {
+      hit = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+      if (hit) {
+        y = Number(hit[1]); m = Number(hit[2]); d = Number(hit[3]);
+      } else {
+        hit = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2})(?:\D|$)/);
+        if (hit) {
+          d = Number(hit[1]); m = Number(hit[2]); y = 2000 + Number(hit[3]);
+        } else {
+          hit = s.match(/^(\d{1,2})[\/.-](\d{4})$/);
+          if (hit) {
+            m = Number(hit[1]); y = Number(hit[2]); d = new Date(y, m, 0).getDate();
+          }
+        }
+      }
+    }
+
     if (!hit || m < 1 || m > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) {
-      return { valid: false, str: s, date: null, daysLeft: null };
+      return { valid: false, exempt: false, str: s, date: null, daysLeft: null };
     }
     const dt = new Date(y, m - 1, d, 23, 59, 59);
     if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
-      return { valid: false, str: s, date: null, daysLeft: null };
+      return { valid: false, exempt: false, str: s, date: null, daysLeft: null };
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const daysLeft = Math.floor((dt.getTime() - today.getTime()) / 86400000);
     const br = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
-    return { valid: true, str: br, date: dt, daysLeft };
+    return { valid: true, exempt: false, str: br, date: dt, daysLeft };
   };
 
   const toNum = (s) => {
     if (s == null || s === "") return null;
     const cleaned = String(s).trim().replace(/\.(?=\d{3}(?:[^\d]|$))/g, "").replace(",", ".");
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) {
+      const m = cleaned.match(/-?\d+(?:\.\d+)?/);
+      if (!m) return null;
+      const n2 = parseFloat(m[0]);
+      return Number.isFinite(n2) ? n2 : null;
+    }
     const n = parseFloat(cleaned);
     return Number.isFinite(n) ? n : null;
   };
 
+  const isMeaningfulRangeText = (val) => {
+    if (val == null) return false;
+    const s = String(val).trim();
+    if (!s) return false;
+    const n = norm(s);
+    if (/^(n\/a|na|s\/f|sem faixa|nao informad[oa]|indefinid[oa]|nenhum[a]?|null|undefined|-+|_+)$/.test(n)) return false;
+    const stripped = s.replace(/[-–—~\s/|.:,;]+/g, "");
+    return /[a-zA-Z0-9]/.test(stripped);
+  };
+
   const parseRangeFromText = (rawText) => {
     const s = String(rawText || "").trim();
-    if (!s || /^[-–—~\s]+$/.test(s)) return null;
-    // Padroes: "0 ~ 300", "200 a 500", "0 - 150", "25/50"
-    let m = s.match(/(-?\d+(?:[.,]\d+)?)\s*(?:~|\ba\b|\bat[e\u00e9]\b|\u2013|\u2014|-)\s*(-?\d+(?:[.,]\d+)?)/i);
+    if (!isMeaningfulRangeText(s)) return null;
+    const noDates = s.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, " ");
+
+    // Aceita intervalos mesmo com unidades no meio (ex: "0 mm ~ 150 mm", "20 N.m a 100 N.m", "0,1 ~ 200")
+    let m = noDates.match(/(-?\d+(?:[.,]\d+)?)\s*(?:[a-zA-Z\u00b0"'.\/]{0,6})\s*(?:~|\ba\b|\bat[e\u00e9]\b|\u2013|\u2014|-|\.{2})\s*(-?\d+(?:[.,]\d+)?)/i);
     if (m) {
       const a = toNum(m[1]), b = toNum(m[2]);
-      if (a !== null && b !== null) return { min: Math.min(a, b), max: Math.max(a, b), raw: `${m[1]} ~ ${m[2]}` };
+      if (a !== null && b !== null) return { min: Math.min(a, b), max: Math.max(a, b), raw: s };
     }
-    // Padrao de medida unica (ex: "M12", "300mm")
-    m = s.match(/(-?\d+(?:[.,]\d+)?)\s*(?:mm|nm|n\.?m|kgf|bar|psi|\u00b0c|v|a|ohm|pol|"|')/i);
+    // Medida unica com ou sem unidade (ex: "300mm", "150", "M 18X4")
+    m = noDates.match(/(-?\d+(?:[.,]\d+)?)/);
     if (m) {
       const v = toNum(m[1]);
-      if (v !== null) return { min: 0, max: v, raw: m[0] };
+      if (v !== null) return { min: 0, max: v, raw: s };
     }
     return null;
   };
 
   const extractRange = (obj) => {
-    const a = toNum(obj.faixaIni);
-    const b = toNum(obj.faixaFim);
-    if (a !== null && b !== null) return { min: Math.min(a, b), max: Math.max(a, b), raw: `${obj.faixaIni} ~ ${obj.faixaFim}` };
-    const fromFaixa = parseRangeFromText(obj.faixa);
-    if (fromFaixa) return fromFaixa;
-    const fromDesc = parseRangeFromText(obj.desc);
-    if (fromDesc) return fromDesc;
-    return null;
+    const iniStr = obj.faixaIni == null ? "" : String(obj.faixaIni).trim();
+    const fimStr = obj.faixaFim == null ? "" : String(obj.faixaFim).trim();
+    const faixaStr = obj.faixa == null ? "" : String(obj.faixa).trim();
+
+    const iniOk = isMeaningfulRangeText(iniStr);
+    const fimOk = isMeaningfulRangeText(fimStr);
+    const faixaOk = isMeaningfulRangeText(faixaStr);
+
+    let display = "";
+    if (iniOk && fimOk) display = `${iniStr} ~ ${fimStr}`;
+    else if (iniOk) display = iniStr;
+    else if (fimOk) display = fimStr;
+    else if (faixaOk) display = faixaStr;
+
+    const hasFaixa = Boolean(display);
+    let rangeObj = null;
+
+    const a = iniOk ? toNum(iniStr) : null;
+    const b = fimOk ? toNum(fimStr) : null;
+    if (a !== null && b !== null) {
+      rangeObj = { min: Math.min(a, b), max: Math.max(a, b), raw: display };
+    } else if (faixaOk) {
+      rangeObj = parseRangeFromText(faixaStr);
+      if (rangeObj) rangeObj.raw = display;
+    } else if (b !== null) {
+      rangeObj = { min: 0, max: b, raw: display };
+    } else if (a !== null) {
+      rangeObj = { min: 0, max: a, raw: display };
+    } else if (obj.desc) {
+      // Para o Substituto, tenta extrair numero da descricao sem mascarar "Sem Faixa" se o campo faixa estiver realmente vazio
+      const fromDesc = parseRangeFromText(obj.desc);
+      if (fromDesc && /\d+\s*(?:~|-|\ba\b|mm|nm|kgf|bar|psi|pol|")/i.test(obj.desc)) {
+        rangeObj = fromDesc;
+      }
+    }
+
+    return { hasFaixa, display, rangeObj };
   };
 
   const TYPE_RULES = [
@@ -6938,7 +7037,7 @@
     return { id: "w_" + first, label: String(desc || "").split(/\s+/)[0] || "Instrumento" };
   };
 
-  /* -------------------- RASTREAMENTO DE FROTA (COM DUPLICADOS), CAUTELAS E NUVEM -------------------- */
+  /* -------------------- EXTRATOR DINAMICO DE CAMPOS (v1.1) -------------------- */
   let fetchedRawPool = [];
   let fetchedCustodyPool = [];
   let fetchedLabPool = [];
@@ -6956,41 +7055,136 @@
     return s.length >= 4 && s.length <= 26 && /^[A-Z]{1,4}[-]?\d{4,8}[A-Z0-9-]*$/.test(s);
   };
 
+  const pickField = (o, explicitKeys, keyRegex, excludeRegex) => {
+    for (let i = 0; i < explicitKeys.length; i++) {
+      const k = explicitKeys[i];
+      const v = o[k];
+      if (v !== undefined && v !== null && typeof v !== "object" && String(v).trim() !== "") return v;
+    }
+    if (keyRegex) {
+      const keys = Object.keys(o);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (excludeRegex && excludeRegex.test(k)) continue;
+        if (keyRegex.test(k)) {
+          const v = o[k];
+          if (v !== undefined && v !== null && typeof v !== "object" && String(v).trim() !== "") return v;
+        }
+      }
+    }
+    return "";
+  };
+
   const extractItem = (o) => {
     if (!o || typeof o !== "object" || Array.isArray(o)) return null;
-    let rawCode = o.code || o.codigo || o.cod || o.tag || o.patrimonio || o.instrument_code || "";
+    let rawCode = pickField(o, ["code", "codigo", "cod", "tag", "patrimonio", "instrument_code", "id_instrumento"], null, null);
     if (!rawCode && isCodeLike(o.id)) rawCode = o.id;
     const code = String(rawCode || "").trim().toUpperCase();
     if (!code || code.length < 3 || code.length > 32 || /^\d{2}:\d{2}/.test(code) || /^\d{4}-\d{2}-\d{2}/.test(code)) return null;
 
-    const statusRaw = String(o.status || o.situacao || o.status_metrologico || "").trim();
+    const statusRaw = String(pickField(o, ["status", "situacao", "status_metrologico", "statusMetrologico"], null, null) || "").trim();
     const stN = norm(statusRaw);
     if (o.deleted === true || o.isLost === true || o.lost === true) return null;
     if (stN === "perdido" || stN === "desativado" || stN === "baixado") return null;
 
-    const desc = String(o.desc || o.descricao || o.description || o.name || o.instrumento || o.equipamento || o.nome || o.tipo || "").trim();
-    const setor = String(o.setor || o.sector || o.setor_oficial || o.sec || o.area || "").trim();
-    const local = String(o.local || o.loc || o.localizacao || o.location || o.armario || o.posse || "").trim();
-    const resp = String(o.responsavel || o.responsible || o.resp || o.tecnico || o.owner || "").trim();
-    const cc = String(o.cc || o.c_custo || o.centro_custo || o.centroCusto || "").trim();
-    const faixaIni = o.faixa_min ?? o.faixaMin ?? o.faixa_inicial ?? o.min ?? "";
-    const faixaFim = o.faixa_max ?? o.faixaMax ?? o.faixa_final ?? o.max ?? "";
-    const faixa = String(o.faixa || o.range || o.capacidade || o.escala || "").trim();
-    const validadeRaw = String(
-      o.validade || o.val || o.next_cal || o.nextCal || o.proxima_calibracao || o.prox_calibracao || o.cal || o.dueDate || o.vencimento || ""
-    ).trim();
-    const obs = String(o.obs || o.observacao || o.observacoes || o.notes || "").trim();
+    const desc = String(pickField(
+      o,
+      ["desc", "descricao", "description", "name", "instrumento", "equipamento", "nome", "tipo", "title"],
+      /descri|instrum|equip|nome|name/i,
+      /code|cod|setor|local|resp|obs|status|cal|data|date|faixa/i
+    ) || "").trim();
+
+    const setor = String(pickField(
+      o,
+      ["setor", "sector", "setor_oficial", "setorOficial", "sec", "area", "departamento", "dept", "chapa", "divisao"],
+      /setor|sector|area|dept|chapa/i,
+      /local|armar|resp|obs|code|cod/i
+    ) || "").trim();
+
+    const local = String(pickField(
+      o,
+      ["local", "loc", "localizacao", "location", "local_fisico", "localFisico", "armario", "cabinet", "posse", "storage", "place"],
+      /local|armar|posse|storage|place|onde/i,
+      /setor|sector|obs|code|cod/i
+    ) || "").trim();
+
+    const resp = String(pickField(
+      o,
+      ["responsavel", "responsible", "resp", "tecnico", "tech", "owner", "holder", "colaborador"],
+      /respons|tecnic|owner|holder|colab/i,
+      /setor|local|obs/i
+    ) || "").trim();
+
+    const cc = String(pickField(
+      o,
+      ["cc", "c_custo", "cCusto", "centro_custo", "centroCusto", "costCenter", "cost_center", "custo"],
+      /custo|\bcc\b/i,
+      /obs/i
+    ) || "").trim();
+
+    // Faixa: tenta todas as variacoes de chaves + varredura dinamica
+    const faixaIni = pickField(
+      o,
+      ["faixa_min", "faixaMin", "faixa_inicial", "faixaInicial", "faixa_ini", "faixaIni", "min", "minimo", "range_min", "rangeMin", "cap_min", "capMin", "medida_min", "medidaMin", "faixaMinima", "f_min", "fMin", "ini", "inicial"],
+      /(faixa|range|cap|medid|escala).*(min|ini)|\b(min|minimo)\b/i,
+      /data|date|valid|venc|cal|status|local|setor|id|code|cod|obs/i
+    );
+    const faixaFim = pickField(
+      o,
+      ["faixa_max", "faixaMax", "faixa_final", "faixaFinal", "faixa_fim", "faixaFim", "max", "maximo", "range_max", "rangeMax", "cap_max", "capMax", "medida_max", "medidaMax", "faixaMaxima", "f_max", "fMax", "fim", "final"],
+      /(faixa|range|cap|medid|escala).*(max|fin|fim)|\b(max|maximo)\b/i,
+      /data|date|valid|venc|cal|status|local|setor|id|code|cod|obs/i
+    );
+    const faixaRaw = pickField(
+      o,
+      ["faixa", "faixa_medicao", "faixaMedicao", "range", "range_str", "rangeStr", "capacidade", "capacity", "cap", "escala", "scale", "medida", "medicao", "nominal", "spec", "especificacao", "dimensao", "tamanho", "size"],
+      /faixa|range|capac|escala|medid|nominal|espec/i,
+      /min|max|ini|fim|final|data|date|valid|venc|cal|status|local|setor|obs|code|cod/i
+    );
+
+    // Data de validade: lista completa + varredura por nome de chave + varredura por valor de data
+    let validadeVal = pickField(
+      o,
+      [
+        "validade", "val", "data_validade", "dataValidade", "validade_cal", "validadeCal",
+        "next_cal", "nextCal", "nextCalibration", "next_calibration", "next_cal_date", "nextCalDate",
+        "proxima_calibracao", "proximaCalibracao", "prox_calibracao", "proxCalibracao", "prox_cal", "proxCal",
+        "data_prox_cal", "dataProxCal", "data_proxima_cal", "dataProximaCal", "prox",
+        "cal", "cal_date", "calDate", "calibracao", "data_cal", "dataCal", "data_calibracao", "dataCalibracao",
+        "due", "dueDate", "due_date", "vencimento", "venc", "exp", "expiration", "expiry", "validUntil", "valid_until",
+        "date", "data", "dt"
+      ],
+      /valid|venc|prox|next|cal|due|exp|\bdata\b|\bdate\b|\bdt\b/i,
+      /creat|updat|modif|delet|ultim|last|sent|envi|retorn|audit|log|period|meses|dias|days|status|cert|lab|num|rps/i
+    );
+
+    if (validadeVal === "" || validadeVal == null) {
+      const keys = Object.keys(o);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (/creat|updat|modif|delet|ultim|last|sent|envi|retorn|audit|log|birth|nasc|code|cod|id|desc|name|obs|faixa|range/i.test(k)) continue;
+        const v = o[k];
+        if (typeof v === "string" && /^\s*(\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}|\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2})/.test(v)) {
+          validadeVal = v.trim();
+          break;
+        }
+      }
+    }
+
+    const validadeRaw = validadeVal == null ? "" : String(validadeVal).trim();
+    const obs = String(pickField(o, ["obs", "observacao", "observacoes", "notes", "nota"], null, null) || "").trim();
 
     if (!desc && !setor && !local && !validadeRaw && !resp) return null;
 
-    const rangeObj = extractRange({ faixaIni, faixaFim, faixa, desc });
-    const dateInfo = parseDateInfo(validadeRaw);
+    const rangeRes = extractRange({ faixaIni, faixaFim, faixa: faixaRaw, desc });
+    const dateInfo = parseDateInfo(validadeVal);
     const typeInfo = classifyType(desc);
 
     return {
       code, desc, setor, local, resp, cc,
-      faixa: rangeObj ? rangeObj.raw : faixa,
-      rangeObj,
+      faixa: rangeRes.display,
+      hasFaixa: rangeRes.hasFaixa,
+      rangeObj: rangeRes.rangeObj,
       validadeRaw,
       dateInfo,
       statusRaw,
@@ -7036,14 +7230,32 @@
     };
   }
 
-  // Retorna lista bruta (preservando duplicados reais) + lista deduplicada + conjunto de codigos em cautela/lab
+  // Pontua riqueza dos campos para sempre escolher a fonte mais completa (com datas, faixas e locais reais)
+  const scoreSourceArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length < 2) return -1;
+    const sample = arr.slice(0, 15);
+    let hits = 0, dates = 0, ranges = 0, locals = 0, sectors = 0;
+    for (let i = 0; i < sample.length; i++) {
+      const it = extractItem(sample[i]);
+      if (!it) continue;
+      hits++;
+      if (it.dateInfo.valid) dates++;
+      if (it.hasFaixa) ranges++;
+      if (it.local) locals++;
+      if (it.setor) sectors++;
+    }
+    if (hits < 2) return -1;
+    return arr.length + dates * 25 + ranges * 15 + locals * 6 + sectors * 5;
+  };
+
   const getFleetSnapshot = () => {
     let rawSource = null;
+    let bestScore = -1;
 
     const tryPickArray = (arr) => {
-      if (!Array.isArray(arr) || arr.length < 2) return;
-      const sampleHits = arr.slice(0, 8).filter((x) => extractItem(x)).length;
-      if (sampleHits >= 2 && (!rawSource || arr.length > rawSource.length)) {
+      const sc = scoreSourceArray(arr);
+      if (sc > bestScore) {
+        bestScore = sc;
         rawSource = arr;
       }
     };
@@ -7148,18 +7360,17 @@
       }
     } catch (_) {}
 
-    if (!rawSource) {
-      try {
-        const keys = Object.keys(window);
-        for (let i = 0; i < keys.length; i++) {
-          const k = keys[i];
-          if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator|VoithUpgrade)/i.test(k)) continue;
-          let v;
-          try { v = window[k]; } catch (_) { continue; }
-          if (Array.isArray(v) && v.length >= 10) tryPickArray(v);
-        }
-      } catch (_) {}
-    }
+    // Varre globals do window para caso a base mais rica esteja em outra variavel
+    try {
+      const keys = Object.keys(window);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (/^(webkit|moz|on|CSS|HTML|SVG|DOM|Intl|WebGL|Audio|Media|Performance|Navigator|VoithUpgrade)/i.test(k)) continue;
+        let v;
+        try { v = window[k]; } catch (_) { continue; }
+        if (Array.isArray(v) && v.length >= 10) tryPickArray(v);
+      }
+    } catch (_) {}
 
     const rawItems = [];
     const uniqueMap = new Map();
@@ -7174,7 +7385,32 @@
       if (!uniqueMap.has(it.code)) uniqueMap.set(it.code, it);
     });
 
-    // Complementa codigos em cautela / lab a partir do proprio status do item
+    // Complementa com linhas visiveis da tabela do Inventario se algum campo veio vazio
+    document.querySelectorAll("table tbody tr").forEach((tr) => {
+      if (tr.closest("[id^='vu-']")) return;
+      const rowTxt = String(tr.textContent || "");
+      const cm = rowTxt.match(/\b([A-Z]{2,4}[-]?\d{4,7}[A-Z0-9-]*)\b/);
+      if (!cm) return;
+      const it = uniqueMap.get(cm[1].toUpperCase());
+      if (!it) return;
+      if (!it.dateInfo.valid) {
+        const dm = rowTxt.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+        if (dm) {
+          it.validadeRaw = dm[1];
+          it.dateInfo = parseDateInfo(dm[1]);
+        }
+      }
+      if (!it.hasFaixa) {
+        const fm = rowTxt.match(/Faixa:\s*([^\n]+)/i);
+        if (fm && isMeaningfulRangeText(fm[1])) {
+          const r = extractRange({ faixa: fm[1], desc: it.desc });
+          it.hasFaixa = r.hasFaixa;
+          it.faixa = r.display;
+          if (r.rangeObj) it.rangeObj = r.rangeObj;
+        }
+      }
+    });
+
     uniqueMap.forEach((it) => {
       const st = norm(it.statusRaw + " " + it.local);
       if (/(em posse|cautela|emprestad)/.test(st)) custodyCodes.add(it.code);
@@ -7204,7 +7440,6 @@
     const store = loadTimelineStore();
     if (!Array.isArray(store[c])) store[c] = [];
     const nowIso = new Date().toISOString();
-    // Evita duplicata identica no mesmo minuto
     const last = store[c][0];
     if (last && last.title === title && last.detail === detail && (Date.now() - new Date(last.ts).getTime()) < 45000) return;
     store[c].unshift({ ts: nowIso, kind: kind || "edit", title, detail: String(detail || "").trim() });
@@ -7332,7 +7567,6 @@
       window.confirm = () => true;
       window.prompt = (_msg, defVal) => returnNote || defVal || "Devolvido em lote";
 
-      // 1. Procura botao direto de devolucao na linha
       const directBtn = Array.from(tr.querySelectorAll("button")).find((b) => {
         if (!isVisible(b) || b.classList.contains("vu-ret-chk")) return false;
         const sig = norm(b.textContent + " " + (b.title || "") + " " + (b.getAttribute("aria-label") || ""));
@@ -7342,7 +7576,6 @@
       if (directBtn) {
         directBtn.click();
       } else {
-        // Fallback: clica na linha ou no ultimo botao de acao para abrir o modal de devolucao
         const anyBtn = Array.from(tr.querySelectorAll("button")).find((b) => isVisible(b) && !b.classList.contains("vu-ret-chk"));
         if (anyBtn) anyBtn.click();
         else tr.click();
@@ -7350,7 +7583,6 @@
 
       await sleep(320);
 
-      // 2. Verifica se abriu um modal de confirmacao de devolucao
       const modalOverlay = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).reverse().find((el) => {
         if (!isVisible(el) || (el.id && el.id.startsWith("vu-"))) return false;
         const t = norm(el.textContent || "");
@@ -7630,7 +7862,6 @@
       if (cand.code === target.code) return;
       if (cand.typeId !== target.typeId) return;
 
-      // Verifica se esta Em Dia e Livre (nao vencido, nao em cautela, nao em lab)
       const isValidDate = cand.dateInfo.valid && cand.dateInfo.daysLeft >= 0;
       const inCustody = snap.custodyCodes.has(cand.code);
       const inLab = snap.labCodes.has(cand.code);
@@ -7664,6 +7895,7 @@
         : `<span style="padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:10.5px;font-weight:800;">Faixa parcial</span>`;
 
       const locTxt = c.local && norm(c.local) !== "sem local" ? c.local : "Sem local cadastrado";
+      const valTxt = c.dateInfo.exempt ? c.dateInfo.str : `${c.dateInfo.str} (+${c.dateInfo.daysLeft}d)`;
       return (
         `<div style="padding:11px 13px;border-radius:11px;border:1px solid ${isIdeal ? "#bbf7d0" : "#e2e8f0"};background:${isIdeal ? "#f0fdf4" : "#ffffff"};display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">` +
           `<div style="display:grid;gap:3px;min-width:220px;flex:1;">` +
@@ -7676,7 +7908,7 @@
               `<span><strong>Faixa:</strong> ${escHtml(c.faixa || "N\u00e3o informada")}</span>` +
               `<span><strong>Local:</strong> <span style="color:#0f172a;font-weight:700;">${escHtml(locTxt)}</span></span>` +
               `<span><strong>Setor:</strong> ${escHtml(c.setor || "-")}</span>` +
-              `<span><strong>Validade:</strong> ${escHtml(c.dateInfo.str)} (+${c.dateInfo.daysLeft}d)</span>` +
+              `<span><strong>Validade:</strong> ${escHtml(valTxt)}</span>` +
             `</div>` +
           `</div>` +
           `<div style="display:flex;gap:6px;flex-shrink:0;">` +
@@ -7812,7 +8044,6 @@
     if (!info) return;
     const { drawer, code } = info;
 
-    // 1. Injeta botao "Substituto" ao lado do botao "Cautela"
     const cautelaBtn = Array.from(drawer.querySelectorAll("button")).find((b) => isVisible(b) && norm(b.textContent) === "cautela");
     if (cautelaBtn && cautelaBtn.parentElement) {
       let subBtn = drawer.querySelector("#vu-find-sub-btn");
@@ -7828,10 +8059,8 @@
       subBtn.onclick = (ev) => { ev.stopPropagation(); openSubstituteModal(code); };
     }
 
-    // 2. Registra alteracoes ao salvar
     hookDrawerSaveForTimeline(drawer, code);
 
-    // 3. Injeta card "Historico / Linha do Tempo"
     let card = drawer.querySelector("#vu-timeline-card");
     const events = getCombinedTimeline(code);
     const sig = `${code}|${events.length}|${events[0] ? events[0].ts : ""}`;
@@ -7845,11 +8074,8 @@
 
       const moveBtn = Array.from(drawer.querySelectorAll("button")).find((b) => isVisible(b) && norm(b.textContent).includes("mover p/ perdidos"));
       const anchorParent = moveBtn && moveBtn.parentElement;
-      if (anchorParent && anchorParent.parentElement) {
-        anchorParent.parentElement.insertBefore(card, anchorParent);
-      } else {
-        drawer.appendChild(card);
-      }
+      if (anchorParent && anchorParent.parentElement) anchorParent.parentElement.insertBefore(card, anchorParent);
+      else drawer.appendChild(card);
     }
 
     card.dataset.vuSig = sig;
@@ -7924,7 +8150,7 @@
   };
 
   /* ============================================================================
-     MODULO 4: PAINEL DE SANEAMENTO DO CADASTRO (DIAGNOSTICO + CORRECAO EM LOTE)
+     MODULO 4: PAINEL DE SANEAMENTO DO CADASTRO (DIAGNOSTICO CORRIGIDO v1.1)
      ============================================================================ */
   const buildSanitationReport = () => {
     const snap = getFleetSnapshot();
@@ -7945,20 +8171,22 @@
       }
     });
 
-    const officialNormSet = new Set(OFFICIAL_SECTORS.map(norm));
+    const officialNormSet = getOfficialSectorSet();
 
     snap.uniqueList.forEach((it) => {
       const locN = norm(it.local);
       if (!locN || locN === "-" || locN === "\u2014" || locN === "sem local" || locN === "n/a") {
         noLocal.push(it);
       }
-      if (!it.rangeObj) {
+      if (!it.hasFaixa) {
         noRange.push(it);
       }
       if (!it.dateInfo.valid) {
         badDate.push(it);
       }
-      if (!it.setor || !officialNormSet.has(norm(it.setor))) {
+      const secN = norm(it.setor);
+      const secNoParen = norm(String(it.setor || "").replace(/^\((.*)\)$/, "$1"));
+      if (!secN || (!officialNormSet.has(secN) && !officialNormSet.has(secNoParen))) {
         const sug = suggestOfficialSector(it.setor);
         badSector.push({ ...it, suggestedSector: sug });
       }
@@ -8070,7 +8298,6 @@
       draw(i + 1, task.code, "Salvo no banco");
     }
 
-    // Limpa barra de busca do inventario ao finalizar
     const invSearch = Array.from(document.querySelectorAll("input")).find((el) => {
       if (!isVisible(el) || el.closest("[id^='vu-']")) return false;
       const sig = norm([el.placeholder, el.id, el.name].filter(Boolean).join(" "));
@@ -8110,8 +8337,8 @@
       `<div style="width:min(980px,97vw);max-height:92vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.48);display:flex;flex-direction:column;">` +
         `<div style="background:linear-gradient(90deg,#1e1b4b,#4338ca);color:#ffffff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
           `<div>` +
-            `<div style="font-size:16px;font-weight:800;">Painel de Saneamento do Cadastro</div>` +
-            `<div style="font-size:12px;color:#c7d2fe;">Frota analisada: <strong>${rep.totalFleet}</strong> instrumento(s) &bull; <strong>${rep.totalIssues}</strong> pend\u00eancia(s) encontrada(s)</div>` +
+            `<div style="font-size:16px;font-weight:800;">Painel de Saneamento do Cadastro (v1.1)</div>` +
+            `<div style="font-size:12px;color:#c7d2fe;">Frota analisada: <strong>${rep.totalFleet}</strong> instrumento(s) &bull; <strong>${rep.totalIssues}</strong> pend\u00eancia(s) real(is)</div>` +
           `</div>` +
           `<div style="display:flex;gap:8px;align-items:center;">` +
             `<button type="button" id="vu-san-copy-rep" style="padding:6px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;font-size:11.5px;font-weight:700;cursor:pointer;">Copiar Diagn\u00f3stico</button>` +
@@ -8289,9 +8516,9 @@
       btn.id = "vu-saneamento-btn";
       btn.type = "button";
       btn.title = "Diagnosticar e corrigir pend\u00eancias do cadastro (Duplicados, Sem Local, Sem Faixa, Datas, Setores)";
-      btn.onclick = openSanitationModal;
       anchorBtn.parentElement.appendChild(btn);
     }
+    btn.onclick = openSanitationModal;
 
     const sig = `${rep.totalIssues}`;
     if (btn.dataset.vuSig === sig) return;
