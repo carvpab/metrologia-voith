@@ -3717,9 +3717,9 @@
   const setControlValue = (el, val) => {
     if (!el) return false;
     const str = String(val == null ? "" : val).trim();
-    if (!str) return false;
 
     if (el.tagName === "SELECT") {
+      if (!str) return false;
       const target = norm(str);
       const opts = Array.from(el.options || []);
       const hit =
@@ -3732,7 +3732,7 @@
       }
     } else {
       let finalVal = str;
-      if (String(el.type || "").toLowerCase() === "date") {
+      if (String(el.type || "").toLowerCase() === "date" && str) {
         const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
         if (m) finalVal = `${m[3]}-${m[2]}-${m[1]}`;
       }
@@ -3754,10 +3754,16 @@
     }
     const closestLbl = el.closest("label");
     if (closestLbl) parts.push(closestLbl.textContent);
+    if (el.previousElementSibling && String(el.previousElementSibling.textContent || "").length < 80) {
+      parts.push(el.previousElementSibling.textContent);
+    }
     if (el.parentElement) {
       const sib = el.parentElement.querySelector("label, span, p");
       if (sib && sib !== el && String(sib.textContent || "").length < 80) {
         parts.push(sib.textContent);
+      }
+      if (el.parentElement.previousElementSibling && String(el.parentElement.previousElementSibling.textContent || "").length < 80) {
+        parts.push(el.parentElement.previousElementSibling.textContent);
       }
     }
     return norm(parts.filter(Boolean).join(" "));
@@ -3765,13 +3771,7 @@
 
   const getExistingCodesSet = () => {
     const set = new Set();
-    const sources = [
-      window.instruments,
-      window.ITEMS,
-      window.allInstruments,
-      window.state && window.state.instruments
-    ];
-    sources.forEach((arr) => {
+    [window.instruments, window.ITEMS, window.allInstruments, window.state && window.state.instruments].forEach((arr) => {
       if (!Array.isArray(arr)) return;
       arr.forEach((it) => {
         const c = String((it && (it.code || it.codigo || it.cod)) || "").trim().toUpperCase();
@@ -3820,7 +3820,6 @@
   const parseTrailingDetails = (restRaw) => {
     let rest = String(restRaw || "").trim();
     let cc = "", setor = "", responsavel = "", faixaIni = "", faixaFim = "";
-
     if (!rest) return { cc, setor, responsavel, faixaIni, faixaFim };
 
     const ccm = rest.match(/^(\d{4}\s*[A-Z]?)\b/i);
@@ -3866,7 +3865,6 @@
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // Modo 1: Colado direto do Excel / Sheets (colunas separadas por TAB)
       if (line.includes("\t")) {
         const cols = line.split("\t").map((c) => c.trim());
         while (cols.length && !cols[0]) cols.shift();
@@ -3888,7 +3886,6 @@
         let faixaIni = cols[6] || "";
         let faixaFim = cols[7] || "";
 
-        // Se a data estiver em outra coluna, ajusta automaticamente
         if (!validade) {
           for (let c = 1; c < cols.length; c++) {
             const d = normalizeDateBR(cols[c]);
@@ -3896,27 +3893,11 @@
           }
         }
 
-        items.push({
-          code,
-          desc,
-          validade,
-          cc,
-          setor,
-          responsavel,
-          faixaIni,
-          faixaFim,
-          faixa: formatRange(faixaIni, faixaFim)
-        });
+        items.push({ code, desc, validade, cc, setor, responsavel, faixaIni, faixaFim, faixa: formatRange(faixaIni, faixaFim) });
         continue;
       }
 
-      // Modo 2: Texto livre ou OCR de imagem
-      const clean = line
-        .replace(/[|\u00a6\[\]{}]/g, " ")
-        .replace(/[_\u2014\u2013]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
+      const clean = line.replace(/[|\u00a6\[\]{}]/g, " ").replace(/[_\u2014\u2013]+/g, " ").replace(/\s+/g, " ").trim();
       const cm = clean.match(/\b([A-Z]{2,4}\s*[-]?\s*\d{4,7}[A-Z0-9-]*)\b/i);
       if (!cm) continue;
 
@@ -3927,10 +3908,7 @@
       const afterCode = clean.slice(cm.index + cm[0].length).trim();
       const dm = afterCode.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
 
-      let desc = "";
-      let validade = "";
-      let rest = "";
-
+      let desc = "", validade = "", rest = "";
       if (dm) {
         desc = afterCode.slice(0, dm.index).replace(/^[\s.,;:'"`:-]+|[\s.,;:'"`:-]+$/g, "").trim();
         validade = normalizeDateBR(dm[1]);
@@ -3941,25 +3919,13 @@
 
       const det = parseTrailingDetails(rest);
       items.push({
-        code,
-        desc,
-        validade,
-        cc: det.cc,
-        setor: det.setor,
-        responsavel: det.responsavel,
-        faixaIni: det.faixaIni,
-        faixaFim: det.faixaFim,
-        faixa: formatRange(det.faixaIni, det.faixaFim)
+        code, desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
+        faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim)
       });
     }
 
-    // Fallback: se o OCR borrou o codigo mas leu a data/detalhes da linha, cria rascunho editavel
     if (!items.length && lines.length) {
-      const joined = lines.join(" ")
-        .replace(/[|\u00a6\[\]{}]/g, " ")
-        .replace(/\s*:\s*/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+      const joined = lines.join(" ").replace(/[|\u00a6\[\]{}]/g, " ").replace(/\s*:\s*/g, " ").replace(/\s+/g, " ").trim();
       const dm = joined.match(/\b(\d{2}[\/.-]\d{2}[\/.-]\d{4})\b/);
       if (dm) {
         const desc = joined.slice(0, dm.index).replace(/^[\s.,;:'"`:-]+|[\s.,;:'"`:-]+$/g, "").trim();
@@ -3967,27 +3933,16 @@
         const rest = joined.slice(dm.index + dm[0].length).trim();
         const det = parseTrailingDetails(rest);
         items.push({
-          code: "",
-          desc,
-          validade,
-          cc: det.cc,
-          setor: det.setor,
-          responsavel: det.responsavel,
-          faixaIni: det.faixaIni,
-          faixaFim: det.faixaFim,
-          faixa: formatRange(det.faixaIni, det.faixaFim),
-          missingCode: true
+          code: "", desc, validade, cc: det.cc, setor: det.setor, responsavel: det.responsavel,
+          faixaIni: det.faixaIni, faixaFim: det.faixaFim, faixa: formatRange(det.faixaIni, det.faixaFim), missingCode: true
         });
       }
     }
-
     return items;
   };
 
   const loadTesseract = () => {
-    if (window.Tesseract && typeof window.Tesseract.recognize === "function") {
-      return Promise.resolve(window.Tesseract);
-    }
+    if (window.Tesseract && typeof window.Tesseract.recognize === "function") return Promise.resolve(window.Tesseract);
     return new Promise((resolve, reject) => {
       const existing = document.querySelector(`script[src="${TESSERACT_CDN}"]`);
       if (existing) {
@@ -4043,18 +3998,25 @@
           reject(err);
         }
       };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Imagem inv\u00e1lida ou corrompida."));
-      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Imagem inv\u00e1lida.")); };
       img.src = url;
     });
   };
 
-  /* -------------------- IDENTIFICACAO ESTRITA DO MODAL "+ NOVO ITEM" -------------------- */
+  /* -------------------- DETECCAO BLINDADA DO DRAWER DE INSTRUMENTO (v2.2) -------------------- */
+  const isOnLostView = () => {
+    const hash = norm(window.location.hash || "");
+    if (hash.includes("lab") || hash.includes("lost") || hash.includes("baixa")) return true;
+    return Array.from(document.querySelectorAll("h1, h2, p, div")).some((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-modal")) return false;
+      const t = String(el.textContent || "");
+      return t.length < 160 && /desativados\/perdidos|equipamentos perdidos|lab & baixas/i.test(t);
+    });
+  };
+
   const findNewItemButton = () => {
     return Array.from(document.querySelectorAll("button")).find((b) => {
-      if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-bulk-modal")) return false;
       const t = norm(b.textContent);
       if (t.includes("novo item") || t === "+ novo" || t.includes("novo instrumento")) return true;
       if (t === "+" && b.getBoundingClientRect().top < 90) return true;
@@ -4062,89 +4024,162 @@
     }) || null;
   };
 
-  const resolveInnerCard = (el) => {
-    let cur = el;
-    for (let depth = 0; depth < 3; depth++) {
-      if (!cur || !cur.classList) break;
-      const kids = Array.from(cur.children).filter((ch) => isVisible(ch) && ch.querySelector("input, select, textarea"));
-      if (kids.length === 1 && (cur.classList.contains("inset-0") || window.getComputedStyle(cur).position === "fixed")) {
-        cur = kids[0];
-      } else {
-        break;
-      }
-    }
-    return cur;
-  };
-
-  const isEditOrCustodyModal = (card) => {
-    if (!card) return true;
-    const txt = norm(card.textContent || "");
-    if (
-      txt.includes("mover p/ perdidos") ||
-      txt.includes("salvar & proximo") ||
-      txt.includes("nova cautela") ||
-      txt.includes("registrar cautela") ||
-      txt.includes("registrar devolucao") ||
-      txt.includes("buscar instrumento por codigo") ||
-      txt.includes("painel administrativo") ||
-      txt.includes("monitoramento de frota") ||
-      txt.includes("vence em ") ||
-      txt.includes("vencido ha ")
-    ) {
-      return true;
-    }
-    const btns = Array.from(card.querySelectorAll("button")).filter(isVisible);
-    const hasEditOrCustodyBtn = btns.some((b) => {
+  const findSaveBtnIn = (root, requireEnabled = false) => {
+    if (!root) return null;
+    const btns = Array.from(root.querySelectorAll("button")).filter((b) => isVisible(b) && (!requireEnabled || !b.disabled));
+    const exact = btns.find((b) => /^(salvar|cadastrar|criar|adicionar|gravar|confirmar)$/.test(norm(b.textContent)));
+    if (exact) return exact;
+    return btns.find((b) => {
       const t = norm(b.textContent);
-      return t === "excluir" || t === "localizar" || t === "cautela" || t === "copiar";
-    });
-    if (hasEditOrCustodyBtn) return true;
-
-    const heading = card.querySelector("h1, h2, h3, h4");
-    if (heading && /\b[a-z]{2}\d{4,}\b/i.test(String(heading.textContent || ""))) return true;
-
-    return false;
+      return /(salvar|cadastrar|criar|gravar)/.test(t) && !/(proximo|cancelar|fechar|novo item|imagem|limpar|atalho)/.test(t);
+    }) || null;
   };
 
-  const findOpenNewItemCard = () => {
-    const overlays = Array.from(document.querySelectorAll("[role=dialog], .fixed.inset-0, .modal")).filter((el) => {
-      if (!isVisible(el)) return false;
-      if (el.id && el.id.startsWith("vu-")) return false;
-      return true;
+  // Encontra o painel do formulario de instrumento aberto (usado pela fila automatica)
+  const findInstrumentFormDrawer = () => {
+    const anchors = Array.from(document.querySelectorAll("label, span, p, div, h1, h2, h3")).filter((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-modal") || el.closest("#vu-img-progress") || el.closest("#vu-bulk-modal")) return false;
+      if (el.children.length > 2) return false;
+      const t = norm(el.textContent);
+      return (
+        t.length >= 5 &&
+        t.length <= 50 &&
+        /^(descricao do instrumento|localizacao fisica|status metrologico|faixa minima|novo instrumento|novo item)/.test(t)
+      );
     });
 
-    for (let i = overlays.length - 1; i >= 0; i--) {
-      const card = resolveInnerCard(overlays[i]);
-      if (!card || !isVisible(card)) continue;
-      if (isEditOrCustodyModal(card)) continue;
-
-      const txt = norm(card.textContent || "");
-      const hasInstrumentFields = txt.includes("codigo") && (txt.includes("descricao") || txt.includes("instrumento"));
-      const inputs = card.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea");
-      const hasSave = Array.from(card.querySelectorAll("button")).some((b) => {
-        const t = norm(b.textContent);
-        return isVisible(b) && /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem)/.test(t);
-      });
-
-      if (hasInstrumentFields && inputs.length >= 3 && hasSave) {
-        return card;
+    for (let i = anchors.length - 1; i >= 0; i--) {
+      let cur = anchors[i].parentElement;
+      for (let depth = 0; depth < 10 && cur && cur !== document.body; depth++) {
+        if (cur.id && cur.id.startsWith("vu-")) break;
+        const controls = Array.from(cur.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).filter(isVisible);
+        const saveBtn = findSaveBtnIn(cur, false);
+        const hasMainApp = Boolean(cur.querySelector("aside nav")) || String(cur.textContent || "").includes("Monitoramento de Frota");
+        if (controls.length >= 4 && saveBtn && !hasMainApp) {
+          return cur;
+        }
+        cur = cur.parentElement;
       }
     }
     return null;
   };
 
-  const closeNativeNewItemModal = (card) => {
+  const isDrawerInEditMode = (card) => {
+    if (!card || !isVisible(card)) return true;
+    const visBtns = Array.from(card.querySelectorAll("button")).filter(isVisible);
+    const hasEditBtn = visBtns.some((b) => {
+      const t = norm(b.textContent);
+      return t === "excluir" || t.includes("mover p/ perdidos") || t === "cautela" || t === "copiar";
+    });
+    if (hasEditBtn) return true;
+
+    const visHeads = Array.from(card.querySelectorAll("h1, h2, h3, h4, span, div")).filter((el) => {
+      if (!isVisible(el) || el.children.length > 2) return false;
+      const len = String(el.textContent || "").trim().length;
+      return len > 0 && len <= 75;
+    });
+    if (visHeads.some((el) => /^novo (instrumento|item)/.test(norm(el.textContent)))) return false;
+    return visHeads.some((el) => /\b[a-z]{2}\d{4,}\b/.test(norm(el.textContent)));
+  };
+
+  const closeNativeDrawer = (card) => {
     if (!card || !isVisible(card)) return;
     const cBtn = Array.from(card.querySelectorAll("button")).find((b) => {
       if (!isVisible(b)) return false;
       const raw = String(b.textContent || "").trim();
       const t = norm(b.textContent);
-      return raw === "\u00d7" || raw === "x" || raw === "X" || t === "cancelar" || t === "fechar";
+      return raw === "\u00d7" || raw === "x" || raw === "X" || raw === "\u2715" || t === "cancelar" || t === "fechar";
     });
     if (cBtn) cBtn.click();
   };
 
-  const createInstrumentsQueue = async (rows) => {
+  /* -------------------- MOVER PARA PERDIDOS APOS CRIAR -------------------- */
+  const clickVisibleMoveToLostBtn = async () => {
+    const moveBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-modal") || b.closest("#vu-img-progress")) return false;
+      const t = norm(b.textContent);
+      return t.includes("mover p/ perdidos") || t.includes("mover para perdidos");
+    });
+    if (!moveBtn) return false;
+
+    const origConfirm = window.confirm;
+    const origPrompt = window.prompt;
+    try {
+      window.confirm = () => true;
+      window.prompt = (_msg, defVal) => defVal || "Cadastrado diretamente como perdido";
+      moveBtn.click();
+      await sleep(450);
+
+      const confirmBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+        if (!isVisible(b) || b === moveBtn || b.closest("#vu-img-progress")) return false;
+        const t = norm(b.textContent);
+        return /^(confirmar|mover|sim|baixar|confirmar baixa)$/.test(t) || t.includes("confirmar perda");
+      });
+      if (confirmBtn) {
+        const host = confirmBtn.closest("[role=dialog], .fixed.inset-0, .modal") || confirmBtn.parentElement;
+        if (host) {
+          const reasonInp = Array.from(host.querySelectorAll("input, textarea")).find((el) => isVisible(el) && !el.value);
+          if (reasonInp) setControlValue(reasonInp, "Cadastrado diretamente como perdido");
+        }
+        confirmBtn.click();
+        await sleep(550);
+      }
+      return true;
+    } finally {
+      window.confirm = origConfirm;
+      window.prompt = origPrompt;
+    }
+  };
+
+  const moveCreatedItemToLost = async (code) => {
+    if (await clickVisibleMoveToLostBtn()) return true;
+
+    const invNav = Array.from(document.querySelectorAll("aside button, aside a, nav button, nav a, button")).find((b) => {
+      if (!isVisible(b) || b.closest("#vu-img-progress")) return false;
+      return norm(b.textContent).startsWith("inventario");
+    });
+    if (invNav) {
+      invNav.click();
+      await sleep(420);
+    }
+
+    const searchInp = Array.from(document.querySelectorAll("input")).find((el) => {
+      if (!isVisible(el) || el.closest("#vu-img-progress")) return false;
+      const tp = String(el.type || "text").toLowerCase();
+      if (!["text", "search", ""].includes(tp)) return false;
+      const sig = norm([el.placeholder, el.id, el.name].filter(Boolean).join(" "));
+      return /buscar|pesquis|codigo|filtrar|ac4|9981/.test(sig) && !String((el.parentElement && el.parentElement.textContent) || "").includes("Ctrl K");
+    });
+
+    if (searchInp) {
+      setControlValue(searchInp, code);
+      await sleep(500);
+    }
+
+    const codeTarget = Array.from(document.querySelectorAll("table tbody tr button, table tbody tr a, table tbody tr td, table tbody tr")).find((el) => {
+      if (!isVisible(el)) return false;
+      const t = String(el.textContent || "").trim().toUpperCase();
+      return t === code || (el.tagName === "TD" && t.includes(code));
+    });
+
+    if (codeTarget) {
+      codeTarget.click();
+      for (let w = 0; w < 18; w++) {
+        await sleep(140);
+        if (await clickVisibleMoveToLostBtn()) {
+          if (searchInp) setControlValue(searchInp, "");
+          return true;
+        }
+      }
+    }
+
+    if (searchInp) setControlValue(searchInp, "");
+    return false;
+  };
+
+  /* -------------------- FILA DE CRIACAO AUTOMATICA -------------------- */
+  const createInstrumentsQueue = async (rows, options = {}) => {
+    const asLost = Boolean(options.asLost);
     const impModal = document.getElementById("vu-img-modal");
     if (impModal) impModal.remove();
 
@@ -4152,7 +4187,7 @@
     if (prog) prog.remove();
     prog = document.createElement("div");
     prog.id = "vu-img-progress";
-    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:10985;width:min(470px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
+    prog.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483050;width:min(470px,92vw);background:#0b1f44;color:#ffffff;border:1px solid #38bdf8;border-radius:14px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;";
     document.body.appendChild(prog);
 
     const ok = [];
@@ -4162,7 +4197,7 @@
       const pct = Math.round((idx / rows.length) * 100);
       prog.innerHTML =
         `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;">` +
-          `<span>Criando Instrumentos (${idx}/${rows.length})</span>` +
+          `<span>${asLost ? "Cadastrando Perdidos" : "Criando Instrumentos"} (${idx}/${rows.length})</span>` +
           `<span style="color:#7dd3fc;">${pct}%</span>` +
         `</div>` +
         `<div style="font-size:12px;color:#cbd5e1;margin:6px 0 8px;">${msg}${code ? " \u2014 <strong>" + code + "</strong>" : ""}</div>` +
@@ -4173,7 +4208,14 @@
       const it = rows[i];
       drawProg(i, it.code, "Abrindo cadastro e preenchendo dados");
 
-      let card = findOpenNewItemCard();
+      // Se houver um drawer de EDICAO aberto, fecha antes de abrir um NOVO
+      let card = findInstrumentFormDrawer();
+      if (card && isDrawerInEditMode(card)) {
+        closeNativeDrawer(card);
+        await sleep(250);
+        card = null;
+      }
+
       if (!card) {
         const newBtn = findNewItemButton();
         if (!newBtn) {
@@ -4181,9 +4223,9 @@
           continue;
         }
         newBtn.click();
-        for (let t = 0; t < 20; t++) {
+        for (let t = 0; t < 30; t++) {
           await sleep(100);
-          card = findOpenNewItemCard();
+          card = findInstrumentFormDrawer();
           if (card) break;
         }
       }
@@ -4246,31 +4288,44 @@
         if (anyDate && setControlValue(anyDate, it.validade)) used.add(anyDate);
       }
 
-      await sleep(160);
+      let markedLostViaSelect = false;
+      if (asLost) {
+        const statusSel = controls.find((el) => el.tagName === "SELECT" && /(status|situac|metrolog)/.test(getFieldHint(el)));
+        if (statusSel) {
+          const lostOpt = Array.from(statusSel.options || []).find((o) => /(perdido|baixad|desativad|extraviad|inativ)/.test(norm(o.textContent + " " + o.value)));
+          if (lostOpt) {
+            statusSel.value = lostOpt.value;
+            statusSel.dispatchEvent(new Event("change", { bubbles: true }));
+            markedLostViaSelect = true;
+          }
+        }
+      }
 
-      const saveBtn = Array.from(card.querySelectorAll("button")).find((b) => {
-        if (!isVisible(b) || b.disabled) return false;
-        const t = norm(b.textContent);
-        return /(salvar|cadastrar|criar|adicionar|gravar|confirmar)/.test(t) && !/(cancelar|fechar|novo item|imagem|limpar)/.test(t);
-      });
+      await sleep(220);
 
+      const saveBtn = findSaveBtnIn(card, true) || findSaveBtnIn(card, false);
       if (!saveBtn) {
         fail.push(`${it.code} (bot\u00e3o salvar n\u00e3o encontrado)`);
-        closeNativeNewItemModal(card);
+        closeNativeDrawer(card);
         continue;
       }
 
       saveBtn.click();
-      await sleep(950);
+      await sleep(1050);
 
-      const stillOpen = findOpenNewItemCard();
+      if (asLost && !markedLostViaSelect) {
+        drawProg(i, it.code, "Movendo rec\u00e9m-criado para Perdidos");
+        await moveCreatedItemToLost(it.code);
+      }
+
+      const stillOpen = findInstrumentFormDrawer();
       if (stillOpen) {
-        closeNativeNewItemModal(stillOpen);
-        await sleep(220);
+        closeNativeDrawer(stillOpen);
+        await sleep(260);
       }
 
       ok.push(it.code);
-      drawProg(i + 1, it.code, "Cadastrado com sucesso");
+      drawProg(i + 1, it.code, asLost ? "Cadastrado em Perdidos" : "Cadastrado com sucesso");
     }
 
     prog.innerHTML =
@@ -4278,19 +4333,22 @@
         `<div style="font-size:13.5px;font-weight:800;color:${fail.length ? "#fde047" : "#86efac"};">Conclu\u00eddo: ${ok.length} de ${rows.length} instrumento(s) criado(s)</div>` +
         `<button type="button" id="vu-img-prog-close" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:11.5px;cursor:pointer;">Fechar</button>` +
       `</div>` +
-      (fail.length ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${fail.join(", ")}</div>` : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">Verifique os novos itens no Invent\u00e1rio e aguarde a bolinha verde sincronizar com o Supabase.</div>`);
+      (fail.length
+        ? `<div style="margin-top:6px;font-size:11.5px;color:#fecaca;">N\u00e3o criados: ${fail.join(", ")}</div>`
+        : `<div style="margin-top:6px;font-size:11.5px;color:#cbd5e1;">${asLost ? "Itens criados e encaminhados para Perdidos/Baixas." : "Verifique os novos itens no Invent\u00e1rio e aguarde sincronizar."}</div>`);
 
     prog.querySelector("#vu-img-prog-close").onclick = () => prog.remove();
     setTimeout(() => { if (prog && prog.isConnected && !fail.length) prog.remove(); }, 7000);
   };
 
-  /* -------------------- MODAL DE IMPORTACAO DE IMAGEM / PLANILHA -------------------- */
+  /* -------------------- MODAL DE IMPORTACAO DE IMAGEM / EXCEL (v2.2) -------------------- */
   const openImageImportModal = () => {
     const old = document.getElementById("vu-img-modal");
     if (old) old.remove();
 
     let parsedRows = [];
     const existingCodes = getExistingCodesSet();
+    const defaultAsLost = isOnLostView();
 
     const overlay = document.createElement("div");
     overlay.id = "vu-img-modal";
@@ -4299,7 +4357,7 @@
       `<div style="width:min(980px,96vw);max-height:92vh;background:#ffffff;color:#0f172a;border-radius:16px;overflow:hidden;box-shadow:0 28px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;">` +
         `<div style="background:linear-gradient(90deg,#002466,#0055b8);color:#ffffff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;">` +
           `<div>` +
-            `<div style="font-size:16px;font-weight:800;">Importar Instrumentos por Imagem ou Excel</div>` +
+            `<div style="font-size:16px;font-weight:800;">Importar Instrumentos por Imagem ou Excel (v2.2)</div>` +
             `<div style="font-size:12px;color:#bfdbfe;">Cole linhas direto do Excel (Ctrl+C &rarr; Ctrl+V) ou envie um print/foto da Listagem Voith.</div>` +
           `</div>` +
           `<button type="button" id="vu-img-close" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;font-size:19px;line-height:1;cursor:pointer;">&times;</button>` +
@@ -4319,6 +4377,10 @@
               `<textarea id="vu-img-raw" rows="3" placeholder="Cole linhas da planilha (Ctrl+C no Excel -> Ctrl+V aqui)..." style="width:100%;padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:12px;font-family:monospace;resize:vertical;"></textarea>` +
             `</div>` +
           `</div>` +
+          `<label id="vu-img-lost-box" style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:10px;border:1px solid ${defaultAsLost ? "#f59e0b" : "#cbd5e1"};background:${defaultAsLost ? "#fffbeb" : "#f8fafc"};cursor:pointer;font-size:12.5px;color:#0f172a;">` +
+            `<input type="checkbox" id="vu-img-as-lost" ${defaultAsLost ? "checked" : ""} style="width:16px;height:16px;accent-color:#d97706;cursor:pointer;">` +
+            `<span><strong>Cadastrar j\u00e1 como Perdido / Baixado</strong> <span style="color:#475569;">(move automaticamente para Perdidos logo ap\u00f3s criar)</span></span>` +
+          `</label>` +
           `<div id="vu-img-status" style="font-size:12.5px;font-weight:700;color:#0369a1;min-height:18px;"></div>` +
           `<div id="vu-img-preview-wrap" style="display:none;gap:8px;">` +
             `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">` +
@@ -4346,7 +4408,7 @@
           `<button type="button" id="vu-img-add-manual" style="padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12px;cursor:pointer;">+ Adicionar linha manual</button>` +
           `<div style="display:flex;gap:10px;">` +
             `<button type="button" id="vu-img-cancel" style="padding:9px 16px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;">Cancelar</button>` +
-            `<button type="button" id="vu-img-create" disabled style="padding:9px 18px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;opacity:.55;">Criar Instrumentos (0)</button>` +
+            `<button type="button" id="vu-img-create" disabled style="padding:9px 18px;border-radius:9px;border:none;background:${defaultAsLost ? "#d97706" : "#16a34a"};color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;opacity:.55;">${defaultAsLost ? "Criar como Perdido" : "Criar Instrumentos"} (0)</button>` +
           `</div>` +
         `</div>` +
       `</div>`;
@@ -4356,6 +4418,8 @@
     const fileInp = overlay.querySelector("#vu-img-file");
     const dropZone = overlay.querySelector("#vu-img-drop");
     const rawTxt = overlay.querySelector("#vu-img-raw");
+    const asLostChk = overlay.querySelector("#vu-img-as-lost");
+    const lostBox = overlay.querySelector("#vu-img-lost-box");
     const statusEl = overlay.querySelector("#vu-img-status");
     const prevWrap = overlay.querySelector("#vu-img-preview-wrap");
     const tbody = overlay.querySelector("#vu-img-tbody");
@@ -4365,10 +4429,16 @@
 
     const updateCreateCount = () => {
       const n = tbody.querySelectorAll(".vu-row-chk:checked").length;
-      createBtn.textContent = `Criar Instrumentos (${n})`;
+      const lost = asLostChk.checked;
+      createBtn.textContent = `${lost ? "Criar como Perdido" : "Criar Instrumentos"} (${n})`;
+      createBtn.style.background = lost ? "#d97706" : "#16a34a";
+      lostBox.style.borderColor = lost ? "#f59e0b" : "#cbd5e1";
+      lostBox.style.background = lost ? "#fffbeb" : "#f8fafc";
       createBtn.disabled = n === 0;
       createBtn.style.opacity = n === 0 ? ".55" : "1";
     };
+
+    asLostChk.onchange = updateCreateCount;
 
     const renderTable = () => {
       prevWrap.style.display = parsedRows.length ? "grid" : "none";
@@ -4413,10 +4483,10 @@
         parsedRows = parseVoithLines(text);
         if (parsedRows.length && !parsedRows[0].missingCode) {
           statusEl.style.color = "#15803d";
-          statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da imagem! Confira os campos e clique em Criar Instrumentos.`;
+          statusEl.textContent = `${parsedRows.length} instrumento(s) lido(s) da imagem! Confira e clique para criar.`;
         } else if (parsedRows.length && parsedRows[0].missingCode) {
           statusEl.style.color = "#b45309";
-          statusEl.textContent = "Dados lidos, mas o c\u00f3digo ficou borrado na imagem. Digite apenas o c\u00f3digo na tabela abaixo e clique em Criar.";
+          statusEl.textContent = "Dados lidos, mas o c\u00f3digo ficou borrado. Digite o c\u00f3digo na tabela abaixo.";
         } else {
           statusEl.style.color = "#b45309";
           statusEl.textContent = "Texto lido, mas nenhum c\u00f3digo foi encontrado. Ajuste o texto acima e clique em Ler Texto.";
@@ -4428,11 +4498,7 @@
       }
     };
 
-    fileInp.onchange = () => {
-      const f = fileInp.files && fileInp.files[0];
-      if (f) runOcrOnBlob(f);
-    };
-
+    fileInp.onchange = () => { const f = fileInp.files && fileInp.files[0]; if (f) runOcrOnBlob(f); };
     dropZone.ondragover = (ev) => { ev.preventDefault(); dropZone.style.background = "#dbeafe"; };
     dropZone.ondragleave = () => { dropZone.style.background = "#eff6ff"; };
     dropZone.ondrop = (ev) => {
@@ -4442,7 +4508,6 @@
       if (f) runOcrOnBlob(f);
     };
 
-    // CORRIGIDO: prioriza texto real (Excel/Sheets copia texto + imagem juntos!)
     const onPaste = (ev) => {
       if (!overlay.isConnected) {
         document.removeEventListener("paste", onPaste);
@@ -4467,7 +4532,7 @@
             statusEl.textContent = "Linha lida, mas confirme o c\u00f3digo na tabela abaixo antes de criar.";
           } else {
             statusEl.style.color = "#b45309";
-            statusEl.textContent = "Texto colado, mas nenhuma linha v\u00e1lida foi identificada. Ajuste e clique em Ler Texto.";
+            statusEl.textContent = "Texto colado, mas nenhuma linha v\u00e1lida foi identificada.";
           }
           renderTable();
         }, 40);
@@ -4491,9 +4556,7 @@
     overlay.querySelector("#vu-img-parse-txt").onclick = () => {
       parsedRows = parseVoithLines(rawTxt.value);
       statusEl.style.color = parsedRows.length ? "#15803d" : "#b45309";
-      statusEl.textContent = parsedRows.length
-        ? `${parsedRows.length} instrumento(s) detectado(s) no texto.`
-        : "Nenhuma linha v\u00e1lida encontrada no texto.";
+      statusEl.textContent = parsedRows.length ? `${parsedRows.length} instrumento(s) detectado(s).` : "Nenhuma linha v\u00e1lida encontrada.";
       renderTable();
     };
 
@@ -4507,10 +4570,7 @@
       updateCreateCount();
     };
 
-    const closeModal = () => {
-      document.removeEventListener("paste", onPaste);
-      overlay.remove();
-    };
+    const closeModal = () => { document.removeEventListener("paste", onPaste); overlay.remove(); };
     overlay.querySelector("#vu-img-close").onclick = closeModal;
     overlay.querySelector("#vu-img-cancel").onclick = closeModal;
 
@@ -4521,10 +4581,7 @@
         const chk = tr.querySelector(".vu-row-chk");
         if (!chk || !chk.checked) return;
         const code = String(tr.querySelector(".vu-c-code").value || "").trim().toUpperCase();
-        if (!code) {
-          missingCodeCount++;
-          return;
-        }
+        if (!code) { missingCodeCount++; return; }
         const faixa = String(tr.querySelector(".vu-c-faixa").value || "").trim();
         const parts = faixa.split(/[~a\-]/).map((x) => x.trim()).filter(Boolean);
         selected.push({
@@ -4533,9 +4590,7 @@
           validade: String(tr.querySelector(".vu-c-val").value || "").trim(),
           setor: String(tr.querySelector(".vu-c-setor").value || "").trim(),
           responsavel: String(tr.querySelector(".vu-c-resp").value || "").trim(),
-          faixa,
-          faixaIni: parts[0] || "",
-          faixaFim: parts[1] || "",
+          faixa, faixaIni: parts[0] || "", faixaFim: parts[1] || "",
           cc: String(tr.querySelector(".vu-c-cc").value || "").trim()
         });
       });
@@ -4546,45 +4601,46 @@
       }
       if (!selected.length) return;
       document.removeEventListener("paste", onPaste);
-      createInstrumentsQueue(selected);
+      createInstrumentsQueue(selected, { asLost: asLostChk.checked });
     };
   };
 
-  /* -------------------- INJECAO LIMPA APENAS EM "+ NOVO ITEM" -------------------- */
+  /* -------------------- INJECAO DOS BOTOES -------------------- */
   const injectImageImportButtons = () => {
     document.querySelectorAll("#vu-modal-img-wrap, #vu-modal-img-btn").forEach((el) => {
-      const host = el.closest("[role=dialog], .fixed.inset-0, .modal");
-      const card = host ? resolveInnerCard(host) : el.parentElement;
-      if (!card || !isVisible(card) || isEditOrCustodyModal(card)) {
-        el.remove();
-      }
+      const card = findInstrumentFormDrawer();
+      if (!card || isDrawerInEditMode(card)) el.remove();
     });
 
     const existingTop = document.getElementById("vu-open-img-import");
     if (window.innerWidth <= 768 && existingTop) {
       existingTop.remove();
-    } else if (window.innerWidth > 768 && !existingTop) {
-      const newBtn = Array.from(document.querySelectorAll("button")).find((b) => {
-        if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
-        const t = norm(b.textContent);
-        return t.includes("novo item") || t.includes("novo instrumento");
-      });
-      if (newBtn && newBtn.parentElement) {
-        const b = document.createElement("button");
-        b.id = "vu-open-img-import";
-        b.type = "button";
-        b.textContent = "Ler Imagem";
-        b.title = "Importar instrumentos colando do Excel ou lendo print/imagem";
-        b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
-        b.onclick = openImageImportModal;
-        newBtn.insertAdjacentElement("afterend", b);
+    } else if (window.innerWidth > 768) {
+      if (existingTop) {
+        existingTop.onclick = openImageImportModal;
+      } else {
+        const newBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+          if (!isVisible(b) || b.closest("#vu-img-modal")) return false;
+          const t = norm(b.textContent);
+          return t.includes("novo item") || t.includes("novo instrumento");
+        });
+        if (newBtn && newBtn.parentElement) {
+          const b = document.createElement("button");
+          b.id = "vu-open-img-import";
+          b.type = "button";
+          b.textContent = "Ler Imagem";
+          b.title = "Importar instrumentos colando do Excel ou lendo print/imagem";
+          b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #0284c7;background:#f0f9ff;color:#0369a1;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;";
+          b.onclick = openImageImportModal;
+          newBtn.insertAdjacentElement("afterend", b);
+        }
       }
     }
 
-    const newItemCard = findOpenNewItemCard();
-    if (newItemCard && !newItemCard.querySelector("#vu-modal-img-wrap")) {
-      const firstInput = newItemCard.querySelector("input:not([type=hidden]):not([type=checkbox]), select, textarea");
-      const formBody = (firstInput && (firstInput.closest("form") || firstInput.parentElement && firstInput.parentElement.parentElement)) || newItemCard;
+    const drawer = findInstrumentFormDrawer();
+    if (drawer && !isDrawerInEditMode(drawer) && !drawer.querySelector("#vu-modal-img-wrap")) {
+      const firstInput = Array.from(drawer.querySelectorAll("input:not([type=hidden]):not([type=checkbox]), select, textarea")).find(isVisible);
+      const formBody = (firstInput && (firstInput.closest("form") || (firstInput.parentElement && firstInput.parentElement.parentElement))) || drawer;
 
       const wrap = document.createElement("div");
       wrap.id = "vu-modal-img-wrap";
@@ -4595,7 +4651,7 @@
         `</button>`;
 
       wrap.querySelector("#vu-modal-img-btn").onclick = () => {
-        closeNativeNewItemModal(newItemCard);
+        closeNativeDrawer(drawer);
         setTimeout(openImageImportModal, 120);
       };
 
@@ -4611,7 +4667,7 @@
   };
 
   const init = () => {
-    schedule(220);
+    schedule(120);
     document.addEventListener("click", () => schedule(120), true);
     window.addEventListener("resize", () => schedule(150));
     const obs = new MutationObserver((muts) => {
